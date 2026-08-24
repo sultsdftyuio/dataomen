@@ -369,6 +369,11 @@ def _complete_discovery_run(
     max_retries=2,
     min_backoff=15_000,
     max_backoff=90_000,
+    time_limit=_int_env(
+        "ARCLI_INITIAL_PUBLIC_FAST_CHECK_TIME_LIMIT_MS",
+        300_000,
+        minimum=1,
+    ),
 )
 def ingest_initial_public_sources_fast_job(
     queries: Sequence[Any],
@@ -383,6 +388,7 @@ def ingest_initial_public_sources_fast_job(
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
     discovery_run_id: str | None = None,
+    run_completion_managed: bool = False,
 ) -> None:
     """Fan out public sources and close the discovery run only after all finish.
 
@@ -619,43 +625,60 @@ def ingest_initial_public_sources_fast_job(
         # This is deliberately the only terminal update in the fast path. At
         # this point every selected provider has reported, and any permitted
         # fallback has also finished or been recorded as unavailable.
-        _complete_discovery_run(
-            discovery_run_id=discovery_run_id,
-            tenant_id=tenant_id,
-            status="partial" if source_failures else "completed",
-            summary={
-                "sources": source_counts,
-                "source_failures": source_failures,
-                "source_failure_details": source_failure_details,
-                "hits_found": total_hits,
-                "plausible_hits": total_plausible_hits,
-                "plausible_query_types": sorted(plausible_query_types),
-                "new_inserts": total_new_inserts,
-                "matching_source_posts": total_matching_source_posts,
-                "embedding_jobs": embedding_jobs,
-                "source_completion": {
-                    "expected": [
-                        *source_names,
-                        *(
-                            ["x"]
-                            if x_fallback_outcome in {"completed", "failed"}
-                            else []
-                        ),
-                    ],
-                    "completed": list(source_counts),
-                    "all_sources_finished": True,
-                },
-                "x_fallback": {
-                    "outcome": x_fallback_outcome,
-                    "reason": x_fallback_reason,
-                },
-                "verification_pending": True,
+        fast_check_summary = {
+            "sources": source_counts,
+            "source_failures": source_failures,
+            "source_failure_details": source_failure_details,
+            "hits_found": total_hits,
+            "plausible_hits": total_plausible_hits,
+            "plausible_query_types": sorted(plausible_query_types),
+            "new_inserts": total_new_inserts,
+            "matching_source_posts": total_matching_source_posts,
+            "embedding_jobs": embedding_jobs,
+            "source_completion": {
+                "expected": [
+                    *source_names,
+                    *(
+                        ["x"]
+                        if x_fallback_outcome in {"completed", "failed"}
+                        else []
+                    ),
+                ],
+                "completed": list(source_counts),
+                "all_sources_finished": True,
             },
-        )
+            "x_fallback": {
+                "outcome": x_fallback_outcome,
+                "reason": x_fallback_reason,
+            },
+            "verification_pending": True,
+        }
+        if run_completion_managed:
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="public_sources",
+                query_type=None,
+                query=None,
+                phase="fast_check",
+                outcome="completed",
+                details={
+                    "hits_found": total_hits,
+                    "new_inserts": total_new_inserts,
+                    "matching_source_posts": total_matching_source_posts,
+                },
+            )
+        else:
+            _complete_discovery_run(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                status="partial" if source_failures else "completed",
+                summary=fast_check_summary,
+            )
         # Cached-post rematching is useful, but it is not on the critical
         # path for a new scan.  Give fresh public-source posts a clear runway
         # through matching before the bounded historical corpus uses threads.
-        if tenant_id and service_profile_id:
+        if tenant_id and service_profile_id and not run_completion_managed:
             try:
                 from api.services.social_ingestion import (
                     enqueue_existing_public_source_rematch,
@@ -697,23 +720,24 @@ def ingest_initial_public_sources_fast_job(
             outcome="failed",
             details={"error_type": exc.__class__.__name__},
         )
-        _complete_discovery_run(
-            discovery_run_id=discovery_run_id,
-            tenant_id=tenant_id,
-            status="failed",
-            summary={
-                "last_failure": {
-                    "source": "public_sources",
-                    "error_type": exc.__class__.__name__,
+        if not run_completion_managed:
+            _complete_discovery_run(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                status="failed",
+                summary={
+                    "last_failure": {
+                        "source": "public_sources",
+                        "error_type": exc.__class__.__name__,
+                    },
+                    "source_completion": {
+                        "expected": list(source_names),
+                        "completed": list(source_counts),
+                        "all_sources_finished": False,
+                    },
+                    "verification_pending": True,
                 },
-                "source_completion": {
-                    "expected": list(source_names),
-                    "completed": list(source_counts),
-                    "all_sources_finished": False,
-                },
-                "verification_pending": True,
-            },
-        )
+            )
         logger.exception(
             "initial_public_sources_fast_failed tenant_id=%s service_profile_id=%s query_count=%s error_type=%s",
             tenant_id,
@@ -737,8 +761,183 @@ def ingest_initial_public_sources_fast_job(
         hits_found=total_hits,
         matching_source_posts=total_matching_source_posts,
         embedding_jobs=embedding_jobs,
-        discovery_run_completed=True,
+        discovery_run_completed=not run_completion_managed,
     )
+
+
+@dramatiq.actor(
+    actor_name="monitor_initial_public_discovery_run",
+    queue_name=os.getenv("ARCLI_PUBLIC_INGESTION_QUEUE_NAME", "ingestion"),
+    max_retries=2,
+    min_backoff=15_000,
+    max_backoff=90_000,
+    time_limit=30_000,
+)
+def monitor_initial_public_discovery_run(
+    tenant_id: str,
+    service_profile_id: str,
+    discovery_run_id: str,
+    started_at: str,
+    *,
+    rematch_attempted: bool = False,
+) -> None:
+    """Keep an activation run open for 2-5 minutes and target three finds.
+
+    The source and embedding actors are intentionally asynchronous.  This
+    small delayed coordinator never blocks a worker thread while they run; it
+    polls only the tenant's newly-created review queue and starts one bounded
+    cached-corpus rematch at the two-minute mark when more evidence is needed.
+    """
+
+    from api.services.social.run_control import (
+        elapsed_run_seconds,
+        initial_discovery_run_limits,
+        next_monitor_delay_seconds,
+        ready_for_review_count_since,
+    )
+
+    limits = initial_discovery_run_limits()
+    elapsed_seconds = elapsed_run_seconds(started_at)
+    _job_started(
+        job_name="initial_public_discovery_monitor",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        discovery_run_id=discovery_run_id,
+        elapsed_seconds=int(elapsed_seconds),
+        rematch_attempted=rematch_attempted,
+    )
+
+    ready_for_review: int | None
+    count_error: Exception | None = None
+    try:
+        ready_for_review = ready_for_review_count_since(
+            tenant_id,
+            service_profile_id,
+            started_at,
+        )
+    except Exception as exc:
+        ready_for_review = None
+        count_error = exc
+        logger.warning(
+            "initial_public_discovery_monitor_count_failed tenant_id=%s service_profile_id=%s discovery_run_id=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            discovery_run_id,
+            exc.__class__.__name__,
+        )
+
+    def schedule_next(*, next_rematch_attempted: bool) -> None:
+        delay_seconds = next_monitor_delay_seconds(
+            elapsed_seconds=elapsed_seconds,
+            limits=limits,
+        )
+        if delay_seconds is None:
+            return
+        message = monitor_initial_public_discovery_run.send_with_options(
+            args=(tenant_id, service_profile_id, discovery_run_id, started_at),
+            kwargs={"rematch_attempted": next_rematch_attempted},
+            delay=delay_seconds * 1_000,
+        )
+        logger.info(
+            "initial_public_discovery_monitor_enqueued tenant_id=%s service_profile_id=%s discovery_run_id=%s delay_seconds=%s message_id=%s",
+            tenant_id,
+            service_profile_id,
+            discovery_run_id,
+            delay_seconds,
+            message.message_id,
+        )
+
+    if elapsed_seconds < limits.minimum_seconds:
+        schedule_next(next_rematch_attempted=rematch_attempted)
+        return
+
+    if ready_for_review is not None and ready_for_review >= limits.target_ready_for_review:
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="completed",
+            summary={
+                "run_control": {
+                    "stop_reason": "target_ready_for_review_reached",
+                    "ready_for_review": ready_for_review,
+                    "target_ready_for_review": limits.target_ready_for_review,
+                    "elapsed_seconds": int(elapsed_seconds),
+                    "minimum_seconds": limits.minimum_seconds,
+                    "maximum_seconds": limits.maximum_seconds,
+                },
+                "verification_pending": False,
+            },
+        )
+        _job_finished(
+            job_name="initial_public_discovery_monitor",
+            state="completed",
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+            discovery_run_id=discovery_run_id,
+            ready_for_review=ready_for_review,
+            stop_reason="target_ready_for_review_reached",
+        )
+        return
+
+    if elapsed_seconds >= limits.maximum_seconds:
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="partial",
+            summary={
+                "run_control": {
+                    "stop_reason": "maximum_duration_reached",
+                    "ready_for_review": ready_for_review,
+                    "target_ready_for_review": limits.target_ready_for_review,
+                    "elapsed_seconds": int(elapsed_seconds),
+                    "minimum_seconds": limits.minimum_seconds,
+                    "maximum_seconds": limits.maximum_seconds,
+                    "count_error": count_error.__class__.__name__ if count_error else None,
+                },
+                "verification_pending": False,
+            },
+        )
+        _job_finished(
+            job_name="initial_public_discovery_monitor",
+            state="partial",
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+            discovery_run_id=discovery_run_id,
+            ready_for_review=ready_for_review,
+            stop_reason="maximum_duration_reached",
+        )
+        return
+
+    if not rematch_attempted:
+        try:
+            from api.services.social_ingestion import enqueue_existing_public_source_rematch
+
+            rematch_message_id = enqueue_existing_public_source_rematch(
+                tenant_id,
+                service_profile_id,
+            )
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="public_corpus",
+                query_type=None,
+                query=None,
+                phase="rematch",
+                outcome="scheduled",
+                details={"message_id": rematch_message_id or "not_enqueued"},
+            )
+        except Exception as exc:
+            logger.warning(
+                "initial_public_discovery_rematch_enqueue_failed tenant_id=%s service_profile_id=%s discovery_run_id=%s error_type=%s",
+                tenant_id,
+                service_profile_id,
+                discovery_run_id,
+                exc.__class__.__name__,
+            )
+        schedule_next(next_rematch_attempted=True)
+        return
+
+    schedule_next(next_rematch_attempted=True)
 
 
 @dramatiq.actor(

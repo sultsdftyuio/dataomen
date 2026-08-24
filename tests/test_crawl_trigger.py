@@ -99,6 +99,7 @@ def test_daily_recheck_resets_the_previous_queue_message_before_reenqueueing() -
     with (
         patch("api.services.crawling._table_exists", return_value=True),
         patch("api.services.crawling._upsert_crawl_job") as upsert,
+        patch("api.services.crawling._reserve_crawl_queue_capacity", return_value=None),
     ):
         next_available_at = crawling.reserve_website_crawl_slot(
             _NoRecentCrawlConnection(),
@@ -109,6 +110,72 @@ def test_daily_recheck_resets_the_previous_queue_message_before_reenqueueing() -
 
     assert next_available_at is None
     assert upsert.call_args.kwargs["restart_queue"] is True
+
+
+class _QueueAdmissionConnection:
+    def __init__(self, queue_position: int) -> None:
+        self.queue_position = queue_position
+        self.calls: list[object] = []
+
+    def execute(self, statement, *_args, **_kwargs):
+        self.calls.append(statement)
+        return self
+
+    def scalar_one(self) -> int:
+        return self.queue_position
+
+
+def test_crawl_queue_admission_records_a_retryable_rejection(monkeypatch) -> None:
+    monkeypatch.setenv("ARCLI_CRAWL_MAX_QUEUED_JOBS", "2")
+    monkeypatch.setenv("ARCLI_CRAWL_ADMISSION_RETRY_AFTER_SECONDS", "45")
+    connection = _QueueAdmissionConnection(queue_position=3)
+
+    with (
+        patch("api.services.crawling._table_exists", return_value=True),
+        patch("api.services.crawling._upsert_crawl_job") as upsert,
+    ):
+        limit = crawling._reserve_crawl_queue_capacity(
+            connection,
+            tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
+            crawl_job_id="crawl-job-id",
+            website_url="https://example.com/",
+        )
+
+    assert limit == crawling.CrawlQueueCapacityLimit(
+        max_queued_jobs=2,
+        retry_after_seconds=45,
+    )
+    assert len(connection.calls) == 2
+    assert upsert.call_args.kwargs["status"] == "failed"
+    assert upsert.call_args.kwargs["failure_reason"] == "admission_rejected"
+
+
+def test_crawl_queue_capacity_stops_pass1_before_it_uses_api_or_model_capacity() -> None:
+    payload = main.CrawlTriggerRequest(
+        tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
+        website_url="https://example.com/",
+    )
+    with (
+        patch.object(main, "_validate_internal_tenant_scope"),
+        patch("api.services.crawling._database_engine", return_value=_NoopEngine()),
+        patch(
+            "api.services.crawling.reserve_website_crawl_slot",
+            return_value=crawling.CrawlQueueCapacityLimit(
+                max_queued_jobs=6,
+                retry_after_seconds=60,
+            ),
+        ),
+        patch(
+            "api.services.service_profile_pass1.extract_pass1_service_profile",
+        ) as extract_profile,
+    ):
+        with pytest.raises(HTTPException) as error:
+            main.trigger_crawl(payload, None, "idempotency-key")
+
+    assert error.value.status_code == 429
+    assert error.value.headers == {"Retry-After": "60"}
+    assert "capacity is temporarily full" in str(error.value.detail)
+    extract_profile.assert_not_called()
 
 
 def test_temporary_repeat_crawl_mode_requires_explicit_opt_in(monkeypatch) -> None:

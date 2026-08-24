@@ -2847,8 +2847,8 @@ export default function ProspectDashboardClient({
   };
 
   return (
-    <div className="flex w-full flex-col gap-4 xl:min-h-[900px]" style={{ color: C.text }}>
-      <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
+    <div className="flex w-full flex-col gap-3 sm:gap-4" style={{ color: C.text }}>
+      <header className="mx-auto flex min-h-11 w-full max-w-[1800px] shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
             {dashboardView === "focus" ? "Focus" : dashboardView === "queue" ? "All signals" : "Leads"}
@@ -2879,10 +2879,10 @@ export default function ProspectDashboardClient({
         <>
           <section
             aria-labelledby="focus-heading"
-            className="mx-auto w-full max-w-6xl"
+            className="mx-auto w-full max-w-[1800px]"
           >
-            <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
-              <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white p-6 shadow-sm sm:p-8" style={{ borderColor: C.rule }}>
+            <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(26rem,0.8fr)] sm:gap-4">
+              <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white p-5 shadow-sm sm:p-6" style={{ borderColor: C.rule }}>
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
                     Today
@@ -2891,7 +2891,7 @@ export default function ProspectDashboardClient({
                     {queueItems.length} {queueItems.length === 1 ? "signal" : "signals"} to review
                   </span>
                 </div>
-                <h2 id="focus-heading" className="pfd mt-5 max-w-3xl text-2xl leading-tight sm:text-3xl" style={{ color: C.navy }}>
+                <h2 id="focus-heading" className="pfd mt-4 max-w-4xl text-2xl leading-tight sm:text-[2rem]" style={{ color: C.navy }}>
                   {selectedLead ? selectedLead.sourcePost.title : status.title}
                 </h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
@@ -3005,7 +3005,7 @@ export default function ProspectDashboardClient({
             </div>
           </section>
 
-          <section aria-labelledby="discovery-summary-heading" className="mx-auto w-full max-w-6xl rounded-2xl border bg-white shadow-sm" style={{ borderColor: C.rule }}>
+          <section aria-labelledby="discovery-summary-heading" className="mx-auto w-full max-w-[1800px] rounded-2xl border bg-white shadow-sm" style={{ borderColor: C.rule }}>
             <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(0,1.2fr)] lg:items-center">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>

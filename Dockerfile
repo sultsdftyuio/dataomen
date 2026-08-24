@@ -16,7 +16,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OMP_NUM_THREADS=4 \
     DRAMATIQ_PROCESSES=1 \
     DRAMATIQ_THREADS=4 \
-    ARCLI_REDIS_MAX_CONNECTIONS=16
+    ARCLI_REDIS_MAX_CONNECTIONS=16 \
+    # This image deliberately omits Chromium and Crawl4AI. The dedicated
+    # Crawl4AI worker owns crawling; a misrouted job can still use Firecrawl.
+    ARCLI_CRAWL4AI_ENABLED=false
 
 WORKDIR /app
 

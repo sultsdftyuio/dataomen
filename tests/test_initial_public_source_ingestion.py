@@ -349,6 +349,11 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
                 return_value=run_id,
             ) as create_run,
             patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
+            patch.object(
+                actors.monitor_initial_public_discovery_run,
+                "send_with_options",
+                return_value=type("Message", (), {"message_id": "monitor-message"})(),
+            ) as monitor_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
 
@@ -359,6 +364,9 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             CANONICAL_DISCOVERY_QUERIES,
         )
         self.assertEqual(fast_send.call_args.kwargs["discovery_run_id"], run_id)
+        self.assertTrue(fast_send.call_args.kwargs["run_completion_managed"])
+        self.assertEqual(monitor_send.call_args.args, ())
+        self.assertEqual(monitor_send.call_args.kwargs["args"][:3], ("tenant-1", "profile-1", run_id))
 
     def test_x_only_activation_keeps_matching_context_when_telemetry_is_unavailable(self) -> None:
         """Observability rollout must not remove normal X job tenant context."""

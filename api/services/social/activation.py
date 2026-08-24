@@ -100,6 +100,7 @@ def enqueue_initial_public_source_ingestion(
     from api.workers.actors import (
         ingest_initial_public_sources_fast_job,
         ingest_x_job,
+        monitor_initial_public_discovery_run,
     )
 
     lookback_hours = _initial_source_lookback_hours()
@@ -144,6 +145,7 @@ def enqueue_initial_public_source_ingestion(
     # report. The helper is fail-open while the additive SQL contract is being
     # rolled out, so it can never block a customer's discovery work.
     discovery_run_id: str | None = None
+    discovery_run_started_at: str | None = None
     try:
         from api.services.social.discovery_telemetry import create_discovery_run
 
@@ -152,6 +154,8 @@ def enqueue_initial_public_source_ingestion(
             service_profile_id,
             [query.to_payload() for query in discovery_queries],
         )
+        if discovery_run_id:
+            discovery_run_started_at = datetime.now(timezone.utc).isoformat()
     except Exception as exc:
         logger.info(
             "discovery_run_creation_skipped tenant_id=%s service_profile_id=%s error_type=%s",
@@ -178,6 +182,30 @@ def enqueue_initial_public_source_ingestion(
             "tenant_id": tenant_id,
             "service_profile_id": service_profile_id,
         }
+        run_completion_managed = False
+        if discovery_run_id and discovery_run_started_at:
+            try:
+                from api.services.social.run_control import initial_discovery_run_limits
+
+                monitor_delay_ms = initial_discovery_run_limits().poll_seconds * 1_000
+                monitor_initial_public_discovery_run.send_with_options(
+                    args=(
+                        tenant_id,
+                        str(service_profile_id),
+                        discovery_run_id,
+                        discovery_run_started_at,
+                    ),
+                    delay=monitor_delay_ms,
+                )
+                run_completion_managed = True
+            except Exception as exc:
+                logger.warning(
+                    "initial_public_discovery_monitor_enqueue_failed tenant_id=%s service_profile_id=%s discovery_run_id=%s error_type=%s",
+                    tenant_id,
+                    service_profile_id,
+                    discovery_run_id,
+                    exc.__class__.__name__,
+                )
         if x_fallback_group_id:
             fast_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
         if x_fallback_query:
@@ -186,6 +214,8 @@ def enqueue_initial_public_source_ingestion(
             fast_job_kwargs["x_fallback_disabled_reason"] = x_skip_reason
         if discovery_run_id:
             fast_job_kwargs["discovery_run_id"] = discovery_run_id
+        if run_completion_managed:
+            fast_job_kwargs["run_completion_managed"] = True
         ingest_initial_public_sources_fast_job.send(
             discovery_query_payloads,
             lookback_hours,

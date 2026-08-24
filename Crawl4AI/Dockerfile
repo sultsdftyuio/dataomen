@@ -8,7 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH="/ms-playwright" \
     DRAMATIQ_PROCESSES=1 \
     DRAMATIQ_THREADS=1 \
-    ARCLI_REDIS_MAX_CONNECTIONS=8
+    ARCLI_REDIS_MAX_CONNECTIONS=8 \
+    # This image installs the Crawl4AI package and Chromium below, so it owns
+    # the primary browser crawl path.
+    ARCLI_CRAWL4AI_ENABLED=true
 
 WORKDIR /app
 

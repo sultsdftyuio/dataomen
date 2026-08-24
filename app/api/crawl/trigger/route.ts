@@ -23,6 +23,7 @@ type CrawlJobRow = {
 type CrawlCooldownRow = {
   id: string;
   queued_at: string | null;
+  failure_reason: string | null;
 };
 
 const TriggerSchema = z.object({
@@ -200,14 +201,19 @@ async function findWebsiteCrawlCooldown(
 
   const result = (await supabase
     .from("crawl_jobs")
-    .select("id,queued_at")
+    .select("id,queued_at,failure_reason")
     .eq("tenant_id", tenantId)
     .order("queued_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()) as QueryResult<CrawlCooldownRow>;
+    // A request rejected by the shared burst guard did not run a crawl and
+    // must not burn this tenant's daily scan allowance. Read a short history
+    // so that a just-rejected row can be skipped without an extra round trip.
+    .limit(25)) as QueryResult<CrawlCooldownRow[]>;
 
   if (result.error) throw result.error;
-  const queuedAt = result.data?.queued_at;
+  const latestAdmittedJob = (result.data ?? []).find(
+    (row) => row.failure_reason !== "admission_rejected",
+  );
+  const queuedAt = latestAdmittedJob?.queued_at;
   const queuedTimestamp = queuedAt ? Date.parse(queuedAt) : Number.NaN;
   if (!Number.isFinite(queuedTimestamp)) return null;
 
@@ -520,15 +526,31 @@ export async function POST(request: Request) {
 
     const workerResult = await triggerWorker(request, parsed.data, websiteUrl, job.id);
     if (!workerResult.ok) {
-      await markTriggerFailed(
-        supabase,
-        job.id,
-        parsed.data.tenant_id,
-        workerResult.message,
-      );
+      // The Python admission guard has already recorded a terminal
+      // `admission_rejected` job. Preserve that reason so a retry is allowed
+      // as soon as capacity is free instead of incorrectly starting the
+      // 24-hour website cooldown.
+      if (workerResult.status !== 429) {
+        await markTriggerFailed(
+          supabase,
+          job.id,
+          parsed.data.tenant_id,
+          workerResult.message,
+        );
+      }
       return jsonResponse(
-        { error: workerResult.message, code: "crawler_queue_unavailable" },
-        { status: workerResult.status },
+        {
+          error: workerResult.message,
+          code:
+            workerResult.status === 429
+              ? "crawler_capacity_limited"
+              : "crawler_queue_unavailable",
+        },
+        {
+          status: workerResult.status,
+          headers:
+            workerResult.status === 429 ? { "Retry-After": "60" } : undefined,
+        },
       );
     }
 

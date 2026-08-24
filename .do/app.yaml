@@ -29,6 +29,18 @@ envs:
     scope: RUN_TIME
     type: general
     value: "false"
+  # Admission is enforced by the API before Pass 1, then the dedicated browser
+  # worker consumes this bounded shared queue. During a sudden signup burst,
+  # callers beyond this capacity receive a retryable 429 instead of creating
+  # an hours-long Redis backlog or exhausting AI/browser providers.
+  - key: ARCLI_CRAWL_MAX_QUEUED_JOBS
+    scope: RUN_TIME
+    type: general
+    value: "6"
+  - key: ARCLI_CRAWL_ADMISSION_RETRY_AFTER_SECONDS
+    scope: RUN_TIME
+    type: general
+    value: "60"
   # Public-source data is minimised before storage and removed after this
   # bounded period, including all copied lead-brief and research snapshots.
   - key: ARCLI_PUBLIC_DATA_RETENTION_DAYS
@@ -210,7 +222,25 @@ workers:
       - key: ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS
         scope: RUN_TIME
         type: general
-        value: "300000"
+        value: "120000"
+      # Discovery stays open for at least two minutes, and at most five, while
+      # it waits for three verifier-confirmed items for the review queue.
+      - key: ARCLI_INITIAL_PUBLIC_DISCOVERY_TARGET_READY
+        scope: RUN_TIME
+        type: general
+        value: "3"
+      - key: ARCLI_INITIAL_PUBLIC_DISCOVERY_MIN_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "120"
+      - key: ARCLI_INITIAL_PUBLIC_DISCOVERY_MAX_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "300"
+      - key: ARCLI_INITIAL_PUBLIC_DISCOVERY_POLL_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "15"
       # Arcli's pacing ceiling for verifier calls. OpenAI remains the authority:
       # any lower account/model limit is handled through the existing 429 retry
       # and backoff path.

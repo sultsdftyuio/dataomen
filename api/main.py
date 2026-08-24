@@ -625,6 +625,7 @@ def trigger_crawl(
     The crawl itself must run only inside the Dramatiq worker.
     """
     from api.services.crawling import (
+        CrawlQueueCapacityLimit,
         _database_engine,
         _upsert_service_profile,
         enqueue_crawl_job,
@@ -635,13 +636,32 @@ def trigger_crawl(
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
 
     with _database_engine().begin() as conn:
-        next_available_at = reserve_website_crawl_slot(
+        crawl_slot = reserve_website_crawl_slot(
             conn,
             tenant_id=payload.tenant_id,
             crawl_job_id=job_id,
             website_url=payload.website_url,
             source=payload.source,
         )
+    if isinstance(crawl_slot, CrawlQueueCapacityLimit):
+        logger.warning(
+            "crawl_job_admission_rejected tenant_id=%s job_id=%s website_url=%s max_queued_jobs=%s retry_after_seconds=%s",
+            payload.tenant_id,
+            job_id,
+            payload.website_url,
+            crawl_slot.max_queued_jobs,
+            crawl_slot.retry_after_seconds,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Website crawl capacity is temporarily full. Please try again in "
+                f"about {crawl_slot.retry_after_seconds} seconds."
+            ),
+            headers={"Retry-After": str(crawl_slot.retry_after_seconds)},
+        )
+
+    next_available_at = crawl_slot if isinstance(crawl_slot, str) else None
     if next_available_at:
         logger.info(
             "crawl_job_rate_limited tenant_id=%s job_id=%s website_url=%s next_available_at=%s",

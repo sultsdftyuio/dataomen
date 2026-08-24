@@ -42,3 +42,6 @@ The worker starts deliberately small on a 2 GB App Platform component:
 Before deploying, add the real `FIRECRAWL_API_KEY` to the DigitalOcean app
 secret for the fallback path. Set `ARCLI_CRAWL4AI_ENABLED=false` to immediately
 revert to Firecrawl-first behavior without changing code.
+
+`ARCLI_CRAWL4AI_ENABLED` defaults to `true`. Run crawl jobs only on the
+dedicated browser-worker image, where Crawl4AI and Chromium are installed.

@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
@@ -36,6 +37,10 @@ DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
 DEFAULT_WEBSITE_CRAWL_COOLDOWN_SECONDS = 24 * 60 * 60
+# A small, shared admission queue keeps an unexpected onboarding burst from
+# creating an hours-long browser backlog.  It includes the active browser job.
+DEFAULT_CRAWL_MAX_QUEUED_JOBS = 6
+DEFAULT_CRAWL_ADMISSION_RETRY_AFTER_SECONDS = 60
 # v9 permits genuine demand-acquisition language (for example, leads and sales
 # pipeline) while continuing to reject Arcli's own retrieval mechanics.
 PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v9"
@@ -73,6 +78,14 @@ SERVICE_PROFILE_COLUMNS = {
     "created_at",
     "updated_at",
 }
+
+
+@dataclass(frozen=True)
+class CrawlQueueCapacityLimit:
+    """A fresh crawl could not enter the bounded shared admission queue."""
+
+    max_queued_jobs: int
+    retry_after_seconds: int
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -223,6 +236,120 @@ def _table_exists(conn: Connection, table_name: str) -> bool:
     )
 
 
+def _reserve_crawl_queue_capacity(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    crawl_job_id: str,
+    website_url: str,
+) -> CrawlQueueCapacityLimit | None:
+    """Keep fresh website crawls within a small, globally shared queue.
+
+    The API process performs the fast homepage/profile pass before handing work
+    to Dramatiq.  A worker-only concurrency limit therefore is not sufficient
+    during a signup burst: many new tenants could still use API, model, and
+    provider capacity at once.  Serialising this short database check gives
+    every component the same deterministic queue position.
+
+    Jobs rejected here are retained as terminal ledger entries so a retry can
+    be audited, but their ``failure_reason`` is excluded from the daily crawl
+    cooldown.  They therefore never consume a tenant's daily scan allowance.
+    """
+
+    if not _table_exists(conn, "crawl_jobs"):
+        # The reliability ledger is required in production. Keep old local
+        # environments usable rather than making an untracked local crawl
+        # impossible to run.
+        return None
+
+    max_queued_jobs = _env_int(
+        "ARCLI_CRAWL_MAX_QUEUED_JOBS",
+        DEFAULT_CRAWL_MAX_QUEUED_JOBS,
+    )
+    retry_after_seconds = _env_int(
+        "ARCLI_CRAWL_ADMISSION_RETRY_AFTER_SECONDS",
+        DEFAULT_CRAWL_ADMISSION_RETRY_AFTER_SECONDS,
+    )
+
+    # This is intentionally a transaction-scoped advisory lock. A per-tenant
+    # row lock cannot coordinate a burst across many new tenants, whereas this
+    # lock only covers two inexpensive SQL statements.
+    conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_name))"),
+        {"lock_name": "arcli:crawl-admission-v1"},
+    )
+    queue_position = int(
+        conn.execute(
+            text(
+                """
+                WITH current_job AS (
+                    SELECT id, queued_at
+                      FROM public.crawl_jobs
+                     WHERE id = :crawl_job_id
+                       AND tenant_id = :tenant_id
+                       AND website_url = :website_url
+                       AND status IN ('pending', 'processing')
+                )
+                SELECT COUNT(*)
+                  FROM public.crawl_jobs AS candidate
+                  JOIN current_job
+                    ON candidate.status IN ('pending', 'processing')
+                   AND (candidate.queued_at, candidate.id)
+                       <= (current_job.queued_at, current_job.id)
+                """
+            ),
+            {
+                "crawl_job_id": crawl_job_id,
+                "tenant_id": tenant_id,
+                "website_url": website_url,
+            },
+        ).scalar_one()
+    )
+
+    if queue_position <= max_queued_jobs:
+        logger.info(
+            "crawl_queue_admission_accepted tenant_id=%s crawl_job_id=%s website_url=%s queue_position=%s max_queued_jobs=%s",
+            tenant_id,
+            crawl_job_id,
+            website_url,
+            queue_position,
+            max_queued_jobs,
+        )
+        return None
+
+    _upsert_crawl_job(
+        conn,
+        crawl_job_id=crawl_job_id,
+        tenant_id=tenant_id,
+        website_url=website_url,
+        status="failed",
+        phase="admission_rejected",
+        failure_reason="admission_rejected",
+        error_type="CrawlQueueCapacityExceeded",
+        error_message=(
+            "The shared website-crawl queue reached its bounded admission capacity."
+        ),
+        context={
+            "queue_position": queue_position,
+            "max_queued_jobs": max_queued_jobs,
+            "retry_after_seconds": retry_after_seconds,
+        },
+    )
+    logger.warning(
+        "crawl_queue_admission_rejected tenant_id=%s crawl_job_id=%s website_url=%s queue_position=%s max_queued_jobs=%s retry_after_seconds=%s",
+        tenant_id,
+        crawl_job_id,
+        website_url,
+        queue_position,
+        max_queued_jobs,
+        retry_after_seconds,
+    )
+    return CrawlQueueCapacityLimit(
+        max_queued_jobs=max_queued_jobs,
+        retry_after_seconds=retry_after_seconds,
+    )
+
+
 def reserve_website_crawl_slot(
     conn: Connection,
     *,
@@ -230,7 +357,7 @@ def reserve_website_crawl_slot(
     crawl_job_id: str,
     website_url: str,
     source: str | None = None,
-) -> str | None:
+) -> str | CrawlQueueCapacityLimit | None:
     """Reserve a website crawl while preventing duplicate in-flight work.
 
     A row lock on the tenant makes this atomic across dashboard, onboarding,
@@ -269,8 +396,16 @@ def reserve_website_crawl_slot(
             in CRAWL_JOB_ACTIVE_STATUSES
         ):
             # The Next.js relay has already created this same active ledger
-            # row. Do not clear its broker signal or send a second message.
-            return None
+            # row. Once it has a broker signal, a retry is only a deduplicated
+            # read and must not compete for fresh admission capacity.
+            if _active_crawl_job_has_queue_signal(existing_job):
+                return None
+            return _reserve_crawl_queue_capacity(
+                conn,
+                tenant_id=tenant_id,
+                crawl_job_id=crawl_job_id,
+                website_url=website_url,
+            )
 
         _upsert_crawl_job(
             conn,
@@ -285,17 +420,25 @@ def reserve_website_crawl_slot(
             },
             restart_queue=True,
         )
-        return None
+        return _reserve_crawl_queue_capacity(
+            conn,
+            tenant_id=tenant_id,
+            crawl_job_id=crawl_job_id,
+            website_url=website_url,
+        )
 
     recent = conn.execute(
         text(
             """
             SELECT id,
                    status,
+                   message_id,
+                   failure_reason,
                    queued_at + (:cooldown_seconds * interval '1 second')
                        AS next_available_at
              FROM public.crawl_jobs
              WHERE tenant_id = :tenant_id
+               AND COALESCE(failure_reason, '') <> 'admission_rejected'
                AND queued_at > (
                    CURRENT_TIMESTAMP - (:cooldown_seconds * interval '1 second')
                )
@@ -317,7 +460,14 @@ def reserve_website_crawl_slot(
             str(recent.get("id") or "") == crawl_job_id
             and str(recent.get("status") or "").lower() in CRAWL_JOB_ACTIVE_STATUSES
         ):
-            return None
+            if _active_crawl_job_has_queue_signal(dict(recent)):
+                return None
+            return _reserve_crawl_queue_capacity(
+                conn,
+                tenant_id=tenant_id,
+                crawl_job_id=crawl_job_id,
+                website_url=website_url,
+            )
 
         next_available_at = recent.get("next_available_at")
         if isinstance(next_available_at, datetime):
@@ -343,7 +493,12 @@ def reserve_website_crawl_slot(
         },
         restart_queue=True,
     )
-    return None
+    return _reserve_crawl_queue_capacity(
+        conn,
+        tenant_id=tenant_id,
+        crawl_job_id=crawl_job_id,
+        website_url=website_url,
+    )
 
 
 def _crawl_job_row(

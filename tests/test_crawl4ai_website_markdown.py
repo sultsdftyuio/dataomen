@@ -22,3 +22,9 @@ def test_crawl4ai_can_be_disabled_for_an_instant_firecrawl_rollback(monkeypatch)
 
     monkeypatch.setenv("ARCLI_CRAWL4AI_ENABLED", "true")
     assert crawl4ai_enabled() is True
+
+
+def test_crawl4ai_is_enabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("ARCLI_CRAWL4AI_ENABLED", raising=False)
+
+    assert crawl4ai_enabled() is True
