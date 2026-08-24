@@ -2260,6 +2260,17 @@ function WarmUpState({
   );
 }
 
+function ArcliSignalMark({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative block size-4 shrink-0", className)} aria-hidden="true">
+      <span className="absolute inset-0 rounded-full border-[1.5px]" style={{ borderColor: C.blue }} />
+      <span className="absolute inset-[22%] rounded-full border" style={{ borderColor: C.blue }} />
+      <span className="absolute inset-[43%] rounded-full" style={{ backgroundColor: C.blue }} />
+      <span className="absolute right-0 top-[4%] size-[22%] rounded-full border-2" style={{ borderColor: C.white, backgroundColor: C.blue }} />
+    </span>
+  );
+}
+
 function DiscoverySourceBar({
   serviceProfile,
   status,
@@ -2395,39 +2406,39 @@ function DiscoverySourceBar({
 
   return (
     <section
-      className="grid shrink-0 grid-cols-1 overflow-hidden rounded-2xl border bg-white shadow-sm lg:grid-cols-[minmax(15rem,1fr)_minmax(25rem,1.6fr)_minmax(19rem,1.1fr)]"
+      className="grid shrink-0 grid-cols-1 overflow-hidden rounded-xl border bg-white shadow-sm lg:grid-cols-[15rem_minmax(22rem,1fr)_23rem]"
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
       <div
-        className="relative flex min-w-0 items-center gap-3 overflow-hidden p-4"
+        className="relative flex min-w-0 items-center gap-2.5 overflow-hidden p-3"
         style={{ backgroundColor: C.bluePale }}
       >
         <div
-          className="absolute -right-8 -top-10 size-28 rounded-full"
+          className="absolute -right-8 -top-10 hidden size-28 rounded-full xl:block"
           style={{ backgroundColor: "rgba(59,154,232,0.17)" }}
           aria-hidden="true"
         />
         <div
-          className="relative flex size-10 shrink-0 items-center justify-center rounded-xl border bg-white"
+          className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border bg-white"
           style={{ borderColor: C.blueLight, color: C.blue }}
         >
-          <Radar className="size-5" aria-hidden="true" />
+          <ArcliSignalMark />
         </div>
         <div className="relative min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
             Prospect discovery
           </p>
-          <p className="mt-0.5 truncate text-base font-semibold" style={{ color: C.navy }} title={serviceProfile.websiteUrl ?? undefined}>
+          <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }} title={serviceProfile.websiteUrl ?? undefined}>
             {domain ?? "Website needed"}
           </p>
-          <p className="mt-1 max-w-[18rem] text-[11px] leading-4" style={{ color: C.navySoft }}>
+          <p className="mt-0.5 hidden max-w-[18rem] text-[10px] leading-4 xl:block" style={{ color: C.navySoft }}>
             Your source for public buying signals.
           </p>
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 border-t p-4 lg:border-l lg:border-t-0" style={{ borderColor: C.rule }}>
-        <label htmlFor="dashboard-website-url" className="w-full text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-t p-3 lg:border-l lg:border-t-0" style={{ borderColor: C.rule }}>
+        <label htmlFor="dashboard-website-url" className="sr-only" style={{ color: C.muted }}>
           Website to scan
         </label>
         <input
@@ -2456,17 +2467,17 @@ function DiscoverySourceBar({
               ? "Find new leads"
               : "Save & scan"}
         </Button>
-        <p className="w-full text-[11px] leading-4" style={{ color: C.muted }}>
+        <p className="hidden w-full text-[10px] leading-4 2xl:block" style={{ color: C.muted }}>
           Arcli filters fresh conversations through your matching brief.
         </p>
       </div>
-      <div className="min-w-0 border-t p-4 lg:border-l lg:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
-        <div className="flex flex-col items-start">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+      <div className="min-w-0 border-t p-3 lg:border-l lg:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
             Discovery health
           </p>
         <span
-          className="mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+          className="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold"
           style={{
             borderColor: scanTone.border,
             backgroundColor: scanTone.background,
@@ -2480,18 +2491,19 @@ function DiscoverySourceBar({
             type="button"
             size="xs"
             variant="outline"
-            className="mt-3 h-7 px-2.5 text-[11px]"
+            className="h-7 px-2.5 text-[10px]"
             style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
           >
             <Link href="/dashboard/brief">Tune matching brief</Link>
           </Button>
         </div>
-        <p className="mt-3 text-[11px] leading-4" style={{ color: C.navySoft }}>
+        <p className="mt-2 text-[10px] leading-4" style={{ color: C.navySoft }}>
           {scanInsight}
         </p>
       </div>
-      <div className="col-span-full flex items-start gap-2 border-t px-4 py-2.5" style={{ borderColor: C.rule }}>
-        <Target className="mt-0.5 size-3.5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
+      {message || isCoolingDown ? (
+      <div className="col-span-full flex items-start gap-2 border-t px-3 py-2" style={{ borderColor: C.rule }}>
+        <ArcliSignalMark className="mt-0.5 size-3.5" />
         {message ? (
           <p
             className="text-[11px] leading-4"
@@ -2504,12 +2516,9 @@ function DiscoverySourceBar({
           <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
             Fresh website checks are available once every 24 hours. Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}.
           </p>
-        ) : (
-          <p className="text-[11px] leading-4" style={{ color: C.muted }}>
-            Every check finds fresh buyer conversations, qualifies them against your brief, and keeps duplicate results out.
-          </p>
-        )}
+        ) : null}
       </div>
+      ) : null}
     </section>
   );
 }
@@ -2872,7 +2881,7 @@ export default function ProspectDashboardClient({
             style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
             aria-hidden="true"
           >
-            <Radar className="size-4" />
+            <ArcliSignalMark />
           </span>
           <div className="min-w-0">
             <h1 className="pfd text-xl leading-none sm:text-2xl" style={{ color: C.navy }}>
