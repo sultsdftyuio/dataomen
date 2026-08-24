@@ -841,6 +841,10 @@ export async function createWatchlist(
     result.data.service_profile_id,
   );
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/watchlists");
+  if (!triggerResult.ok) {
+    return actionOk(`Buyer group saved. ${triggerResult.message}`);
+  }
   return triggerResult;
 }
 
@@ -867,6 +871,7 @@ export async function runWatchlistDiscovery(
     watchlist.data.service_profile_id,
   );
   if (result.ok) revalidatePath("/dashboard");
+  if (result.ok) revalidatePath("/dashboard/watchlists");
   return result;
 }
 
@@ -890,6 +895,7 @@ export async function setWatchlistActive(
     return actionError("Could not update this Watchlist.");
   }
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/watchlists");
   return actionOk(isActive ? "Watchlist resumed." : "Watchlist paused.");
 }
 

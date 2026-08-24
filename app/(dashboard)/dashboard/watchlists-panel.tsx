@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   BookOpen,
@@ -240,25 +241,8 @@ function WatchlistForm({
   return (
     <form
       onSubmit={submit}
-      className="space-y-4 rounded-xl border p-4 shadow-sm"
-      style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+      className="space-y-4"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="pfd text-lg leading-none" style={{ color: C.navy }}>
-            Start a new watch
-          </p>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-            Begin with the audience and situation worth paying attention to.
-          </p>
-        </div>
-        <span
-          className="rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide"
-          style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
-        >
-          Step 1 of 3
-        </span>
-      </div>
       <section className="rounded-lg border bg-white p-3" style={{ borderColor: C.rule }}>
         <p className="pfd text-base leading-none" style={{ color: C.navy }}>
           1. Define the audience
@@ -360,6 +344,290 @@ function WatchlistForm({
         <Search className="size-3.5" />
         {pending || isSubmitting ? "Saving…" : "Save buyer group & start scan"}
       </Button>
+    </form>
+  );
+}
+
+function FirstBuyerGroupSetup({
+  onCreate,
+}: {
+  onCreate: WatchlistAction;
+}) {
+  const [hasStarted, setHasStarted] = useState(false);
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState("");
+  const [targetBuyer, setTargetBuyer] = useState("");
+  const [problemToSolve, setProblemToSolve] = useState("");
+  const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleSource = (source: string) => {
+    setSources((current) =>
+      current.includes(source)
+        ? current.filter((value) => value !== source)
+        : [...current, source],
+    );
+  };
+
+  const advance = () => {
+    if (step === 1) {
+      if (!name.trim()) {
+        setError("Give this audience a name so it is easy to recognise later.");
+        return;
+      }
+      if (targetBuyer.trim().length < 3) {
+        setError("Describe the kind of buyer you want to find.");
+        return;
+      }
+    }
+
+    if (step === 2 && problemToSolve.trim().length < 3) {
+      setError("Describe the problem or outcome that should trigger a signal.");
+      return;
+    }
+
+    setError(null);
+    setStep((current) => Math.min(current + 1, 3));
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (sources.length === 0) {
+      setError("Keep at least one public source enabled for this group.");
+      return;
+    }
+
+    setError(null);
+    setIsSaving(true);
+    try {
+      const result = await onCreate({
+        name,
+        targetBuyer,
+        problemToSolve,
+        includeTerms: [],
+        excludeTerms: [],
+        sourcePreferences: sources,
+        suggestedPlaces: [],
+      });
+      if (!result.ok) setError(result.message);
+    } catch {
+      setError("Could not create this buyer group. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!hasStarted) {
+    return (
+      <section
+        aria-labelledby="first-buyer-group-heading"
+        className="overflow-hidden rounded-xl border bg-white"
+        style={{ borderColor: C.blueLight, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
+      >
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="p-5 sm:p-7">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+              First buyer group
+            </p>
+            <h2 id="first-buyer-group-heading" className="pfd mt-2 text-2xl leading-tight" style={{ color: C.navy }}>
+              Tell Arcli who is worth watching next.
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+              A buyer group focuses discovery on one audience and one problem, so the next scan finds conversations that are useful to act on.
+            </p>
+            <Button
+              type="button"
+              className="mt-5"
+              onClick={() => setHasStarted(true)}
+              style={{ backgroundColor: C.blue, color: C.white }}
+            >
+              Create a buyer group
+              <ArrowRight className="size-4" />
+            </Button>
+          </div>
+          <div className="border-t p-5 lg:border-l lg:border-t-0" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
+              Three quick questions
+            </p>
+            <ol className="mt-4 space-y-4">
+              {[
+                ["1", "Who are you looking for?"],
+                ["2", "What are they trying to solve?"],
+                ["3", "Where should discovery look?"],
+              ].map(([number, label]) => (
+                <li key={number} className="flex items-start gap-3 text-sm" style={{ color: C.navySoft }}>
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold" style={{ backgroundColor: C.blueTint, color: C.blue }}>
+                    {number}
+                  </span>
+                  <span className="pt-0.5">{label}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="overflow-hidden rounded-xl border bg-white"
+      style={{ borderColor: C.blueLight, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
+    >
+      <div className="border-b px-5 py-4 sm:px-6" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+              Create your first buyer group
+            </p>
+            <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
+              Answer the essentials now. You can refine the signal after the first scan.
+            </p>
+          </div>
+          <span className="rounded-full border px-2.5 py-1 text-[10px] font-bold" style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}>
+            Step {step} of 3
+          </span>
+        </div>
+        <ol className="mt-4 grid grid-cols-3 gap-2" aria-label="Buyer group setup progress">
+          {["Audience", "Problem", "Coverage"].map((label, index) => {
+            const isCurrent = index + 1 === step;
+            const isComplete = index + 1 < step;
+            return (
+              <li
+                key={label}
+                className="flex items-center gap-2 border-t pt-2 text-[10px] font-semibold"
+                style={{ borderColor: isCurrent || isComplete ? C.blue : C.rule, color: isCurrent ? C.blue : isComplete ? C.green : C.muted }}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center rounded-full text-[9px]" style={{ backgroundColor: isComplete ? C.greenPale : isCurrent ? C.blueTint : C.offWhite }}>
+                  {isComplete ? "OK" : index + 1}
+                </span>
+                <span className="truncate">{label}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
+      <div className="p-5 sm:p-6">
+        {step === 1 ? (
+          <section aria-labelledby="buyer-group-audience-heading" className="max-w-2xl">
+            <h2 id="buyer-group-audience-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
+              Start with an audience.
+            </h2>
+            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+              Be specific enough that you would recognise the right conversation when it appears.
+            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-semibold" style={{ color: C.navy }}>
+                Group name
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  maxLength={120}
+                  className="h-10 bg-white"
+                  placeholder="Early-stage SaaS founders"
+                  autoFocus
+                />
+              </label>
+              <label className="space-y-1.5 text-xs font-semibold" style={{ color: C.navy }}>
+                Who do you want to find?
+                <Input
+                  value={targetBuyer}
+                  onChange={(event) => setTargetBuyer(event.target.value)}
+                  maxLength={500}
+                  className="h-10 bg-white"
+                  placeholder="Founders with small sales teams"
+                />
+              </label>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 2 ? (
+          <section aria-labelledby="buyer-group-problem-heading" className="max-w-2xl">
+            <h2 id="buyer-group-problem-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
+              What situation should trigger a signal?
+            </h2>
+            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+              Describe the problem they are experiencing or the outcome they are actively seeking.
+            </p>
+            <label className="mt-5 block space-y-1.5 text-xs font-semibold" style={{ color: C.navy }}>
+              Their problem or desired outcome
+              <Textarea
+                value={problemToSolve}
+                onChange={(event) => setProblemToSolve(event.target.value)}
+                maxLength={700}
+                className="min-h-28 bg-white"
+                placeholder="They need a dependable way to get more trial users without doing every outreach task by hand."
+                autoFocus
+              />
+            </label>
+          </section>
+        ) : null}
+
+        {step === 3 ? (
+          <section aria-labelledby="buyer-group-coverage-heading">
+            <h2 id="buyer-group-coverage-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
+              Start with the sources that fit this audience.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+              All public sources are selected to begin with. Keep the ones where this audience is likely to ask for help.
+            </p>
+            <fieldset className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <legend className="sr-only">Choose public sources</legend>
+              {SOURCE_OPTIONS.map((source) => (
+                <label
+                  key={source.value}
+                  className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left text-xs transition-colors"
+                  style={{
+                    borderColor: sources.includes(source.value) ? C.blueLight : C.rule,
+                    backgroundColor: sources.includes(source.value) ? C.blueTint : C.white,
+                  }}
+                >
+                  <Checkbox checked={sources.includes(source.value)} onCheckedChange={() => toggleSource(source.value)} />
+                  <span>
+                    <span className="block font-semibold" style={{ color: C.navy }}>{source.label}</span>
+                    <span className="mt-0.5 block leading-4" style={{ color: C.muted }}>{source.detail}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          </section>
+        ) : null}
+
+        {error ? (
+          <p role="alert" className="mt-5 text-xs font-medium" style={{ color: C.red }}>
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: C.rule }}>
+          <div>
+            {step > 1 ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => { setError(null); setStep((current) => current - 1); }} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
+                Back
+              </Button>
+            ) : (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setHasStarted(false)} style={{ color: C.navySoft }}>
+                Not now
+              </Button>
+            )}
+          </div>
+          {step < 3 ? (
+            <Button type="button" size="sm" onClick={advance} style={{ backgroundColor: C.blue, color: C.white }}>
+              Continue
+              <ArrowRight className="size-3.5" />
+            </Button>
+          ) : (
+            <Button type="submit" size="sm" disabled={isSaving || sources.length === 0} style={{ backgroundColor: C.blue, color: C.white }}>
+              <Search className="size-3.5" />
+              {isSaving ? "Creating group..." : "Create group and start scan"}
+            </Button>
+          )}
+        </div>
+      </div>
     </form>
   );
 }
@@ -598,6 +866,49 @@ function BuyerGroupsGuide() {
   );
 }
 
+function NewBuyerGroupSheet({
+  onCreate,
+  pending,
+}: {
+  onCreate: WatchlistAction;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const create = async (input: WatchlistCreateInput) => {
+    const result = await onCreate(input);
+    if (result.ok) setOpen(false);
+    return result;
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button type="button" size="sm" className="h-8 px-2.5 text-xs" style={{ backgroundColor: C.blue, color: C.white }}>
+          <Plus className="size-3.5" />
+          Create buyer group
+        </Button>
+      </SheetTrigger>
+      <SheetContent
+        className="gap-0 overflow-y-auto p-0 sm:max-w-xl"
+        style={{ backgroundColor: C.white, borderColor: C.rule }}
+      >
+        <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
+          <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>
+            Create buyer group
+          </SheetTitle>
+          <SheetDescription style={{ color: C.navySoft }}>
+            Start with one audience and one real problem. The optional details can sharpen the scan when needed.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="p-4 sm:p-5">
+          <WatchlistForm onCreate={create} pending={pending} />
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 export default function WatchlistsPanel({
   watchlists,
   results,
@@ -611,7 +922,7 @@ export default function WatchlistsPanel({
   runWatchlistDiscovery: (watchlistId: string) => Promise<ProspectActionResult>;
   setWatchlistActive: (watchlistId: string, isActive: boolean) => Promise<ProspectActionResult>;
 }) {
-  const [showForm, setShowForm] = useState(watchlists.length === 0);
+  const router = useRouter();
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(
     watchlists[0]?.id ?? null,
   );
@@ -631,7 +942,9 @@ export default function WatchlistsPanel({
   const create = async (input: WatchlistCreateInput) => {
     const result = await createWatchlist(input);
     setNotice(result.message);
-    if (result.ok) setShowForm(false);
+    if (result.ok) {
+      router.refresh();
+    }
     return result;
   };
 
@@ -663,6 +976,19 @@ export default function WatchlistsPanel({
     });
   };
 
+  if (watchlists.length === 0) {
+    return (
+      <section id="watchlists" className="space-y-3">
+        <FirstBuyerGroupSetup onCreate={create} />
+        {notice ? (
+          <p role="status" className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: C.rule, backgroundColor: C.white, color: C.navySoft }}>
+            {notice}
+          </p>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section id="watchlists" className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -676,13 +1002,9 @@ export default function WatchlistsPanel({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <BuyerGroupsGuide />
-          <Button type="button" size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => setShowForm((current) => !current)} style={{ borderColor: C.blueLight, color: C.blue }}>
-            <Plus className="size-3.5" />
-            {showForm ? "Close form" : "New buyer group"}
-          </Button>
+          <NewBuyerGroupSheet onCreate={create} pending={isPending} />
         </div>
       </div>
-      {showForm ? <WatchlistForm onCreate={create} pending={isPending} /> : null}
       {notice ? <p role="status" className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: C.rule, backgroundColor: C.white, color: C.navySoft }}>{notice}</p> : null}
       <div className="grid gap-4 xl:min-h-0 xl:grid-cols-[minmax(300px,0.72fr)_minmax(520px,1.45fr)]">
         <section

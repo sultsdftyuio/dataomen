@@ -64,28 +64,46 @@ export default async function WatchlistsPage() {
   ).size;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
+    <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col gap-3 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Focused search"
         title="Buyer groups"
-        description="Watch the audiences that matter most, one real problem at a time."
+        description={
+          watchlists.length === 0
+            ? "Create your first buyer group to focus discovery on one audience and the problem they are trying to solve."
+            : "Watch the audiences that matter most, one real problem at a time."
+        }
         icon={UsersRound}
         visual={
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
-              Your coverage
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
-                <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{activeWatchlistCount}</p>
-                <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Active groups</p>
-              </div>
-              <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
-                <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{sourceCount}</p>
-                <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Sources picked</p>
+          watchlists.length === 0 ? (
+            <div className="border-l pl-4" style={{ borderColor: C.blueLight }}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
+                First step
+              </p>
+              <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
+                Define one audience and one problem.
+              </p>
+              <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                Arcli will start discovery as soon as the group is created.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+                Your coverage
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
+                  <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{activeWatchlistCount}</p>
+                  <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Active groups</p>
+                </div>
+                <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
+                  <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{sourceCount}</p>
+                  <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Sources picked</p>
+                </div>
               </div>
             </div>
-          </div>
+          )
         }
       />
 

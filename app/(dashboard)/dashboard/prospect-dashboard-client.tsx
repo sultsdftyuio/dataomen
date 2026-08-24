@@ -1247,7 +1247,7 @@ function sourceProgressCopy(source: BuyerDemandReportView["sourceProgress"][numb
       ? `${count} ${postLabel} found so far`
       : "Checking this source";
   }
-  if (source.state === "found") return `${count ?? 0} ${postLabel} found`;
+  if (source.state === "found") return `${count ?? 0} ${postLabel} collected`;
   if (source.state === "partial") return `${count ?? 0} ${postLabel} found · partial coverage`;
   if (source.state === "no_results") return "No relevant posts this scan";
   return "This source was unavailable";
@@ -1287,21 +1287,54 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
       : isFailed
         ? "Discovery scan needs attention"
         : "What this scan found";
+  const sourceFailureCount = summary.sourceFailures ?? 0;
+  const sourcesWithCandidates = displayedSourceProgress
+    .filter(
+      (source) =>
+        (source.state === "found" || source.state === "partial") &&
+        (source.plausibleCount ?? 0) > 0,
+    )
+    .sort((a, b) => (b.plausibleCount ?? 0) - (a.plausibleCount ?? 0));
+  const candidateConversationCount = sourcesWithCandidates.reduce(
+    (total, source) => total + (source.plausibleCount ?? 0),
+    0,
+  );
+  const unavailableSourceNames = displayedSourceProgress
+    .filter((source) => source.state === "unavailable")
+    .map((source) => sourceDisplayName(source.source));
+  const formatSourceList = (sources: string[]) => {
+    if (sources.length < 2) return sources[0] ?? "available sources";
+    if (sources.length === 2) return `${sources[0]} and ${sources[1]}`;
+    return `${sources.slice(0, -1).join(", ")}, and ${sources.at(-1)}`;
+  };
+  const candidateSourceNames = sourcesWithCandidates.map((source) =>
+    sourceDisplayName(source.source),
+  );
+  const discoveryFinding =
+    candidateConversationCount > 0
+      ? `${candidateConversationCount} candidate conversation${candidateConversationCount === 1 ? "" : "s"} came from ${formatSourceList(candidateSourceNames)}.`
+      : "The completed sources did not surface any candidate conversations for this brief.";
+  const coverageNote =
+    unavailableSourceNames.length > 0
+      ? `${formatSourceList(unavailableSourceNames)} ${unavailableSourceNames.length === 1 ? "was" : "were"} unavailable.`
+      : sourceFailureCount > 0
+        ? `${sourceFailureCount} source${sourceFailureCount === 1 ? " was" : "s were"} unavailable.`
+        : null;
+  const compactStats = [
+    candidateSourceNames.length > 0
+      ? `${candidateSourceNames.length} source${candidateSourceNames.length === 1 ? "" : "s"} with candidates`
+      : null,
+    coverageNote,
+  ].filter((value): value is string => Boolean(value));
   const detail = isRunning
     ? "Each source reports here as it finishes. New posts are checked before they appear as potential buyers or leads."
     : isPartial
-      ? "Some sources were unavailable, but completed sources still produced usable discovery results."
+      ? `${discoveryFinding} ${coverageNote ?? "Completed sources still produced usable discovery results."}`
       : isFailed
         ? "This discovery scan could not complete. Check the source details below before trying again."
         : summary.verifierPending
           ? "Source collection is complete. The posts below are still being checked for real buyer problems."
-          : "These are source results, not lead counts. A post reaches your desk only after it is checked against your brief.";
-  const sourceFailureCount = summary.sourceFailures ?? 0;
-  const compactStats = [
-    summary.totalHits !== null ? `${summary.totalHits} collected` : null,
-    summary.plausibleHits !== null ? `${summary.plausibleHits} reviewed` : null,
-    summary.sourceFailures && summary.sourceFailures > 0 ? `${summary.sourceFailures} unavailable` : null,
-  ].filter((value): value is string => Boolean(value));
+          : `${discoveryFinding} These are discovery candidates, not lead counts.`;
 
   return (
     <Card
@@ -1353,32 +1386,16 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
           <div className="px-4 py-4 sm:px-5 lg:px-6">
           {isPartial ? (
             <div
-              className="mb-4 grid gap-3 rounded-lg border px-3.5 py-3 text-xs leading-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+              className="mb-4 flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-xs leading-5"
               role="status"
               style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.navySoft }}
             >
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" style={{ color: C.amber }} />
-                <div>
-                  <p className="font-semibold" style={{ color: C.navy }}>Partial source coverage</p>
-                  <p className="mt-0.5">
-                    {sourceFailureCount > 0
-                      ? `${sourceFailureCount} source${sourceFailureCount === 1 ? " was" : "s were"} unavailable. Results from the other sources are shown below.`
-                      : "Coverage was partial. Results from the available sources are shown below."}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 border-t pt-2.5 text-right lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" style={{ borderColor: C.amber }}>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.amber }}>Unavailable</p>
-                  <p className="text-lg font-semibold leading-5" style={{ color: C.navy }}>{sourceFailureCount}</p>
-                </div>
-                {summary.totalHits !== null ? (
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.amber }}>Collected</p>
-                    <p className="text-lg font-semibold leading-5" style={{ color: C.navy }}>{summary.totalHits}</p>
-                  </div>
-                ) : null}
+              <AlertCircle className="mt-0.5 size-4 shrink-0" style={{ color: C.amber }} />
+              <div>
+                <p className="font-semibold" style={{ color: C.navy }}>Coverage note</p>
+                <p className="mt-0.5">
+                  {coverageNote ?? "Coverage was partial. The available source results are shown below."}
+                </p>
               </div>
             </div>
           ) : null}
@@ -1399,7 +1416,7 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
                     <p className="mt-1 text-xs font-medium" style={{ color: tone.color }}>{sourceProgressCopy(source)}</p>
                     {isFound && source.plausibleCount !== null ? (
                       <p className="mt-1 text-[10px] leading-4" style={{ color: C.navySoft }}>
-                        {source.plausibleCount} worth checking against your brief
+                        {source.plausibleCount} candidate conversation{source.plausibleCount === 1 ? "" : "s"}
                         {source.newPostCount !== null && source.newPostCount > 0 ? ` · ${source.newPostCount} new` : ""}
                       </p>
                     ) : null}
@@ -2875,17 +2892,9 @@ export default function ProspectDashboardClient({
         ) : null}
       </header>
 
-      {dashboardView === "overview" ? (
-        <section
-          aria-label="Discovery controls"
-          className="mx-auto w-full max-w-[1800px] [&>section]:rounded-xl [&>section]:shadow-sm [&_button]:h-9 [&_button]:text-xs [&_input]:h-10 [&_input]:text-sm"
-        >
-          <DiscoverySourceBar
-            serviceProfile={serviceProfile}
-            status={status}
-            websiteCrawlCooldown={websiteCrawlCooldown}
-            discoveryStatus={buyerDemandReport?.status ?? null}
-          />
+      {dashboardView === "overview" && buyerDemandReport ? (
+        <section aria-label="Discovery findings" className="mx-auto w-full max-w-[1800px]">
+          <DiscoveryScanReport report={buyerDemandReport} />
         </section>
       ) : null}
 
@@ -3070,7 +3079,12 @@ export default function ProspectDashboardClient({
                   isRefreshing={isRefreshPending}
                   onRefresh={refreshDashboard}
                 />
-                {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} /> : null}
+                <DiscoverySourceBar
+                  serviceProfile={serviceProfile}
+                  status={status}
+                  websiteCrawlCooldown={websiteCrawlCooldown}
+                  discoveryStatus={buyerDemandReport?.status ?? null}
+                />
               </div>
             </details>
           </section>
