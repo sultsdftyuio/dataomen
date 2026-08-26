@@ -35,6 +35,7 @@ import { markLeadAsQualified } from "@/app/actions/leads";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
+import { StartingDiscoveryScreen } from "@/components/discovery/starting-discovery-screen";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
 import {
   FEEDBACK_OPTIONS,
@@ -2400,6 +2401,7 @@ function DiscoverySourceBar({
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
+      {isSubmitting ? <StartingDiscoveryScreen /> : null}
       <div
         className="relative flex min-w-0 items-center gap-2.5 overflow-hidden p-3"
         style={{ backgroundColor: C.bluePale }}
