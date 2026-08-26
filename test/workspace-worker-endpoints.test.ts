@@ -34,3 +34,16 @@ test("keeps explicit worker routes first and retains reachable fallback targets"
     ],
   );
 });
+
+test("uses the frontend backend configuration for trusted worker handoffs", () => {
+  assert.deepEqual(
+    embeddingTriggerEndpoints({
+      BACKEND_API_URL: "https://api.example.com/api/",
+      NEXT_PUBLIC_API_URL: "https://public-api.example.com",
+    }),
+    [
+      "https://api.example.com/api/service-profile/embed/trigger",
+      "https://public-api.example.com/api/service-profile/embed/trigger",
+    ],
+  );
+});

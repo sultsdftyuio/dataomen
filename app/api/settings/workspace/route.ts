@@ -74,6 +74,11 @@ function backendEndpoints(
     environment.ARCLI_WORKER_API_URL,
     environment.PYTHON_BACKEND_URL,
     environment.INTERNAL_API_URL,
+    // The frontend rewrite already uses these names to reach FastAPI. Include
+    // them here as well: server-to-server worker handoffs do not pass through
+    // Next.js rewrites, so they need to resolve the backend independently.
+    environment.BACKEND_API_URL,
+    environment.NEXT_PUBLIC_API_URL,
   ].map((baseUrl) => (baseUrl ? joinBackendPath(baseUrl, path) : null));
 }
 
@@ -171,6 +176,7 @@ async function postCrawlTrigger(
   }
 
   const deadline = Date.now() + 5000;
+  let lastFailureReason: string | null = null;
 
   for (const endpoint of endpoints) {
     const remainingMs = deadline - Date.now();
@@ -206,11 +212,11 @@ async function postCrawlTrigger(
           status: response.status,
           body: reason,
         });
-        return {
-          accepted: false,
-          reason:
-            reason ?? `the crawl worker returned HTTP ${response.status}`,
-        };
+        lastFailureReason =
+          reason ?? `the crawl worker returned HTTP ${response.status}`;
+        // Explicit routes take priority, but a stale deployment URL should
+        // not prevent a configured backend fallback from accepting the job.
+        continue;
       }
 
       console.info("[WORKSPACE_CRAWL_TRIGGERED]", {
@@ -233,7 +239,10 @@ async function postCrawlTrigger(
     }
   }
 
-  return { accepted: false, reason: "the crawl worker could not be reached" };
+  return {
+    accepted: false,
+    reason: lastFailureReason ?? "the crawl worker could not be reached",
+  };
 }
 
 async function postEmbeddingTrigger(
@@ -267,6 +276,7 @@ async function postEmbeddingTrigger(
   }
 
   const deadline = Date.now() + 5000;
+  let lastFailureReason: string | null = null;
 
   for (const endpoint of endpoints) {
     const remainingMs = deadline - Date.now();
@@ -292,19 +302,20 @@ async function postEmbeddingTrigger(
       });
 
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
+        const reason = await triggerFailureReason(response);
         console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
           event: "workspace_profile_embedding_trigger_failed",
           tenant_id: tenantId,
           service_profile_id: serviceProfileId,
           endpoint,
           status: response.status,
-          body: body.slice(0, 500),
+          body: reason,
         });
-        return {
-          accepted: false,
-          reason: `the lead-discovery worker returned HTTP ${response.status}`,
-        };
+        lastFailureReason =
+          reason ?? `the lead-discovery worker returned HTTP ${response.status}`;
+        // Try the remaining explicitly configured and backend-derived
+        // endpoints before reporting a saved-but-unstarted scan.
+        continue;
       }
 
       console.info("[WORKSPACE_PROFILE_EMBEDDING_TRIGGERED]", {
@@ -329,7 +340,8 @@ async function postEmbeddingTrigger(
 
   return {
     accepted: false,
-    reason: "the lead-discovery worker could not be reached",
+    reason:
+      lastFailureReason ?? "the lead-discovery worker could not be reached",
   };
 }
 

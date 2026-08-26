@@ -36,6 +36,15 @@ ARCLI_PROFILE_EMBEDDING_TRIGGER_URL=https://api.example.com/api/service-profile/
 INTERNAL_WORKER_SECRET=<the same value configured on the Python API>
 ```
 
+For the Vercel frontend, point `ARCLI_WORKER_API_URL` at the **FastAPI
+service** (for example, `https://api.arcli.tech`), not at the `arcli-worker`
+or `crawl4ai-worker` processes. Those processes consume Redis queues and do
+not expose the trigger HTTP routes. `BACKEND_API_URL` and
+`NEXT_PUBLIC_API_URL` are also accepted as fallbacks so the trusted handoff
+uses the same backend setting as the frontend rewrite. Set the same
+`INTERNAL_WORKER_SECRET` in both Vercel and DigitalOcean, then redeploy the
+Next.js frontend after changing either value.
+
 Saving a website or matching brief now reports an explicit warning when that
 handoff is not accepted. Treat that warning as a deployment issue: settings
 were saved, but no discovery work was queued.
