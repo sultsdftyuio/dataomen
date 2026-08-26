@@ -15,6 +15,7 @@ test("uses worker API settings for the crawl trigger and avoids a doubled api pa
     [
       "https://worker.example.com/api/crawl/trigger",
       "https://fallback.example.com/api/crawl/trigger",
+      "https://arcli-s2mti.ondigitalocean.app/api/crawl/trigger",
     ],
   );
 });
@@ -31,6 +32,7 @@ test("keeps explicit worker routes first and retains reachable fallback targets"
       "https://preferred.example.com/api/service-profile/embed/trigger",
       "https://worker.example.com/api/service-profile/embed/trigger",
       "https://legacy.example.com/api/service-profile/embed/trigger",
+      "https://arcli-s2mti.ondigitalocean.app/api/service-profile/embed/trigger",
     ],
   );
 });
@@ -44,6 +46,7 @@ test("uses the frontend backend configuration for trusted worker handoffs", () =
     [
       "https://api.example.com/api/service-profile/embed/trigger",
       "https://public-api.example.com/api/service-profile/embed/trigger",
+      "https://arcli-s2mti.ondigitalocean.app/api/service-profile/embed/trigger",
     ],
   );
 });

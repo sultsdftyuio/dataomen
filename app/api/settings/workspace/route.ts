@@ -25,6 +25,12 @@ type TriggerResult = {
 
 type WorkerEndpointEnvironment = Record<string, string | undefined>;
 
+// Keep trusted server handoffs aligned with the fallback that fronts ordinary
+// `/api` requests in `next.config.mjs`. It is tried last, after any deployment-
+// specific endpoint, so a stale environment variable cannot strand a crawl.
+const DEPLOYED_API_FALLBACK_URL = "https://arcli-s2mti.ondigitalocean.app";
+const WORKER_HANDOFF_TIMEOUT_MS = 5_000;
+
 async function triggerFailureReason(response: Response) {
   const body = await response.text().catch(() => "");
   if (!body) return null;
@@ -79,7 +85,22 @@ function backendEndpoints(
     // Next.js rewrites, so they need to resolve the backend independently.
     environment.BACKEND_API_URL,
     environment.NEXT_PUBLIC_API_URL,
+    DEPLOYED_API_FALLBACK_URL,
   ].map((baseUrl) => (baseUrl ? joinBackendPath(baseUrl, path) : null));
+}
+
+function handoffAttemptTimeout(
+  deadline: number,
+  remainingEndpoints: number,
+) {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) return 0;
+
+  // Leave time for the next target. A network timeout against a stale host
+  // must not prevent the known-good API fallback from receiving the job.
+  return remainingEndpoints === 1
+    ? remainingMs
+    : Math.min(2_500, Math.max(750, Math.ceil(remainingMs / remainingEndpoints)));
 }
 
 export function crawlTriggerEndpoints(
@@ -175,15 +196,15 @@ async function postCrawlTrigger(
     };
   }
 
-  const deadline = Date.now() + 5000;
+  const deadline = Date.now() + WORKER_HANDOFF_TIMEOUT_MS;
   let lastFailureReason: string | null = null;
 
-  for (const endpoint of endpoints) {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) break;
+  for (const [index, endpoint] of endpoints.entries()) {
+    const timeoutMs = handoffAttemptTimeout(deadline, endpoints.length - index);
+    if (timeoutMs <= 0) break;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), remainingMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(endpoint, {
@@ -275,15 +296,15 @@ async function postEmbeddingTrigger(
     };
   }
 
-  const deadline = Date.now() + 5000;
+  const deadline = Date.now() + WORKER_HANDOFF_TIMEOUT_MS;
   let lastFailureReason: string | null = null;
 
-  for (const endpoint of endpoints) {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) break;
+  for (const [index, endpoint] of endpoints.entries()) {
+    const timeoutMs = handoffAttemptTimeout(deadline, endpoints.length - index);
+    if (timeoutMs <= 0) break;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), remainingMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(endpoint, {
