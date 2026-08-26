@@ -142,6 +142,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       isProTier: entitlements.isPro,
       isCanceling: entitlements.isCanceling,
       currentPeriodEnd: entitlements.currentPeriodEnd,
+      trialEndsAt: entitlements.trialEndsAt,
       workspaceName: settings.workspace.companyName || "Workspace",
       entitlements,
       qualifiedLeadUsage: {

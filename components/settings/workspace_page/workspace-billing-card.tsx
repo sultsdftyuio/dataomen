@@ -3,7 +3,16 @@
 
 import React, { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, CheckCircle2, LockKeyhole, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, CreditCard, LockKeyhole, XCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
 import {
   upgradeToProPlan,
@@ -27,6 +36,7 @@ export interface WorkspaceBillingCardProps {
     isProTier?: boolean;
     isCanceling?: boolean;
     currentPeriodEnd?: string | null;
+    trialEndsAt?: string | null;
     workspaceName?: string;
     entitlements?: WorkspaceEntitlements;
     qualifiedLeadUsage?: {
@@ -105,13 +115,15 @@ export default function WorkspaceBillingCard({
   const router = useRouter();
   const [isBillingPending, startBillingTransition] = useTransition();
   const [pendingAction, setPendingAction] = useState<PendingBillingAction>(null);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const planStatus = planData.planStatus ?? "free";
   const planName = planData.planName ?? "Free Access";
   const priceText = planData.priceText ?? "$35/month";
   const isCanceling = planData.isCanceling ?? planStatus === "canceling";
   const formattedPeriodEnd = formatBillingDate(planData.currentPeriodEnd);
+  const formattedTrialEnd = formatBillingDate(planData.trialEndsAt);
   const activeUntilText = `Active until ${formattedPeriodEnd ?? "the end of the current billing period"}`;
-  const amountDueText = formatAmountDue(
+  const nextChargeText = formatAmountDue(
     planData.amountDueCents ?? 3500,
     planData.currency ?? "USD",
     planData.currentPeriodEnd
@@ -230,26 +242,21 @@ export default function WorkspaceBillingCard({
     });
   };
 
-  const handleCancelPlan = () => {
-    const confirmed = window.confirm(
-      "Cancel your Pro plan at the end of the current billing period? Pro features will stay open until then."
-    );
-
-    if (!confirmed) return;
-
+  const confirmCancelPlan = () => {
     setPendingAction("cancel");
     startBillingTransition(async () => {
       try {
         const result = await cancelProPlan();
+        const accessEnd = formatBillingDate(result.currentPeriodEnd);
 
         toast({
           title: result.status === "already_canceled" ? "Cancellation Already Scheduled" : "Plan Cancellation Scheduled",
-          description:
-            result.currentPeriodEnd
-              ? "Your Pro access remains open until the current billing period ends."
-              : "Your Pro access remains open until the current billing period ends.",
+          description: accessEnd
+            ? `Your Pro access remains available through ${accessEnd}.`
+            : "Your Pro access remains open until the current billing period ends.",
         });
 
+        setIsCancelDialogOpen(false);
         router.refresh();
       } catch (error: any) {
         toast({
@@ -376,7 +383,7 @@ export default function WorkspaceBillingCard({
             {planDescription}
           </div>
           <div style={{ fontSize: 13, color: C.blue, marginTop: 8, fontWeight: 700 }}>
-            {isCanceling ? amountDueText ?? priceText : priceText}
+            {priceText}
           </div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
@@ -413,7 +420,7 @@ export default function WorkspaceBillingCard({
           {canCancelPlan && (
             <button
               type="button"
-              onClick={handleCancelPlan}
+              onClick={() => setIsCancelDialogOpen(true)}
               disabled={isBillingPending}
               style={{
                 height: 28,
@@ -437,7 +444,7 @@ export default function WorkspaceBillingCard({
                 </>
               ) : (
                 <>
-                  <XCircle size={12} /> Cancel Plan
+                  <XCircle size={12} /> End subscription
                 </>
               )}
             </button>
@@ -475,6 +482,119 @@ export default function WorkspaceBillingCard({
           )}
         </div>
       </div>
+
+      {(formattedPeriodEnd || formattedTrialEnd) && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 1,
+            borderTop: `1px solid ${C.rule}`,
+            borderBottom: `1px solid ${C.rule}`,
+            background: C.rule,
+          }}
+        >
+          {formattedPeriodEnd && (
+            <div style={{ background: C.white, padding: "13px 16px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: C.navySoft,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                <CalendarDays size={13} />
+                {isCanceling ? "Pro access ends" : "Next billing date"}
+              </div>
+              <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
+                {formattedPeriodEnd}
+              </div>
+              <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>
+                {isCanceling
+                  ? "No further payments are scheduled."
+                  : nextChargeText ?? "Your subscription renews on this date."}
+              </div>
+            </div>
+          )}
+          {formattedTrialEnd && !formattedPeriodEnd && (
+            <div style={{ background: C.white, padding: "13px 16px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: C.navySoft,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                <CalendarDays size={13} /> Trial ends
+              </div>
+              <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
+                {formattedTrialEnd}
+              </div>
+              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
+                Upgrade before this date to continue with Pro.
+              </div>
+            </div>
+          )}
+          {planData.isProTier && (
+            <div style={{ background: C.white, padding: "13px 16px" }}>
+              <div
+                style={{
+                  color: C.navySoft,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Billing cycle
+              </div>
+              <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
+                Monthly
+              </div>
+              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
+                {priceText} • billed in USD
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isCanceling && (
+        <div
+          style={{
+            margin: "14px 16px 0",
+            padding: "12px 13px",
+            background: "#FFF7ED",
+            border: "1px solid #FED7AA",
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 9,
+          }}
+        >
+          <XCircle size={16} color="#B45309" style={{ flex: "0 0 auto", marginTop: 1 }} />
+          <div>
+            <div style={{ color: "#92400E", fontSize: 12, fontWeight: 700 }}>
+              Cancellation scheduled
+            </div>
+            <div style={{ color: "#9A5B16", fontSize: 11, lineHeight: 1.45, marginTop: 2 }}>
+              {formattedPeriodEnd
+                ? `Your Pro features remain available through ${formattedPeriodEnd}.`
+                : "Your Pro features remain available until the end of the current billing period."}
+            </div>
+          </div>
+        </div>
+      )}
 
       {usage ? (
         <div
@@ -575,6 +695,63 @@ export default function WorkspaceBillingCard({
           ))}
         </div>
       </div>
+
+      <AlertDialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>End your Pro subscription?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {formattedPeriodEnd
+                ? `Your subscription will not renew, and Pro features stay available through ${formattedPeriodEnd}.`
+                : "Your subscription will not renew, and Pro features stay available until the end of the current billing period."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div
+            style={{
+              padding: 12,
+              background: "#FFF7ED",
+              border: "1px solid #FED7AA",
+              borderRadius: 8,
+              color: "#92400E",
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            You will keep your saved leads and workspace data. You can resume the plan before the end date to avoid losing Pro access.
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBillingPending}>Keep Pro</AlertDialogCancel>
+            <button
+              type="button"
+              onClick={confirmCancelPlan}
+              disabled={isBillingPending}
+              style={{
+                minHeight: 36,
+                padding: "0 14px",
+                color: C.white,
+                background: "#B45309",
+                border: "1px solid #B45309",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: isBillingPending ? "not-allowed" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              {isBillingPending && pendingAction === "cancel" ? (
+                <>
+                  <Spinner className="size-3" /> Scheduling...
+                </>
+              ) : (
+                "End subscription"
+              )}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
