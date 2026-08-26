@@ -10,12 +10,10 @@ import {
   Globe2,
   Loader2,
   Radar,
-  Sparkles,
   Target,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import Logo from "@/components/ui/logo";
 import { C } from "@/lib/tokens";
 import type {
   BuyerDemandReportView,
@@ -294,163 +292,164 @@ export function DiscoveryLoadingPage({
 
   return (
     <main
-      className={`${isWorkspaceScan ? "min-h-full" : "min-h-screen"} overflow-hidden px-1 py-2 sm:px-3 sm:py-4`}
+      className={`flex ${isWorkspaceScan ? "min-h-full py-3" : "min-h-screen py-8"} items-center overflow-hidden px-4 sm:px-6`}
       style={{ backgroundColor: C.offWhite, color: C.text }}
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col">
-        {isWorkspaceScan ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4" style={{ borderColor: C.rule }}>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-                Live discovery
-              </p>
-              <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
-                Building your next prospect list
-              </p>
-            </div>
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
-              style={{ borderColor: C.blueLight, backgroundColor: C.bluePale, color: C.blue }}
-            >
-              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-              Live updates on
-            </span>
-          </div>
-        ) : (
-          <Logo className="h-8" />
-        )}
-
-        <div className={`grid flex-1 gap-7 ${isWorkspaceScan ? "py-8 lg:py-10" : "py-10 lg:py-16"} lg:grid-cols-[0.9fr_1.1fr] lg:items-center`}>
-          <section className="max-w-lg">
-            <div
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold"
-              style={{ borderColor: C.blueLight, backgroundColor: C.bluePale, color: C.blue }}
-            >
-              {hasError ? (
-                <AlertCircle className="size-4" aria-hidden="true" />
-              ) : isReady ? (
-                <Check className="size-4" aria-hidden="true" />
-              ) : (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              )}
-              {hasError
-                ? "Action needed"
-                : isReady
-                  ? "Ready"
-                  : isQueued
-                    ? "Queued for website scan"
-                    : "Finding potential customers"}
-            </div>
-            <h1 className="mt-5 font-serif text-4xl leading-[1.04] tracking-tight sm:text-5xl" style={{ color: C.navy }}>
-              {status.title}
-            </h1>
-            <p className="mt-4 max-w-md text-base leading-7" style={{ color: C.muted }}>
-              {status.detail}
-            </p>
-            <div
-              className="mt-7 inline-flex max-w-full items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm font-medium shadow-sm"
-              style={{ borderColor: C.rule, color: C.navySoft }}
-            >
-              <Globe2 className="size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-              <span className="truncate">{domain}</span>
-            </div>
-            {!hasError && !isReady ? (
-              <div className="mt-5 rounded-xl border bg-white px-4 py-3 shadow-sm" style={{ borderColor: C.rule }}>
-                <p className="text-xs font-semibold" style={{ color: C.navy }}>
-                  {lastUpdate}
-                </p>
-                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                  {isQueued
-                    ? "This page updates on its own. We will begin as soon as the current website scan finishes."
-                    : "This page updates on its own. Most active website scans finish in about two minutes."}
-                </p>
-              </div>
-            ) : null}
-            {isTakingLongerThanUsual ? (
-              <div className="mt-4 rounded-xl border px-4 py-3" style={{ borderColor: C.amber, backgroundColor: C.amberPale }}>
-                <p className="text-xs font-semibold" style={{ color: C.navy }}>
-                  Taking longer than usual?
-                </p>
-                <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-                  You can keep this page open. If the website address needs changing, update it in settings.
-                </p>
-                <Link href="/settings" className="mt-2 inline-flex text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
-                  Check website settings
-                </Link>
-              </div>
-            ) : null}
-            {hasError ? (
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Button asChild className="h-10" style={{ backgroundColor: C.navy, color: C.white }}>
-                  <Link href="/settings">Check website settings</Link>
-                </Button>
-                <Button asChild variant="outline" className="h-10" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-                  <Link href="/dashboard">Open dashboard</Link>
-                </Button>
-              </div>
-            ) : null}
-          </section>
-
-          <section
-            className="relative overflow-hidden rounded-2xl border bg-white p-5 shadow-lg sm:p-7"
-            style={{ borderColor: C.rule }}
-            aria-label="Discovery progress"
+      <div className="relative grid w-full max-w-5xl gap-8 lg:grid-cols-[1.04fr_0.96fr] lg:items-center">
+        <section className="max-w-xl">
+          <div
+            className="mb-6 inline-flex size-12 items-center justify-center rounded-xl border shadow-sm"
+            style={{ borderColor: C.blueLight, backgroundColor: C.bluePale, color: C.blue }}
           >
-            <div className="pointer-events-none absolute -right-14 -top-16 size-44 rounded-full" style={{ backgroundColor: C.blueTint }} />
-            <div className="relative">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-                    What we are doing
-                  </p>
-                  <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                    We will take you to your refreshed prospect desk as soon as the results are ready.
-                  </p>
-                </div>
-                <Sparkles className="size-5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-              </div>
+            {hasError ? (
+              <AlertCircle className="size-6" aria-hidden="true" />
+            ) : isReady ? (
+              <Check className="size-6" aria-hidden="true" />
+            ) : (
+              <Radar className="size-6" aria-hidden="true" />
+            )}
+          </div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: C.blue }}>
+            {isWorkspaceScan ? "Refresh your discovery" : "Build your discovery source"}
+          </p>
+          <h1 className="mt-3 font-serif text-4xl leading-[1.02] tracking-tight sm:text-5xl" style={{ color: C.navy }}>
+            {status.title}
+          </h1>
+          <p className="mt-5 max-w-lg text-base leading-7" style={{ color: C.muted }}>
+            {status.detail}
+          </p>
+          <div
+            className="mt-7 flex max-w-full items-center gap-3 rounded-xl border bg-white px-4 py-3 shadow-sm"
+            style={{ borderColor: C.rule }}
+          >
+            <div
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: C.bluePale, color: C.blue }}
+            >
+              <Globe2 className="size-4" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
+                Website source
+              </p>
+              <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>
+                {domain}
+              </p>
+            </div>
+          </div>
+          {!hasError && !isReady ? (
+            <div className="mt-5 rounded-xl border bg-white px-4 py-3 shadow-sm" style={{ borderColor: C.rule }}>
+              <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                {lastUpdate}
+              </p>
+              <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                {isQueued
+                  ? "Your place is saved. The scan begins automatically when the current website finishes."
+                  : "You can leave this page open. It refreshes automatically while we prepare your results."}
+              </p>
+            </div>
+          ) : null}
+          {isTakingLongerThanUsual ? (
+            <div className="mt-4 rounded-xl border px-4 py-3" style={{ borderColor: C.amber, backgroundColor: C.amberPale }}>
+              <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                Taking longer than usual?
+              </p>
+              <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
+                Keep this page open while we continue. If the website address needs changing, you can update it in settings.
+              </p>
+              <Link href="/settings" className="mt-2 inline-flex text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
+                Check website settings
+              </Link>
+            </div>
+          ) : null}
+          {hasError ? (
+            <div className="mt-7 flex flex-wrap gap-3">
+              <Button asChild className="h-10" style={{ backgroundColor: C.navy, color: C.white }}>
+                <Link href="/settings">Check website settings</Link>
+              </Button>
+              <Button asChild variant="outline" className="h-10" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
+                <Link href="/dashboard">Open dashboard</Link>
+              </Button>
+            </div>
+          ) : null}
+        </section>
 
-              <ol className="mt-7 space-y-3">
-                {STAGES.map((stage, index) => {
-                  const Icon = stage.icon;
-                  const isComplete = isReady || index < activeIndex;
-                  const isActive = !hasError && !isReady && index === activeIndex;
-                  return (
-                    <li
-                      key={stage.label}
-                      className="flex gap-3 rounded-xl border p-3.5"
+        <section
+          className="relative overflow-hidden rounded-2xl border bg-white shadow-lg"
+          style={{ borderColor: C.rule }}
+          aria-label="Discovery progress"
+        >
+          <div className="h-1.5" style={{ backgroundColor: hasError ? C.red : isReady ? C.green : C.blue }} />
+          <div className="pointer-events-none absolute -right-14 -top-16 size-44 rounded-full" style={{ backgroundColor: C.blueTint }} />
+          <div className="relative p-5 sm:p-7">
+            <div className="flex items-center justify-between gap-3">
+              <span
+                className="rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em]"
+                style={{ backgroundColor: C.bluePale, color: C.blue }}
+              >
+                {isWorkspaceScan ? "Fresh scan" : "Step 2 of 3"}
+              </span>
+              {!hasError && !isReady ? (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: C.muted }}>
+                  <Loader2 className="size-3.5 animate-spin" style={{ color: C.blue }} aria-hidden="true" />
+                  Live updates
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-5">
+              <p className="text-2xl font-semibold tracking-tight" style={{ color: C.navy }}>
+                {hasError ? "Your scan needs attention" : isReady ? "Your discovery is ready" : "Preparing your discovery"}
+              </p>
+              <p className="mt-2 text-sm leading-6" style={{ color: C.muted }}>
+                {hasError
+                  ? "We saved your workspace details, but this run could not complete."
+                  : isReady
+                    ? "We are opening your refreshed prospect desk now."
+                    : "We work through these steps in order so each search is grounded in your business."}
+              </p>
+            </div>
+
+            <ol className="mt-7 divide-y" style={{ borderColor: C.rule }}>
+              {STAGES.map((stage, index) => {
+                const Icon = stage.icon;
+                const isComplete = isReady || index < activeIndex;
+                const isActive = !hasError && !isReady && index === activeIndex;
+                return (
+                  <li key={stage.label} className="flex gap-3 py-4 first:pt-0 last:pb-0">
+                    <span
+                      className="flex size-9 shrink-0 items-center justify-center rounded-lg"
                       style={{
-                        borderColor: isActive ? C.blueLight : C.rule,
-                        backgroundColor: isActive ? C.blueTint : C.white,
+                        backgroundColor: isComplete ? C.blue : isActive ? C.bluePale : C.offWhite,
+                        color: isComplete ? C.white : isActive ? C.blue : C.muted,
                       }}
                     >
-                      <span
-                        className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                        style={{
-                          backgroundColor: isComplete ? C.blue : isActive ? C.bluePale : C.offWhite,
-                          color: isComplete ? C.white : isActive ? C.blue : C.muted,
-                        }}
-                      >
-                        {isComplete ? <Check className="size-4" aria-hidden="true" /> : <Icon className={isActive ? "size-4 animate-pulse" : "size-4"} aria-hidden="true" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-semibold" style={{ color: isComplete || isActive ? C.navy : C.navySoft }}>
-                            {stage.label}
+                      {isComplete ? (
+                        <Check className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Icon className={isActive ? "size-4 animate-pulse" : "size-4"} aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold" style={{ color: isComplete || isActive ? C.navy : C.navySoft }}>
+                          {stage.label}
+                        </span>
+                        {isActive ? (
+                          <span className="shrink-0 text-[11px] font-semibold" style={{ color: C.blue }}>
+                            {isQueued && index === 0 ? "Queued" : "In progress"}
                           </span>
-                          {isActive ? <span className="text-[11px] font-semibold" style={{ color: C.blue }}>{isQueued && index === 0 ? "Queued" : "Working on it"}</span> : null}
-                        </span>
-                        <span className="mt-1 block text-xs leading-5" style={{ color: C.muted }}>
-                          {stage.detail}
-                        </span>
+                        ) : null}
                       </span>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-          </section>
-        </div>
+                      <span className="mt-1 block text-xs leading-5" style={{ color: C.muted }}>
+                        {stage.detail}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        </section>
       </div>
     </main>
   );
