@@ -45,12 +45,6 @@ export type CrawlJobView = {
   updatedAt: string | null;
 };
 
-/** The tenant-wide cooldown that protects website crawl quality and capacity. */
-export type WebsiteCrawlCooldownView = {
-  lastRequestedAt: string | null;
-  nextAvailableAt: string | null;
-};
-
 export const FEEDBACK_OPTIONS = [
   { value: "good_fit", label: "Good fit" },
   { value: "useful_pain_not_now", label: "Useful pain, not now" },

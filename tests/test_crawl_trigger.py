@@ -59,32 +59,12 @@ def test_non_transient_pass1_failure_remains_visible_without_blocking_deep_crawl
     assert response.message_id == "message-1"
 
 
-def test_daily_crawl_cooldown_stops_work_before_the_fast_profile_pass() -> None:
-    payload = main.CrawlTriggerRequest(
-        tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
-        website_url="https://example.com/",
-    )
-    with (
-        patch.object(main, "_validate_internal_tenant_scope"),
-        patch("api.services.crawling._database_engine", return_value=_NoopEngine()),
-        patch(
-            "api.services.crawling.reserve_website_crawl_slot",
-            return_value="2030-01-01T00:00:00+00:00",
-        ),
-        patch(
-            "api.services.service_profile_pass1.extract_pass1_service_profile",
-        ) as extract_profile,
-    ):
-        with pytest.raises(HTTPException) as error:
-            main.trigger_crawl(payload, None, "idempotency-key")
-
-    assert error.value.status_code == 429
-    assert "once every 24 hours" in str(error.value.detail)
-    extract_profile.assert_not_called()
-
-
 class _NoRecentCrawlConnection:
+    def __init__(self):
+        self.calls: list[object] = []
+
     def execute(self, *_args, **_kwargs):
+        self.calls.append(_args[0])
         return self
 
     def mappings(self):
@@ -94,7 +74,7 @@ class _NoRecentCrawlConnection:
         return None
 
 
-def test_daily_recheck_resets_the_previous_queue_message_before_reenqueueing() -> None:
+def test_recheck_resets_the_previous_queue_message_before_reenqueueing() -> None:
     """A terminal URL row is reused, so it cannot retain its old message ID."""
     with (
         patch("api.services.crawling._table_exists", return_value=True),
@@ -178,18 +158,23 @@ def test_crawl_queue_capacity_stops_pass1_before_it_uses_api_or_model_capacity()
     extract_profile.assert_not_called()
 
 
-def test_temporary_repeat_crawl_mode_requires_explicit_opt_in(monkeypatch) -> None:
-    monkeypatch.delenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", raising=False)
-    monkeypatch.delenv("NODE_ENV", raising=False)
-    monkeypatch.delenv("VERCEL_ENV", raising=False)
-    monkeypatch.delenv("ARCLI_ENVIRONMENT", raising=False)
-    assert crawling._website_crawl_test_mode_enabled() is False
+def test_repeat_crawls_skip_the_previous_daily_cooldown_lookup() -> None:
+    connection = _NoRecentCrawlConnection()
+    with (
+        patch("api.services.crawling._table_exists", return_value=True),
+        patch("api.services.crawling._crawl_job_row_for_website", return_value=None),
+        patch("api.services.crawling._upsert_crawl_job"),
+        patch("api.services.crawling._reserve_crawl_queue_capacity", return_value=None),
+    ):
+        result = crawling.reserve_website_crawl_slot(
+            connection,
+            tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
+            crawl_job_id="crawl-job-id",
+            website_url="https://example.com/",
+        )
 
-    monkeypatch.setenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "true")
-    assert crawling._website_crawl_test_mode_enabled() is True
-
-    monkeypatch.setenv("NODE_ENV", "production")
-    assert crawling._website_crawl_test_mode_enabled() is False
+    assert result is None
+    assert len(connection.calls) == 1
 
 
 def test_default_crawl_budget_is_two_minutes() -> None:

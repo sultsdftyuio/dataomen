@@ -10,10 +10,6 @@ import {
 } from "@/lib/discovery-queries";
 import { PRO_PLAN_REQUIRED_MESSAGE, requireProEntitlement } from "@/lib/entitlements";
 import { freePlanDomainChangeError } from "@/lib/plan-limits";
-import {
-  getWebsiteCrawlCooldown,
-  websiteCrawlCooldownMessage,
-} from "@/lib/website-crawl-cooldown";
 import type { Json } from "@/types/supabase";
 import { resolveTenantContext, type TenantContext } from "@/utils/supabase/tenant";
 import {
@@ -970,14 +966,6 @@ export async function submitWebsiteForCrawl(
   }
 
   try {
-    const crawlCooldown = await getWebsiteCrawlCooldown(
-      context.supabase,
-      context.tenantId,
-    );
-    if (crawlCooldown.nextAvailableAt) {
-      return actionError(websiteCrawlCooldownMessage(crawlCooldown.nextAvailableAt));
-    }
-
     await persistWebsiteUrl(context, websiteUrl);
 
     const triggerResult = await postCrawlerTrigger(

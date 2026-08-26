@@ -45,13 +45,11 @@ import {
   type LeadFeedbackValue,
   type QualifiedLeadView,
   type ServiceProfileView,
-  type WebsiteCrawlCooldownView,
 } from "./prospect-types";
 
 type ProspectDashboardClientProps = {
   serviceProfile: ServiceProfileView;
   crawlJob: CrawlJobView | null;
-  websiteCrawlCooldown: WebsiteCrawlCooldownView;
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
@@ -136,20 +134,6 @@ function formatTime(value: Date | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(value);
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return null;
-
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return null;
-
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(timestamp));
 }
 
 function normalizedStatus(value: string | null | undefined) {
@@ -2293,12 +2277,10 @@ function ArcliQueueMark({ className }: { className?: string }) {
 function DiscoverySourceBar({
   serviceProfile,
   status,
-  websiteCrawlCooldown,
   discoveryStatus,
 }: {
   serviceProfile: ServiceProfileView;
   status: ReturnType<typeof pipelineStatus>;
-  websiteCrawlCooldown: WebsiteCrawlCooldownView;
   discoveryStatus: BuyerDemandReportView["status"];
 }) {
   const domain = sourceDomain(serviceProfile.websiteUrl);
@@ -2351,21 +2333,11 @@ function DiscoverySourceBar({
   const router = useRouter();
   const [websiteUrl, setWebsiteUrl] = useState(serviceProfile.websiteUrl ?? "");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [localNextAvailableAt, setLocalNextAvailableAt] = useState<string | null>(
-    websiteCrawlCooldown.nextAvailableAt,
-  );
   const [isSubmitting, startSubmitting] = useTransition();
-  const nextAvailableAt = localNextAvailableAt ?? websiteCrawlCooldown.nextAvailableAt;
-  const nextAvailableLabel = formatDateTime(nextAvailableAt);
-  const isCoolingDown = Boolean(nextAvailableAt && Date.parse(nextAvailableAt) > Date.now());
 
   useEffect(() => {
     setWebsiteUrl(serviceProfile.websiteUrl ?? "");
   }, [serviceProfile.websiteUrl]);
-
-  useEffect(() => {
-    setLocalNextAvailableAt(websiteCrawlCooldown.nextAvailableAt);
-  }, [websiteCrawlCooldown.nextAvailableAt]);
 
   const submitWebsite = () => {
     let normalizedWebsiteUrl: string;
@@ -2412,7 +2384,6 @@ function DiscoverySourceBar({
           return;
         }
 
-        setLocalNextAvailableAt(null);
         router.replace("/dashboard/discovery?scan=1");
       } catch {
         setMessage({
@@ -2466,7 +2437,7 @@ function DiscoverySourceBar({
           inputMode="url"
           autoComplete="url"
           value={websiteUrl}
-          disabled={isSubmitting || isCoolingDown}
+          disabled={isSubmitting}
           onChange={(event) => setWebsiteUrl(event.target.value)}
           className="h-9 min-w-0 flex-1 rounded-lg border bg-white px-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF] disabled:cursor-not-allowed disabled:opacity-70"
           style={{ borderColor: C.ruleDark, color: C.navy }}
@@ -2475,7 +2446,7 @@ function DiscoverySourceBar({
         <Button
           type="button"
           size="xs"
-          disabled={isSubmitting || isCoolingDown}
+          disabled={isSubmitting}
           onClick={submitWebsite}
           className="h-9 shrink-0 rounded-lg px-3 text-xs"
           style={{ backgroundColor: C.blue, color: C.white }}
@@ -2520,10 +2491,9 @@ function DiscoverySourceBar({
           {scanInsight}
         </p>
       </div>
-      {message || isCoolingDown ? (
-      <div className="col-span-full flex items-start gap-2 border-t px-3 py-2" style={{ borderColor: C.rule }}>
-        <ArcliSignalMark className="mt-0.5 size-3.5" />
-        {message ? (
+      {message ? (
+        <div className="col-span-full flex items-start gap-2 border-t px-3 py-2" style={{ borderColor: C.rule }}>
+          <ArcliSignalMark className="mt-0.5 size-3.5" />
           <p
             className="text-[11px] leading-4"
             role={message.ok ? "status" : "alert"}
@@ -2531,12 +2501,7 @@ function DiscoverySourceBar({
           >
             {message.text}
           </p>
-        ) : isCoolingDown ? (
-          <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
-            Fresh website checks are available once every 24 hours. Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}.
-          </p>
-        ) : null}
-      </div>
+        </div>
       ) : null}
     </section>
   );
@@ -2695,7 +2660,6 @@ function ScanOverview({
 export default function ProspectDashboardClient({
   serviceProfile,
   crawlJob,
-  websiteCrawlCooldown,
   leads,
   discoveryCandidates,
   buyerDemandReport,
@@ -2934,7 +2898,6 @@ export default function ProspectDashboardClient({
           <DiscoverySourceBar
             serviceProfile={serviceProfile}
             status={status}
-            websiteCrawlCooldown={websiteCrawlCooldown}
             discoveryStatus={buyerDemandReport?.status ?? null}
           />
         </section>

@@ -661,23 +661,6 @@ def trigger_crawl(
             headers={"Retry-After": str(crawl_slot.retry_after_seconds)},
         )
 
-    next_available_at = crawl_slot if isinstance(crawl_slot, str) else None
-    if next_available_at:
-        logger.info(
-            "crawl_job_rate_limited tenant_id=%s job_id=%s website_url=%s next_available_at=%s",
-            payload.tenant_id,
-            job_id,
-            payload.website_url,
-            next_available_at,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                "Website scans are available once every 24 hours to keep matching "
-                f"quality high. Your next fresh scan is available after {next_available_at}."
-            ),
-        )
-
     logger.info(
         "crawl_job_trigger_received tenant_id=%s job_id=%s website_url=%s source=%s requested_by=%s",
         payload.tenant_id,

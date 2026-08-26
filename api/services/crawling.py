@@ -36,7 +36,6 @@ DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 135_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
-DEFAULT_WEBSITE_CRAWL_COOLDOWN_SECONDS = 24 * 60 * 60
 # A small, shared admission queue keeps an unexpected onboarding burst from
 # creating an hours-long browser backlog.  It includes the active browser job.
 DEFAULT_CRAWL_MAX_QUEUED_JOBS = 6
@@ -102,23 +101,6 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
         return default
 
     return max(value, minimum)
-
-
-def _website_crawl_test_mode_enabled() -> bool:
-    """Return whether an explicit local unlimited-crawl override is enabled."""
-
-    # Keep the local convenience flag from weakening a deployed worker if its
-    # environment variables are copied from a development setup.
-    deployment_markers = (
-        os.getenv("NODE_ENV", ""),
-        os.getenv("VERCEL_ENV", ""),
-        os.getenv("ARCLI_ENVIRONMENT", ""),
-    )
-    if any(marker.strip().lower() == "production" for marker in deployment_markers):
-        return False
-
-    value = os.getenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "false").strip().lower()
-    return value in {"1", "true", "yes", "on"}
 
 
 def _env_float(name: str, default: float, minimum: float = 0.1) -> float:
@@ -357,13 +339,12 @@ def reserve_website_crawl_slot(
     crawl_job_id: str,
     website_url: str,
     source: str | None = None,
-) -> str | CrawlQueueCapacityLimit | None:
+) -> CrawlQueueCapacityLimit | None:
     """Reserve a website crawl while preventing duplicate in-flight work.
 
     A row lock on the tenant makes this atomic across dashboard, onboarding,
-    and direct internal-worker handoffs. In temporary test mode this permits
-    repeat scans and website changes immediately; otherwise it enforces the
-    tenant-wide daily quality guard.
+    and direct internal-worker handoffs. Completed and failed crawls can be
+    restarted immediately; only an existing in-flight crawl is deduplicated.
     """
 
     if not _table_exists(conn, "crawl_jobs"):
@@ -371,10 +352,6 @@ def reserve_website_crawl_slot(
         # Production deployments must apply that ledger for job tracking.
         return None
 
-    cooldown_seconds = _env_int(
-        "ARCLI_WEBSITE_CRAWL_COOLDOWN_SECONDS",
-        DEFAULT_WEBSITE_CRAWL_COOLDOWN_SECONDS,
-    )
     conn.execute(
         text(
             """
@@ -387,39 +364,18 @@ def reserve_website_crawl_slot(
         {"tenant_id": tenant_id},
     ).first()
 
-    if _website_crawl_test_mode_enabled():
-        existing_job = _crawl_job_row_for_website(conn, tenant_id, website_url)
-        if (
-            existing_job
-            and str(existing_job.get("id") or "") == crawl_job_id
-            and str(existing_job.get("status") or "").lower()
-            in CRAWL_JOB_ACTIVE_STATUSES
-        ):
-            # The Next.js relay has already created this same active ledger
-            # row. Once it has a broker signal, a retry is only a deduplicated
-            # read and must not compete for fresh admission capacity.
-            if _active_crawl_job_has_queue_signal(existing_job):
-                return None
-            return _reserve_crawl_queue_capacity(
-                conn,
-                tenant_id=tenant_id,
-                crawl_job_id=crawl_job_id,
-                website_url=website_url,
-            )
-
-        _upsert_crawl_job(
-            conn,
-            crawl_job_id=crawl_job_id,
-            tenant_id=tenant_id,
-            website_url=website_url,
-            status="pending",
-            phase="queued",
-            context={
-                "source": source or "crawl_trigger",
-                "website_crawl_test_mode": True,
-            },
-            restart_queue=True,
-        )
+    existing_job = _crawl_job_row_for_website(conn, tenant_id, website_url)
+    if (
+        existing_job
+        and str(existing_job.get("id") or "") == crawl_job_id
+        and str(existing_job.get("status") or "").lower()
+        in CRAWL_JOB_ACTIVE_STATUSES
+    ):
+        # The Next.js relay has already created this same active ledger row.
+        # Once it has a broker signal, a retry is only a deduplicated read and
+        # must not compete for fresh admission capacity.
+        if _active_crawl_job_has_queue_signal(existing_job):
+            return None
         return _reserve_crawl_queue_capacity(
             conn,
             tenant_id=tenant_id,
@@ -427,59 +383,8 @@ def reserve_website_crawl_slot(
             website_url=website_url,
         )
 
-    recent = conn.execute(
-        text(
-            """
-            SELECT id,
-                   status,
-                   message_id,
-                   failure_reason,
-                   queued_at + (:cooldown_seconds * interval '1 second')
-                       AS next_available_at
-             FROM public.crawl_jobs
-             WHERE tenant_id = :tenant_id
-               AND COALESCE(failure_reason, '') <> 'admission_rejected'
-               AND queued_at > (
-                   CURRENT_TIMESTAMP - (:cooldown_seconds * interval '1 second')
-               )
-             ORDER BY queued_at DESC
-             LIMIT 1
-            """
-        ),
-        {
-            "tenant_id": tenant_id,
-            "cooldown_seconds": cooldown_seconds,
-        },
-    ).mappings().first()
-
-    if recent:
-        # The Next.js relay records a pending job before forwarding to this
-        # worker. Let that exact in-flight job continue; any terminal or
-        # different job is a new scan and must respect the daily cooldown.
-        if (
-            str(recent.get("id") or "") == crawl_job_id
-            and str(recent.get("status") or "").lower() in CRAWL_JOB_ACTIVE_STATUSES
-        ):
-            if _active_crawl_job_has_queue_signal(dict(recent)):
-                return None
-            return _reserve_crawl_queue_capacity(
-                conn,
-                tenant_id=tenant_id,
-                crawl_job_id=crawl_job_id,
-                website_url=website_url,
-            )
-
-        next_available_at = recent.get("next_available_at")
-        if isinstance(next_available_at, datetime):
-            if next_available_at.tzinfo is None:
-                next_available_at = next_available_at.replace(tzinfo=timezone.utc)
-            return next_available_at.astimezone(timezone.utc).isoformat()
-        return datetime.now(timezone.utc).replace(
-            microsecond=0
-        ).isoformat()
-
     # Record the accepted request before the fast profile pass so concurrent
-    # requests cannot spend crawler/model capacity before the guard applies.
+    # requests cannot spend crawler/model capacity before queue admission.
     _upsert_crawl_job(
         conn,
         crawl_job_id=crawl_job_id,
@@ -489,7 +394,6 @@ def reserve_website_crawl_slot(
         phase="queued",
         context={
             "source": source or "crawl_trigger",
-            "website_crawl_cooldown_reserved": True,
         },
         restart_queue=True,
     )

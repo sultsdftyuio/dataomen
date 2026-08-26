@@ -21,7 +21,6 @@ import {
   buildBuyerLanguageResearchEvidence,
   type BuyerLanguageResearchView,
 } from "@/lib/buyer-language-research";
-import { getWebsiteCrawlCooldown } from "@/lib/website-crawl-cooldown";
 import type { Database, Json } from "@/types/supabase";
 import type {
   BuyerDemandReportView,
@@ -31,7 +30,6 @@ import type {
   ServiceProfileFields,
   ServiceProfileView,
   SourcePostView,
-  WebsiteCrawlCooldownView,
   WatchlistResultsView,
   WatchlistView,
 } from "./prospect-types";
@@ -507,18 +505,6 @@ export async function fetchLatestCrawlJob(
       readString([row], ["last_heartbeat_at", "lastHeartbeatAt"]) ?? null,
     updatedAt: readString([row], ["updated_at", "updatedAt"]) ?? null,
   };
-}
-
-/**
- * A website crawl consumes meaningful source and model capacity. Keep the
- * dashboard aware of the server-enforced tenant-wide daily cooldown so people
- * know when a fresh scan will be useful again.
- */
-export async function fetchWebsiteCrawlCooldown(
-  supabase: SupabaseClient<Database>,
-  tenantId: string,
-): Promise<WebsiteCrawlCooldownView> {
-  return getWebsiteCrawlCooldown(supabase, tenantId);
 }
 
 function sourcePostFromRow(row: DbRecord): DbRecord {

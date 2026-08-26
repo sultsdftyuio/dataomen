@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { WEBSITE_CRAWL_COOLDOWN_MS } from "@/lib/website-crawl-cooldown";
 import type { Json } from "@/types/supabase";
 import { createServiceRoleClient } from "@/utils/supabase/server";
 
@@ -18,12 +17,6 @@ type CrawlJobRow = {
   id: string;
   status: string | null;
   message_id: string | null;
-};
-
-type CrawlCooldownRow = {
-  id: string;
-  queued_at: string | null;
-  failure_reason: string | null;
 };
 
 const TriggerSchema = z.object({
@@ -191,36 +184,6 @@ async function findActiveJob(
 
   if (result.error) throw result.error;
   return result.data;
-}
-
-async function findWebsiteCrawlCooldown(
-  supabase: ReturnType<typeof db>,
-  tenantId: string,
-) {
-  if (WEBSITE_CRAWL_COOLDOWN_MS === 0) return null;
-
-  const result = (await supabase
-    .from("crawl_jobs")
-    .select("id,queued_at,failure_reason")
-    .eq("tenant_id", tenantId)
-    .order("queued_at", { ascending: false })
-    // A request rejected by the shared burst guard did not run a crawl and
-    // must not burn this tenant's daily scan allowance. Read a short history
-    // so that a just-rejected row can be skipped without an extra round trip.
-    .limit(25)) as QueryResult<CrawlCooldownRow[]>;
-
-  if (result.error) throw result.error;
-  const latestAdmittedJob = (result.data ?? []).find(
-    (row) => row.failure_reason !== "admission_rejected",
-  );
-  const queuedAt = latestAdmittedJob?.queued_at;
-  const queuedTimestamp = queuedAt ? Date.parse(queuedAt) : Number.NaN;
-  if (!Number.isFinite(queuedTimestamp)) return null;
-
-  const nextAvailableTimestamp = queuedTimestamp + WEBSITE_CRAWL_COOLDOWN_MS;
-  return nextAvailableTimestamp > Date.now()
-    ? new Date(nextAvailableTimestamp).toISOString()
-    : null;
 }
 
 async function createPendingJob(
@@ -452,18 +415,6 @@ function accepted(
   );
 }
 
-function websiteCrawlRateLimited(nextAvailableAt: string) {
-  return jsonResponse(
-    {
-      error:
-        "Website scans are available once every 24 hours to keep matching quality high.",
-      code: "website_crawl_daily_limit",
-      next_available_at: nextAvailableAt,
-    },
-    { status: 429 },
-  );
-}
-
 export async function POST(request: Request) {
   const authError = verifyInternalRequest(request);
   if (authError) return authError;
@@ -511,12 +462,6 @@ export async function POST(request: Request) {
       return accepted(parsed.data.tenant_id, websiteUrl, activeJob, true);
     }
 
-    const nextAvailableAt = await findWebsiteCrawlCooldown(
-      supabase,
-      parsed.data.tenant_id,
-    );
-    if (nextAvailableAt) return websiteCrawlRateLimited(nextAvailableAt);
-
     const { job, created } = await createPendingJob(
       supabase,
       parsed.data.tenant_id,
@@ -529,7 +474,7 @@ export async function POST(request: Request) {
       // The Python admission guard has already recorded a terminal
       // `admission_rejected` job. Preserve that reason so a retry is allowed
       // as soon as capacity is free instead of incorrectly starting the
-      // 24-hour website cooldown.
+      // immediate retry when capacity becomes available.
       if (workerResult.status !== 429) {
         await markTriggerFailed(
           supabase,

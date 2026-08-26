@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
-import { websiteCrawlTestModeEnabled } from "@/lib/website-crawl-cooldown";
 
 type PlanLimitClient = SupabaseClient<any, any, any>;
 
@@ -32,11 +31,6 @@ export async function freePlanDomainChangeError(
   tenantId: string,
   requestedWebsiteUrl: string | null | undefined,
 ): Promise<string | null> {
-  // During the discovery test period, changing the active website is needed to
-  // validate crawls. The normal Free-plan domain limit returns when the test
-  // mode environment setting is disabled.
-  if (websiteCrawlTestModeEnabled()) return null;
-
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
   if (entitlements.planTier.toLowerCase() !== "free") return null;
 
