@@ -29,7 +29,10 @@ type WorkerEndpointEnvironment = Record<string, string | undefined>;
 // `/api` requests in `next.config.mjs`. It is tried last, after any deployment-
 // specific endpoint, so a stale environment variable cannot strand a crawl.
 const DEPLOYED_API_FALLBACK_URL = "https://arcli-s2mti.ondigitalocean.app";
-const WORKER_HANDOFF_TIMEOUT_MS = 5_000;
+// The FastAPI trigger verifies tenant scope before publishing an embedding
+// message. Give a healthy cold connection enough time to acknowledge that
+// work instead of treating it as a network outage after five seconds.
+const WORKER_HANDOFF_TIMEOUT_MS = 10_000;
 
 async function triggerFailureReason(response: Response) {
   const body = await response.text().catch(() => "");
@@ -96,11 +99,26 @@ function handoffAttemptTimeout(
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) return 0;
 
-  // Leave time for the next target. A network timeout against a stale host
-  // must not prevent the known-good API fallback from receiving the job.
+  // Leave time for the next target, while preserving a realistic five-second
+  // acknowledgement window for the highest-priority configured API endpoint.
+  const endpointsToBudget = Math.min(remainingEndpoints, 2);
   return remainingEndpoints === 1
     ? remainingMs
-    : Math.min(2_500, Math.max(750, Math.ceil(remainingMs / remainingEndpoints)));
+    : Math.min(
+        5_000,
+        Math.max(1_500, Math.ceil(remainingMs / endpointsToBudget)),
+      );
+}
+
+function unavailableTriggerReason(
+  error: unknown,
+  workerName: "crawl" | "lead-discovery",
+) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return `the ${workerName} worker did not acknowledge the handoff before the ${WORKER_HANDOFF_TIMEOUT_MS / 1_000}-second timeout`;
+  }
+
+  return `the ${workerName} worker could not be reached`;
 }
 
 export function crawlTriggerEndpoints(
@@ -248,6 +266,7 @@ async function postCrawlTrigger(
       });
       return { accepted: true, reason: null };
     } catch (error) {
+      lastFailureReason = unavailableTriggerReason(error, "crawl");
       console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
         event: "workspace_crawl_trigger_unavailable",
         tenant_id: tenantId,
@@ -347,6 +366,7 @@ async function postEmbeddingTrigger(
       });
       return { accepted: true, reason: null };
     } catch (error) {
+      lastFailureReason = unavailableTriggerReason(error, "lead-discovery");
       console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
         event: "workspace_profile_embedding_trigger_unavailable",
         tenant_id: tenantId,
