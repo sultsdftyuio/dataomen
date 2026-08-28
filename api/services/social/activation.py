@@ -592,6 +592,7 @@ def ingest_hn_posts(
 from .models import (
     DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
     InitialPublicSourceIngestionPlan,
+    PublicSourcePostRef,
     _normalize_space,
     _profile_discovery_queries,
     _service_profile_from_row,

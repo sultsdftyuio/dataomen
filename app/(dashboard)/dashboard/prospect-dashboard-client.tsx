@@ -36,6 +36,7 @@ import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { StartingDiscoveryScreen } from "@/components/discovery/starting-discovery-screen";
+import { ProspectLeadDesk } from "@/components/prospects/prospect-lead-desk";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
 import {
   FEEDBACK_OPTIONS,
@@ -67,6 +68,12 @@ type QueueSort = "priority" | "newest" | "confidence";
 type DashboardView = "overview" | "focus" | "queue";
 
 const STALE_EMBEDDING_MS = 10 * 60 * 1000;
+
+// Keep the legacy focused-review branches type-safe while the overview is
+// rendered by the dedicated lead-desk component below.
+function shouldRenderLeadDesk(view: DashboardView): boolean {
+  return view === "overview";
+}
 
 function formatScore(score: number) {
   return `${Math.round(score * 100)}%`;
@@ -2856,6 +2863,44 @@ export default function ProspectDashboardClient({
       : currentIndex + 1;
     setSelectedLeadId(filteredQueueItems[nextIndex].id);
   };
+
+  if (shouldRenderLeadDesk(dashboardView)) {
+    const sourceCount = buyerDemandReport?.sourceProgress.length ?? 0;
+    const reportingSourceCount = buyerDemandReport?.sourceProgress.filter(
+      (source) => source.state !== "checking" && source.state !== "unavailable",
+    ).length ?? 0;
+
+    return (
+      <ProspectLeadDesk
+        serviceProfile={serviceProfile}
+        leads={leads}
+        potentialBuyers={visiblePotentialBuyers}
+        filteredQueueItems={filteredQueueItems}
+        selectedLead={selectedLead}
+        selectedLeadId={selectedLeadId}
+        queueQuery={queueQuery}
+        queueFilter={queueFilter}
+        queueSort={queueSort}
+        sourceCount={sourceCount}
+        reportingSourceCount={reportingSourceCount}
+        status={status}
+        isRefreshing={isRefreshPending}
+        lastUpdatedAt={lastUpdatedAt}
+        feedbackNotice={selectedLead ? feedbackMessages[selectedLead.id] ?? null : null}
+        feedbackPending={isFeedbackPending && pendingFeedbackLeadId === selectedLead?.id}
+        qualificationPending={isQualificationPending && pendingQualificationLeadId === selectedLead?.id}
+        qualificationMessage={selectedLead ? qualificationMessages[selectedLead.id] ?? null : null}
+        onRefresh={refreshDashboard}
+        onQueryChange={setQueueQuery}
+        onFilterChange={setQueueFilter}
+        onSortChange={setQueueSort}
+        onSelectLead={previewLead}
+        onOpenFocusedReview={() => setDashboardView("focus")}
+        onFeedback={handleFeedback}
+        onQualify={handleQualification}
+      />
+    );
+  }
 
   return (
     <div className="flex w-full flex-col gap-2.5 sm:gap-3" style={{ color: C.text }}>

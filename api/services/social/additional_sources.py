@@ -397,6 +397,7 @@ from .lead_signals import prioritized_source_post_refs
 from .models import (
     ADDITIONAL_PUBLIC_SOURCE_NAMES,
     DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+    PublicSourcePostRef,
     logger,
 )
 from .public_storage import (
