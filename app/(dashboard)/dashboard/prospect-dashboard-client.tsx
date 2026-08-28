@@ -65,6 +65,7 @@ type FeedbackNotice = {
 
 type QueueFilter = "all" | "leads" | "potential";
 type QueueSort = "priority" | "newest" | "confidence";
+type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
 type DashboardView = "overview" | "focus" | "queue";
 
 const STALE_EMBEDDING_MS = 10 * 60 * 1000;
@@ -2689,6 +2690,8 @@ export default function ProspectDashboardClient({
   const [isQualificationPending, startQualificationTransition] = useTransition();
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [queueSort, setQueueSort] = useState<QueueSort>("priority");
+  const [queueConfidence, setQueueConfidence] = useState<QueueConfidenceFilter>("all");
+  const [queueSource, setQueueSource] = useState("all");
   const [queueQuery, setQueueQuery] = useState("");
   const [isQueueControlsOpen, setIsQueueControlsOpen] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -2778,15 +2781,24 @@ export default function ProspectDashboardClient({
     () => [...leads, ...discoveryCandidates],
     [discoveryCandidates, leads],
   );
+  const queueSources = useMemo(
+    () => Array.from(new Set(queueItems.map((lead) => lead.sourcePost.source)))
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right)),
+    [queueItems],
+  );
   const filteredQueueItems = useMemo(() => {
     const filtered = queueItems.filter((lead) => {
       if (queueFilter === "leads" && isPotentialBuyer(lead)) return false;
       if (queueFilter === "potential" && !isPotentialBuyer(lead)) return false;
+      if (queueConfidence === "high" && lead.verifierScore < 0.8) return false;
+      if (queueConfidence === "sixty_plus" && lead.verifierScore < 0.6) return false;
+      if (queueSource !== "all" && lead.sourcePost.source !== queueSource) return false;
       return matchesQueueSearch(lead, queueQuery);
     });
 
     return sortQueueItems(filtered, queueSort);
-  }, [queueFilter, queueItems, queueQuery, queueSort]);
+  }, [queueConfidence, queueFilter, queueItems, queueQuery, queueSort, queueSource]);
   const visibleLeads = useMemo(
     () => filteredQueueItems.filter((lead) => !isPotentialBuyer(lead)),
     [filteredQueueItems],
@@ -2851,7 +2863,10 @@ export default function ProspectDashboardClient({
     filteredQueueItems.find((lead) => lead.id === selectedLeadId) ?? null;
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
   const activeQueueControlCount =
-    Number(queueFilter !== "all") + Number(queueSort !== "priority");
+    Number(queueFilter !== "all") +
+    Number(queueSort !== "priority") +
+    Number(queueConfidence !== "all") +
+    Number(queueSource !== "all");
   const isFirstDeskPass =
     queueItems.length === 0 && (!serviceProfile.hasProfile || isWarmingUp);
   const showNextLead = () => {
@@ -2881,6 +2896,9 @@ export default function ProspectDashboardClient({
         queueQuery={queueQuery}
         queueFilter={queueFilter}
         queueSort={queueSort}
+        queueConfidence={queueConfidence}
+        queueSource={queueSource}
+        queueSources={queueSources}
         sourceCount={sourceCount}
         reportingSourceCount={reportingSourceCount}
         status={status}
@@ -2894,6 +2912,8 @@ export default function ProspectDashboardClient({
         onQueryChange={setQueueQuery}
         onFilterChange={setQueueFilter}
         onSortChange={setQueueSort}
+        onConfidenceChange={setQueueConfidence}
+        onSourceChange={setQueueSource}
         onSelectLead={previewLead}
         onOpenFocusedReview={() => setDashboardView("focus")}
         onFeedback={handleFeedback}

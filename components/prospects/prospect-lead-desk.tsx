@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Check,
   ChevronRight,
@@ -25,6 +25,8 @@ import type {
 
 type QueueFilter = "all" | "leads" | "potential";
 type QueueSort = "priority" | "newest" | "confidence";
+type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
+type DetailTab = "match" | "evidence" | "context";
 
 type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
@@ -36,6 +38,9 @@ type ProspectLeadDeskProps = {
   queueQuery: string;
   queueFilter: QueueFilter;
   queueSort: QueueSort;
+  queueConfidence: QueueConfidenceFilter;
+  queueSource: string;
+  queueSources: string[];
   sourceCount: number;
   reportingSourceCount: number;
   status: {
@@ -53,6 +58,8 @@ type ProspectLeadDeskProps = {
   onQueryChange: (value: string) => void;
   onFilterChange: (value: QueueFilter) => void;
   onSortChange: (value: QueueSort) => void;
+  onConfidenceChange: (value: QueueConfidenceFilter) => void;
+  onSourceChange: (value: string) => void;
   onSelectLead: (leadId: string) => void;
   onOpenFocusedReview: () => void;
   onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
@@ -131,6 +138,10 @@ function signalLabel(lead: QualifiedLeadView) {
   return lead.painTheme ?? lead.painDetected ?? "Buyer signal";
 }
 
+function evidencePreview(lead: QualifiedLeadView) {
+  return lead.evidenceExcerpt ?? lead.sourcePost.text ?? lead.matchReason;
+}
+
 function metricValue(value: number) {
   return new Intl.NumberFormat("en").format(value);
 }
@@ -153,6 +164,9 @@ export function ProspectLeadDesk({
   queueQuery,
   queueFilter,
   queueSort,
+  queueConfidence,
+  queueSource,
+  queueSources,
   sourceCount,
   reportingSourceCount,
   status,
@@ -166,11 +180,14 @@ export function ProspectLeadDesk({
   onQueryChange,
   onFilterChange,
   onSortChange,
+  onConfidenceChange,
+  onSourceChange,
   onSelectLead,
   onOpenFocusedReview,
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
+  const [detailTab, setDetailTab] = useState<DetailTab>("match");
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
@@ -218,13 +235,16 @@ export function ProspectLeadDesk({
               {status.label}
             </span>
           </div>
-          <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>{healthDetail}</p>
+          <div className="mt-2 flex items-end justify-between gap-3">
+            <p className="max-w-[190px] text-xs leading-5" style={{ color: C.muted }}>{healthDetail}</p>
+            <SourceCoverageMark sourceCount={sourceCount} reportingSourceCount={reportingSourceCount} />
+          </div>
         </section>
       </header>
 
       <section
         aria-label="Lead discovery controls"
-        className="grid gap-3 rounded-xl border p-3 lg:grid-cols-[minmax(205px,.75fr)_minmax(260px,1.5fr)_minmax(130px,.55fr)_minmax(150px,.65fr)_auto] lg:items-center"
+        className="grid gap-3 rounded-xl border p-3 xl:grid-cols-[minmax(185px,.75fr)_minmax(240px,1.25fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_minmax(135px,.55fr)_minmax(135px,.55fr)_auto] xl:items-center"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
         <div className="flex min-w-0 items-center gap-3 border-b pb-3 lg:border-r lg:border-b-0 lg:pb-0 lg:pr-3" style={{ borderColor: C.rule }}>
@@ -250,7 +270,7 @@ export function ProspectLeadDesk({
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Signal type</span>
+          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Buyer intent</span>
           <select
             value={queueFilter}
             onChange={(event) => onFilterChange(event.target.value as QueueFilter)}
@@ -260,6 +280,35 @@ export function ProspectLeadDesk({
             <option value="all">All signals</option>
             <option value="leads">Ready to review</option>
             <option value="potential">Potential buyers</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Confidence</span>
+          <select
+            value={queueConfidence}
+            onChange={(event) => onConfidenceChange(event.target.value as QueueConfidenceFilter)}
+            className="h-8 w-full rounded-md border bg-white px-2 text-xs font-semibold outline-none"
+            style={{ borderColor: C.ruleDark, color: C.navy }}
+          >
+            <option value="all">All levels</option>
+            <option value="high">High (80%+)</option>
+            <option value="sixty_plus">60%+</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Source</span>
+          <select
+            value={queueSource}
+            onChange={(event) => onSourceChange(event.target.value)}
+            className="h-8 w-full rounded-md border bg-white px-2 text-xs font-semibold outline-none"
+            style={{ borderColor: C.ruleDark, color: C.navy }}
+          >
+            <option value="all">All sources</option>
+            {queueSources.map((source) => (
+              <option key={source} value={source}>{sourceDisplayName(source)}</option>
+            ))}
           </select>
         </label>
 
@@ -320,9 +369,10 @@ export function ProspectLeadDesk({
             <p className="text-xs" style={{ color: C.muted }}>{freshnessLabel(lastUpdatedAt)}</p>
           </div>
 
-          <div className="hidden grid-cols-[minmax(210px,1fr)_minmax(180px,1fr)_86px_54px_82px] gap-3 border-b px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
+          <div className="hidden grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
             <span>Public source</span>
             <span>Buyer signal</span>
+            <span>Latest evidence</span>
             <span>Confidence</span>
             <span>Age</span>
             <span>Status</span>
@@ -382,26 +432,53 @@ export function ProspectLeadDesk({
                   <DetailStat label="Observed" value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)} />
                 </div>
 
-                <DetailSection title="Why this matched">
-                  <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
-                  {selectedLead.urgencyReason ? (
-                    <p className="mt-2 rounded-md px-2.5 py-2 text-xs leading-5" style={{ backgroundColor: C.amberPale, color: C.amber }}>
-                      Urgency cue: {selectedLead.urgencyReason}
-                    </p>
+                <div className="flex gap-4 border-b" role="tablist" aria-label="Signal details" style={{ borderColor: C.rule }}>
+                  <DetailTabButton active={detailTab === "match"} onClick={() => setDetailTab("match")}>Why it matched</DetailTabButton>
+                  <DetailTabButton active={detailTab === "evidence"} onClick={() => setDetailTab("evidence")}>Evidence</DetailTabButton>
+                  <DetailTabButton active={detailTab === "context"} onClick={() => setDetailTab("context")}>Source context</DetailTabButton>
+                </div>
+
+                <div className="min-h-[142px]">
+                  {detailTab === "match" ? (
+                    <>
+                      <DetailSection title="Why it matched">
+                        <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
+                        {selectedLead.urgencyReason ? (
+                          <p className="mt-2 rounded-md px-2.5 py-2 text-xs leading-5" style={{ backgroundColor: C.amberPale, color: C.amber }}>
+                            Urgency cue: {selectedLead.urgencyReason}
+                          </p>
+                        ) : null}
+                      </DetailSection>
+                      {selectedLead.suggestedReply ? (
+                        <DetailSection title="Suggested next move">
+                          <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
+                        </DetailSection>
+                      ) : null}
+                    </>
                   ) : null}
-                </DetailSection>
 
-                <DetailSection title="Evidence">
-                  <blockquote className="border-l-2 pl-3 text-sm leading-6" style={{ borderColor: C.blueLight, color: C.navySoft }}>
-                    “{evidence}”
-                  </blockquote>
-                </DetailSection>
+                  {detailTab === "evidence" ? (
+                    <DetailSection title="Source excerpt">
+                      <blockquote className="border-l-2 pl-3 text-sm leading-6" style={{ borderColor: C.blueLight, color: C.navySoft }}>
+                        “{evidence}”
+                      </blockquote>
+                      <p className="mt-3 text-xs leading-5" style={{ color: C.muted }}>
+                        This excerpt is retained from the original public post.
+                      </p>
+                    </DetailSection>
+                  ) : null}
 
-                {selectedLead.suggestedReply ? (
-                  <DetailSection title="Suggested next move">
-                    <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
-                  </DetailSection>
-                ) : null}
+                  {detailTab === "context" ? (
+                    <DetailSection title="Public-source context">
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border p-3 text-xs" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+                        <SourceContextItem label="Source" value={sourceDisplayName(selectedLead.sourcePost.source)} />
+                        <SourceContextItem label="Author" value={selectedLead.sourcePost.author ?? "Not available"} />
+                        <SourceContextItem label="Community" value={selectedLead.sourcePost.community ?? "Not available"} />
+                        <SourceContextItem label="Signal type" value={selectedLead.signalType ?? "Public conversation"} />
+                      </dl>
+                    </DetailSection>
+                  ) : null}
+                </div>
 
                 <div className="mt-auto space-y-2 border-t pt-4" style={{ borderColor: C.rule }}>
                   <div className="flex flex-wrap gap-2">
@@ -500,6 +577,68 @@ function Metric({
   );
 }
 
+function SourceCoverageMark({
+  sourceCount,
+  reportingSourceCount,
+}: {
+  sourceCount: number;
+  reportingSourceCount: number;
+}) {
+  const displayedCount = Math.max(4, Math.min(sourceCount, 8));
+  const reportingSegments = sourceCount > 0
+    ? Math.round((reportingSourceCount / sourceCount) * displayedCount)
+    : 0;
+
+  return (
+    <div className="flex shrink-0 items-end gap-1" aria-label={`${reportingSourceCount} of ${sourceCount} sources reporting`}>
+      {Array.from({ length: displayedCount }, (_, index) => {
+        const isReporting = index < reportingSegments;
+        const height = [9, 14, 11, 18, 13, 21, 16, 24][index] ?? 12;
+        return (
+          <span
+            key={index}
+            className="w-1.5 rounded-full"
+            style={{ height, backgroundColor: isReporting ? C.blue : C.ruleDark }}
+            aria-hidden="true"
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function DetailTabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className="-mb-px border-b-2 px-0.5 pb-2 text-xs font-semibold transition"
+      style={{ borderColor: active ? C.blue : "transparent", color: active ? C.blue : C.muted }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SourceContextItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
+      <dd className="mt-1 truncate font-medium" style={{ color: C.navySoft }}>{value}</dd>
+    </div>
+  );
+}
+
 function LeadRow({
   lead,
   selected,
@@ -517,7 +656,7 @@ function LeadRow({
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className="grid w-full gap-2 px-4 py-3 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(210px,1fr)_minmax(180px,1fr)_86px_54px_82px] lg:items-center lg:gap-3"
+      className="grid w-full gap-2 px-4 py-3 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
       style={{ backgroundColor: selected ? C.blueTint : C.white, outlineColor: C.blueLight }}
     >
       <span className="flex min-w-0 items-center gap-3">
@@ -533,8 +672,14 @@ function LeadRow({
         </span>
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm" style={{ color: C.navySoft }}>{signalLabel(lead)}</span>
-        <span className="block truncate text-xs lg:hidden" style={{ color: C.muted }}>{lead.matchReason}</span>
+        <span className="inline-flex max-w-full truncate rounded-full px-2 py-1 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
+          {signalLabel(lead)}
+        </span>
+        <span className="mt-1 block truncate text-xs" style={{ color: C.muted }}>{lead.signalType ?? "Buyer signal"}</span>
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm" style={{ color: C.navySoft }}>{evidencePreview(lead)}</span>
+        <span className="block truncate text-xs" style={{ color: C.muted }}>{lead.matchReason}</span>
       </span>
       <span className="text-sm font-semibold" style={{ color: C.navy }}>{formatScore(lead.verifierScore)}</span>
       <span className="text-xs" style={{ color: C.muted }}>{relativeTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}</span>
