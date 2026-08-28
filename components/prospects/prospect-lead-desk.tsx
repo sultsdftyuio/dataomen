@@ -443,16 +443,29 @@ export function ProspectLeadDesk({
                     <>
                       <DetailSection title="Why it matched">
                         <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
-                        {selectedLead.urgencyReason ? (
-                          <p className="mt-2 rounded-md px-2.5 py-2 text-xs leading-5" style={{ backgroundColor: C.amberPale, color: C.amber }}>
-                            Urgency cue: {selectedLead.urgencyReason}
-                          </p>
-                        ) : null}
+                        <ul className="mt-3 grid gap-1.5 text-xs leading-5" style={{ color: C.navySoft }}>
+                          <SignalPoint>{signalLabel(selectedLead)}</SignalPoint>
+                          {selectedLead.urgencyReason ? <SignalPoint>{selectedLead.urgencyReason}</SignalPoint> : null}
+                          {selectedLead.purchaseStage ? <SignalPoint>Conversation stage: {selectedLead.purchaseStage.replace(/_/g, " ")}</SignalPoint> : null}
+                        </ul>
                       </DetailSection>
+                      <div className="grid grid-cols-2 gap-3">
+                        <InsightCard
+                          title="Buying context"
+                          value={selectedLead.purchaseStage?.replace(/_/g, " ") ?? "Early signal"}
+                          detail={selectedLead.competitorMention ? `Also mentioned: ${selectedLead.competitorMention}` : "No company data is assumed from this post."}
+                        />
+                        <InsightCard
+                          title="Source context"
+                          value={sourceDisplayName(selectedLead.sourcePost.source)}
+                          detail={selectedLead.sourcePost.community ?? selectedLead.sourcePost.author ?? "Public conversation"}
+                        />
+                      </div>
                       {selectedLead.suggestedReply ? (
-                        <DetailSection title="Suggested next move">
-                          <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
-                        </DetailSection>
+                        <section className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+                          <p className="text-xs font-semibold" style={{ color: C.navy }}>Suggested next move</p>
+                          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
+                        </section>
                       ) : null}
                     </>
                   ) : null}
@@ -480,8 +493,13 @@ export function ProspectLeadDesk({
                   ) : null}
                 </div>
 
-                <div className="mt-auto space-y-2 border-t pt-4" style={{ borderColor: C.rule }}>
-                  <div className="flex flex-wrap gap-2">
+                <div className="mt-auto space-y-3 border-t pt-4" style={{ borderColor: C.rule }}>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button type="button" size="sm" className="bg-[#1B6EBF] text-white hover:bg-[#155a9f]" onClick={onOpenFocusedReview}>
+                      Review lead
+                      <ChevronRight aria-hidden="true" />
+                    </Button>
+                    <div className="flex flex-wrap gap-2">
                     {selectedLead.sourcePost.url ? (
                       <Button asChild variant="outline" size="sm" className="border-[#C8D9E8]">
                         <a href={selectedLead.sourcePost.url} target="_blank" rel="noreferrer">
@@ -490,10 +508,6 @@ export function ProspectLeadDesk({
                         </a>
                       </Button>
                     ) : null}
-                    <Button type="button" variant="outline" size="sm" className="border-[#C8D9E8]" onClick={onOpenFocusedReview}>
-                      Full review
-                      <ChevronRight aria-hidden="true" />
-                    </Button>
                     {!isPotentialBuyer(selectedLead) && selectedLead.matchStatus !== "qualified" ? (
                       <Button
                         type="button"
@@ -506,6 +520,7 @@ export function ProspectLeadDesk({
                         Mark qualified
                       </Button>
                     ) : null}
+                    </div>
                   </div>
 
                   <div>
@@ -565,12 +580,16 @@ function Metric({
 }) {
   return (
     <div className="flex min-h-[104px] items-center gap-3 px-4 py-4 sm:px-5">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: C.blueTint, color: C.blue }} aria-hidden="true">
-        {icon}
+      <span className="relative flex size-12 shrink-0 items-center justify-center rounded-full" style={{ color: C.blue }} aria-hidden="true">
+        <span className="absolute inset-0 rounded-full border-2 border-dashed" style={{ borderColor: C.blueLight }} />
+        <span className="absolute inset-1.5 rounded-full" style={{ backgroundColor: C.blueTint }} />
+        <span className="relative flex size-7 items-center justify-center rounded-full" style={{ backgroundColor: C.white }}>
+          {icon}
+        </span>
       </span>
       <div>
         <p className="text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
-        <p className="mt-0.5 text-2xl font-semibold leading-none" style={{ color: C.navy }}>{value}</p>
+        <p className="mt-0.5 text-[27px] font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
         {detail ? <p className="mt-1 text-[11px]" style={{ color: C.muted }}>{detail}</p> : null}
       </div>
     </div>
@@ -636,6 +655,33 @@ function SourceContextItem({ label, value }: { label: string; value: string }) {
       <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
       <dd className="mt-1 truncate font-medium" style={{ color: C.navySoft }}>{value}</dd>
     </div>
+  );
+}
+
+function SignalPoint({ children }: { children: ReactNode }) {
+  return (
+    <li className="flex gap-2">
+      <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: C.green }} aria-hidden="true" />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function InsightCard({
+  title,
+  value,
+  detail,
+}: {
+  title: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <section className="min-w-0 rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{title}</p>
+      <p className="mt-1 truncate text-xs font-semibold capitalize" style={{ color: C.navy }}>{value}</p>
+      <p className="mt-1 line-clamp-2 text-[11px] leading-4" style={{ color: C.navySoft }}>{detail}</p>
+    </section>
   );
 }
 
