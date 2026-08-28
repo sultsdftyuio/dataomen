@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition, type ReactNode } from "react";
 import {
   Check,
   CircleCheckBig,
@@ -190,7 +191,10 @@ export function ProspectLeadDesk({
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
+  const router = useRouter();
   const [detailTab, setDetailTab] = useState<DetailTab>("match");
+  const [discoveryMessage, setDiscoveryMessage] = useState<string | null>(null);
+  const [isDiscoveryPending, startDiscoveryTransition] = useTransition();
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
@@ -205,15 +209,55 @@ export function ProspectLeadDesk({
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
     : null;
 
+  const checkNewLeads = () => {
+    const websiteUrl = serviceProfile.websiteUrl?.trim();
+    if (!websiteUrl) {
+      setDiscoveryMessage("Add a website URL to the matching brief before starting discovery.");
+      return;
+    }
+
+    setDiscoveryMessage(null);
+    startDiscoveryTransition(async () => {
+      try {
+        const response = await fetch("/api/settings/workspace", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ websiteUrl }),
+        });
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          scanStarted?: boolean;
+          error?: string;
+          message?: string;
+        } | null;
+        const accepted =
+          response.ok && payload?.success === true && payload?.scanStarted !== false;
+
+        if (!accepted) {
+          setDiscoveryMessage(
+            payload?.error ??
+              payload?.message ??
+              "We could not start a new discovery scan. Please try again.",
+          );
+          return;
+        }
+
+        router.replace("/dashboard/discovery?scan=1");
+      } catch {
+        setDiscoveryMessage("We could not reach the discovery service. Please try again.");
+      }
+    });
+  };
+
   return (
-    <main className="flex w-full flex-col gap-2.5 sm:gap-3 lg:h-full lg:min-h-0 lg:overflow-hidden" style={{ color: C.text }}>
-      <header className="shrink-0 flex flex-col justify-between gap-3 border-b pb-3 lg:flex-row lg:items-end" style={{ borderColor: C.rule }}>
+    <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-hidden" style={{ color: C.text }}>
+      <header className="shrink-0 flex flex-col justify-between gap-2.5 border-b pb-2.5 lg:flex-row lg:items-end" style={{ borderColor: C.rule }}>
         <div>
           <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
             <Target className="size-3.5" aria-hidden="true" />
             Prospect discovery
           </div>
-          <h1 className="pfd text-3xl leading-none" style={{ color: C.navy }}>
+          <h1 className="pfd text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
             Leads
           </h1>
           <p className="mt-1.5 max-w-2xl text-[13px] leading-5" style={{ color: C.navySoft }}>
@@ -223,7 +267,7 @@ export function ProspectLeadDesk({
 
         <section
           aria-label="Discovery health"
-          className="min-w-0 rounded-lg border px-3 py-2.5 lg:w-[330px]"
+          className="min-w-0 rounded-lg border px-3 py-2 lg:w-[310px]"
           style={{ borderColor: C.rule, backgroundColor: C.white }}
         >
           <div className="flex items-center justify-between gap-3">
@@ -247,12 +291,12 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead discovery controls"
-        className="shrink-0 grid gap-2 rounded-lg border p-2.5 xl:grid-cols-[minmax(185px,.75fr)_minmax(240px,1.25fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_minmax(135px,.55fr)_minmax(135px,.55fr)_auto] xl:items-center"
+        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(175px,.7fr)_minmax(220px,1.2fr)_minmax(115px,.48fr)_minmax(115px,.48fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_auto] xl:items-center"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <div className="flex min-w-0 items-center gap-3 border-b pb-3 lg:border-r lg:border-b-0 lg:pb-0 lg:pr-3" style={{ borderColor: C.rule }}>
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.blueTint, color: C.blue }}>
-            <Globe2 className="size-5" aria-hidden="true" />
+        <div className="flex min-w-0 items-center gap-2.5 border-b pb-2.5 lg:border-r lg:border-b-0 lg:pb-0 lg:pr-2.5" style={{ borderColor: C.rule }}>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
+            <Globe2 className="size-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Matching brief</p>
@@ -267,7 +311,7 @@ export function ProspectLeadDesk({
             value={queueQuery}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search topic, source, author, or problem"
-            className="h-10 w-full rounded-lg border bg-white py-2 pr-3 pl-9 text-sm outline-none transition focus:ring-2"
+            className="h-9 w-full rounded-md border bg-white py-2 pr-3 pl-9 text-[13px] outline-none transition focus:ring-2"
             style={{ borderColor: C.ruleDark, color: C.text, outlineColor: C.blueLight }}
           />
         </label>
@@ -277,7 +321,7 @@ export function ProspectLeadDesk({
           <select
             value={queueFilter}
             onChange={(event) => onFilterChange(event.target.value as QueueFilter)}
-            className="h-8 w-full rounded-md border bg-white px-2 text-xs font-semibold outline-none"
+            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
             style={{ borderColor: C.ruleDark, color: C.navy }}
           >
             <option value="all">All signals</option>
@@ -291,7 +335,7 @@ export function ProspectLeadDesk({
           <select
             value={queueConfidence}
             onChange={(event) => onConfidenceChange(event.target.value as QueueConfidenceFilter)}
-            className="h-8 w-full rounded-md border bg-white px-2 text-xs font-semibold outline-none"
+            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
             style={{ borderColor: C.ruleDark, color: C.navy }}
           >
             <option value="all">All levels</option>
@@ -305,7 +349,7 @@ export function ProspectLeadDesk({
           <select
             value={queueSource}
             onChange={(event) => onSourceChange(event.target.value)}
-            className="h-8 w-full rounded-md border bg-white px-2 text-xs font-semibold outline-none"
+            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
             style={{ borderColor: C.ruleDark, color: C.navy }}
           >
             <option value="all">All sources</option>
@@ -320,7 +364,7 @@ export function ProspectLeadDesk({
           <select
             value={queueSort}
             onChange={(event) => onSortChange(event.target.value as QueueSort)}
-            className="h-8 w-full rounded-md border bg-white px-2 text-xs font-semibold outline-none"
+            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
             style={{ borderColor: C.ruleDark, color: C.navy }}
           >
             <option value="priority">Most relevant</option>
@@ -331,13 +375,18 @@ export function ProspectLeadDesk({
 
         <Button
           type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          className="h-10 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
+          onClick={checkNewLeads}
+          disabled={isDiscoveryPending}
+          className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
         >
-          <RefreshCw className={cn("size-4", isRefreshing && "animate-spin")} aria-hidden="true" />
-          Refresh leads
+          <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
+          {isDiscoveryPending ? "Starting scan…" : "Check new leads"}
         </Button>
+        {discoveryMessage ? (
+          <p className="text-xs leading-5 xl:col-span-full" role="alert" style={{ color: C.red }}>
+            {discoveryMessage}
+          </p>
+        ) : null}
       </section>
 
       <section
@@ -362,17 +411,31 @@ export function ProspectLeadDesk({
         style={{ borderColor: C.rule }}
       >
         <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
-          <div className="flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-5" style={{ borderColor: C.rule }}>
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: C.rule }}>
             <div className="flex items-baseline gap-2">
               <h2 className="text-base font-semibold" style={{ color: C.navy }}>Signals</h2>
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                 {filteredQueueItems.length}
               </span>
             </div>
-            <p className="text-xs" style={{ color: C.muted }}>{freshnessLabel(lastUpdatedAt)}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs" style={{ color: C.muted }}>{freshnessLabel(lastUpdatedAt)}</p>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Reload current results"
+                title="Reload current results"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                style={{ color: C.blue }}
+              >
+                <RefreshCw className={cn("size-3.5", isRefreshing && "animate-spin")} aria-hidden="true" />
+              </Button>
+            </div>
           </div>
 
-          <div className="hidden grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
+          <div className="hidden shrink-0 grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
             <span>Public source</span>
             <span>Buyer signal</span>
             <span>Latest evidence</span>
@@ -400,7 +463,7 @@ export function ProspectLeadDesk({
         <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto" aria-label="Signal intelligence">
           {selectedLead && selectedStatus ? (
             <>
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b p-3.5 sm:p-4" style={{ borderColor: C.rule }}>
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b p-3 sm:p-3.5" style={{ borderColor: C.rule }}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold" style={{ color: C.navy }}>Signal intelligence</h2>
@@ -414,7 +477,7 @@ export function ProspectLeadDesk({
                 </div>
               </div>
 
-              <div className="flex flex-1 flex-col gap-3.5 p-3.5 sm:p-4">
+              <div className="flex flex-1 flex-col gap-3 p-3 sm:p-3.5">
                 <div className="flex gap-3">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                     {sourceInitial(selectedLead.sourcePost.source)}
@@ -582,8 +645,8 @@ function Metric({
   icon: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[88px] items-center gap-3 px-4 py-3 sm:px-5">
-      <span className="relative flex size-11 shrink-0 items-center justify-center rounded-full" style={{ color: C.blue }} aria-hidden="true">
+    <div className="flex min-h-[78px] items-center gap-2.5 px-4 py-2.5 sm:px-5">
+      <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full" style={{ color: C.blue }} aria-hidden="true">
         <span className="absolute inset-0 rounded-full border-2 border-dashed" style={{ borderColor: C.blueLight }} />
         <span className="absolute inset-1.5 rounded-full" style={{ backgroundColor: C.blueTint }} />
         <span className="relative flex size-7 items-center justify-center rounded-full" style={{ backgroundColor: C.white }}>
@@ -592,7 +655,7 @@ function Metric({
       </span>
       <div>
         <p className="text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
-        <p className="mt-0.5 text-2xl font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
+        <p className="mt-0.5 text-xl font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
         {detail ? <p className="mt-1 text-[11px]" style={{ color: C.muted }}>{detail}</p> : null}
       </div>
     </div>
@@ -705,30 +768,30 @@ function LeadRow({
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className="grid w-full gap-2 px-4 py-2.5 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
+      className="grid w-full gap-1.5 px-4 py-2 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
       style={{ backgroundColor: selected ? C.blueTint : C.white, outlineColor: C.blueLight }}
     >
       <span className="flex min-w-0 items-center gap-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
           {sourceInitial(lead.sourcePost.source)}
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold" style={{ color: C.navy }}>{title}</span>
-          <span className="block truncate text-xs" style={{ color: C.muted }}>
+          <span className="block truncate text-[13px] font-semibold" style={{ color: C.navy }}>{title}</span>
+          <span className="block truncate text-[11px]" style={{ color: C.muted }}>
             {sourceDisplayName(lead.sourcePost.source)}
             {lead.sourcePost.author ? ` · ${lead.sourcePost.author}` : ""}
           </span>
         </span>
       </span>
       <span className="min-w-0">
-        <span className="inline-flex max-w-full truncate rounded-full px-2 py-1 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
+        <span className="inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
           {signalLabel(lead)}
         </span>
-        <span className="mt-1 block truncate text-xs" style={{ color: C.muted }}>{lead.signalType ?? "Buyer signal"}</span>
+        <span className="mt-0.5 block truncate text-[11px]" style={{ color: C.muted }}>{lead.signalType ?? "Buyer signal"}</span>
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm" style={{ color: C.navySoft }}>{evidencePreview(lead)}</span>
-        <span className="block truncate text-xs" style={{ color: C.muted }}>{lead.matchReason}</span>
+        <span className="block truncate text-[13px]" style={{ color: C.navySoft }}>{evidencePreview(lead)}</span>
+        <span className="block truncate text-[11px]" style={{ color: C.muted }}>{lead.matchReason}</span>
       </span>
       <span className="text-sm font-semibold" style={{ color: C.navy }}>{formatScore(lead.verifierScore)}</span>
       <span className="text-xs" style={{ color: C.muted }}>{relativeTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}</span>
