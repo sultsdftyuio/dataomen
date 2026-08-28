@@ -380,7 +380,6 @@ def _discovery_query_overlap_fraction() -> float:
     )
 
 
-
 def _source_post_is_plausible_for_discovery_query(
     post: Any,
     query: str,
@@ -431,7 +430,12 @@ def _source_post_is_plausible_for_discovery_query(
 
     has_request_context = bool(_BUYER_REQUEST_CONTEXT_PATTERN.search(text_value))
     has_first_person_context = bool(_BUYER_FIRST_PERSON_PATTERN.search(text_value))
-    if _PUBLISHER_CONTEXT_PATTERN.search(text_value) and not has_first_person_context:
+    has_company_buying_trigger = has_buying_trigger(post)
+    if (
+        _PUBLISHER_CONTEXT_PATTERN.search(text_value)
+        and not has_first_person_context
+        and not has_company_buying_trigger
+    ):
         return False
 
     # A recommendation or category search should ideally look like someone
@@ -446,12 +450,21 @@ def _source_post_is_plausible_for_discovery_query(
             "false",
         ).strip().casefold() in {"1", "true", "yes", "on"}
         if not strict_buyer_context:
-            return has_request_context or has_first_person_context
-        return (has_request_context or has_first_person_context) and (
+            return (
+                has_request_context
+                or has_first_person_context
+                or has_company_buying_trigger
+            )
+        return (
+            has_request_context
+            or has_first_person_context
+            or has_company_buying_trigger
+        ) and (
             has_first_person_context
             or bool(re.search(r"\b(?:what|which|anyone|recommend)\b", text_value))
+            or has_company_buying_trigger
         )
-    return has_request_context or has_first_person_context
+    return has_request_context or has_first_person_context or has_company_buying_trigger
 
 
 
@@ -563,7 +576,7 @@ def ingest_hn_posts(
         inserted_source_post_ids=inserted_source_post_ids,
         matchable_source_post_ids=_matchable_source_post_ids(plausible_posts),
         plausible_hits=len(plausible_posts),
-        matchable_source_post_refs=_matchable_source_post_refs(plausible_posts),
+        matchable_source_post_refs=prioritized_source_post_refs(plausible_posts),
     )
     logger.info(
         "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",
@@ -584,9 +597,9 @@ from .models import (
     _service_profile_from_row,
     logger,
 )
+from .lead_signals import has_buying_trigger, prioritized_source_post_refs
 from .public_storage import (
     _matchable_source_post_ids,
-    _matchable_source_post_refs,
     _persist_new_public_source_posts,
 )
 from .queries import (

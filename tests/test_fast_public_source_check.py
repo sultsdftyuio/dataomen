@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import unittest
 from types import SimpleNamespace
@@ -153,6 +154,85 @@ class FastPublicSourceCheckTests(unittest.TestCase):
             "profile-1",
             delay_ms=300_000,
         )
+
+    def test_parent_actor_caps_embedding_handoffs_and_reports_excluded_posts(self) -> None:
+        from api.workers import actors
+
+        first = FastCheckSourceResult(
+            source="hackernews",
+            query_outcomes=(
+                FastCheckQueryOutcome(
+                    source="hackernews",
+                    query_type="buyer_pain",
+                    query="need more leads",
+                    outcome="completed",
+                    hits_found=2,
+                    plausible_hits=2,
+                ),
+            ),
+            source_post_refs=("hn-1", "hn-2"),
+        )
+        second = FastCheckSourceResult(
+            source="bluesky",
+            query_outcomes=(
+                FastCheckQueryOutcome(
+                    source="bluesky",
+                    query_type="buyer_pain",
+                    query="need more leads",
+                    outcome="completed",
+                    hits_found=2,
+                    plausible_hits=2,
+                ),
+            ),
+            source_post_refs=("bs-1", "bs-2"),
+        )
+        complete_run = MagicMock()
+
+        def run_sources(*_args: object, **kwargs: object) -> list[FastCheckSourceResult]:
+            callback = kwargs["on_source_completed"]
+            callback(first)
+            callback(second)
+            return [first, second]
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ARCLI_INITIAL_PUBLIC_EMBEDDING_POST_LIMIT": "3",
+                    "ARCLI_INITIAL_PUBLIC_EMBEDDING_POSTS_PER_SOURCE_LIMIT": "1",
+                    "ARCLI_INITIAL_PUBLIC_REMATCH_ENABLED": "false",
+                },
+                clear=False,
+            ),
+            patch(
+                "api.services.social.fast_check.run_fast_public_source_check",
+                side_effect=run_sources,
+            ),
+            patch("api.services.social_ingestion.trigger_embedding_jobs", return_value=1) as enqueue,
+            patch.object(actors, "_complete_discovery_run", complete_run),
+            patch.object(actors, "_record_discovery_event"),
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_initial_public_sources_fast_job.fn(
+                [{"query_type": "buyer_pain", "phrase": "need more leads"}],
+                enabled_sources=["hackernews", "bluesky"],
+                tenant_id="tenant-1",
+                service_profile_id="profile-1",
+                discovery_run_id="run-1",
+            )
+
+        assert [call.args[0] for call in enqueue.call_args_list] == [["hn-1"], ["bs-1"]]
+        budget = complete_run.call_args.kwargs["summary"]["embedding_post_budget"]
+        assert budget == {
+            "post_limit": 3,
+            "per_source_limit": 1,
+            "selected": 2,
+            "selected_by_source": {"hackernews": 1, "bluesky": 1},
+            "selected_identified_authors": 0,
+            "excluded": 2,
+            "average_signal_score": 0,
+            "selected_signal_reasons": {},
+        }
 
 
 if __name__ == "__main__":

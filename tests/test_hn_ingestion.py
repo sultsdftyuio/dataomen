@@ -158,6 +158,54 @@ class HackerNewsIngestionTests(unittest.TestCase):
             )
         )
 
+    def test_business_context_is_a_ranking_signal_not_a_hard_requirement(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social.lead_signals import lead_signal_score
+
+        noncommercial = SimpleNamespace(
+            title="Need more leads in our test suite",
+            body="We need more leads before the release.",
+        )
+        commercial = SimpleNamespace(
+            title="Need more leads for our B2B SaaS",
+            body="Our sales pipeline has stalled and we need more leads.",
+        )
+
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                noncommercial,
+                "need more leads",
+                query_type="buyer_pain",
+            )
+        )
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                commercial,
+                "need more leads",
+                query_type="buyer_pain",
+            )
+        )
+        self.assertGreater(
+            lead_signal_score(commercial).score,
+            lead_signal_score(noncommercial).score,
+        )
+
+    def test_company_buying_trigger_is_kept_for_later_ranking(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        trigger = SimpleNamespace(
+            title="Acme launched into a new market after funding",
+            body="The startup is expanding with a lead generation gap.",
+        )
+
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                trigger,
+                "better lead generation",
+                query_type="buyer_pain",
+            )
+        )
+
     def test_legacy_demand_fallback_is_upgraded_only_for_search(self) -> None:
         import api.services.social_ingestion as ingestion_module
 

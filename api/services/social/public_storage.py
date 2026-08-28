@@ -232,7 +232,13 @@ def _matchable_source_post_refs(posts: Sequence[Any]) -> list[PublicSourcePostRe
         source_post_id = str(getattr(post, "source_post_id", "") or "").strip()
         if not source or not source_post_id:
             continue
-        ref = PublicSourcePostRef(source, source_post_id)
+        ref = PublicSourcePostRef(
+            source,
+            source_post_id,
+            lead_signal_score=getattr(post, "lead_signal_score", 0),
+            lead_signal_reasons=getattr(post, "lead_signal_reasons", ()),
+            lead_signal_group=getattr(post, "lead_signal_group", None),
+        )
         refs.setdefault((ref.source, ref.source_post_id), ref)
     return list(refs.values())
 

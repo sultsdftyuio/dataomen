@@ -440,6 +440,58 @@ def ingest_initial_public_sources_fast_job(
     total_matching_source_posts = 0
     plausible_query_types: set[str] = set()
     embedding_jobs = 0
+    embedding_posts_excluded = 0
+    embedding_budget = None
+    selected_embedding_keys: set[tuple[str, str]] = set()
+    selected_embedding_posts_by_source: dict[str, int] = {}
+    selected_embedding_signal_groups: set[str] = set()
+    selected_embedding_signal_score_total = 0
+    selected_embedding_signal_reasons: dict[str, int] = {}
+    if tenant_id and service_profile_id:
+        from api.services.social.discovery_budget import initial_embedding_budget
+
+        embedding_budget = initial_embedding_budget()
+
+    def enqueue_initial_embedding_refs(source: str, refs: Sequence[Any]) -> int:
+        """Queue only the bounded, unique candidates from this activation."""
+
+        nonlocal embedding_posts_excluded
+        nonlocal selected_embedding_signal_score_total
+        selected_refs = refs
+        if embedding_budget is not None:
+            from api.services.social.discovery_budget import select_initial_embedding_refs
+
+            selection = select_initial_embedding_refs(
+                refs,
+                source=source,
+                budget=embedding_budget,
+                selected_keys=selected_embedding_keys,
+                selected_by_source=selected_embedding_posts_by_source,
+                selected_signal_groups=selected_embedding_signal_groups,
+            )
+            selected_refs = selection.refs
+            embedding_posts_excluded += selection.excluded_count
+
+        from api.services.social.lead_signals import source_post_ref_signal
+
+        for ref in selected_refs:
+            signal = source_post_ref_signal(ref)
+            selected_embedding_signal_score_total += signal.score
+            for reason in signal.reasons:
+                selected_embedding_signal_reasons[reason] = (
+                    selected_embedding_signal_reasons.get(reason, 0) + 1
+                )
+
+        if not selected_refs:
+            return 0
+
+        from api.services.social_ingestion import trigger_embedding_jobs
+
+        return trigger_embedding_jobs(
+            list(selected_refs),
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+        )
 
     def on_source_completed(result: Any) -> None:
         nonlocal total_hits
@@ -460,12 +512,9 @@ def ingest_initial_public_sources_fast_job(
         # provider can make leads available while a slower provider continues
         # searching. The parent run remains non-terminal until below.
         if result.source_post_refs:
-            from api.services.social_ingestion import trigger_embedding_jobs
-
-            embedding_jobs += trigger_embedding_jobs(
-                list(result.source_post_refs),
-                tenant_id=tenant_id,
-                service_profile_id=service_profile_id,
+            embedding_jobs += enqueue_initial_embedding_refs(
+                source,
+                result.source_post_refs,
             )
 
         for query_result in result.query_outcomes:
@@ -553,7 +602,6 @@ def ingest_initial_public_sources_fast_job(
                 from api.services.social_ingestion import (
                     _result_source_post_refs,
                     ingest_x_posts,
-                    trigger_embedding_jobs,
                 )
 
                 x_fallback_outcome = "completed"
@@ -571,10 +619,9 @@ def ingest_initial_public_sources_fast_job(
                     total_new_inserts += x_result.inserted_count
                     total_matching_source_posts += len(x_refs)
                     if x_refs:
-                        embedding_jobs += trigger_embedding_jobs(
+                        embedding_jobs += enqueue_initial_embedding_refs(
+                            "x",
                             x_refs,
-                            tenant_id=tenant_id,
-                            service_profile_id=service_profile_id,
                         )
                     _record_discovery_event(
                         discovery_run_id=discovery_run_id,
@@ -635,6 +682,26 @@ def ingest_initial_public_sources_fast_job(
             "new_inserts": total_new_inserts,
             "matching_source_posts": total_matching_source_posts,
             "embedding_jobs": embedding_jobs,
+            "embedding_post_budget": (
+                {
+                    "post_limit": embedding_budget.post_limit,
+                    "per_source_limit": embedding_budget.per_source_limit,
+                    "selected": len(selected_embedding_keys),
+                    "selected_by_source": selected_embedding_posts_by_source,
+                    "selected_identified_authors": len(selected_embedding_signal_groups),
+                    "excluded": embedding_posts_excluded,
+                    "average_signal_score": round(
+                        selected_embedding_signal_score_total
+                        / len(selected_embedding_keys),
+                        2,
+                    )
+                    if selected_embedding_keys
+                    else 0,
+                    "selected_signal_reasons": selected_embedding_signal_reasons,
+                }
+                if embedding_budget is not None
+                else None
+            ),
             "source_completion": {
                 "expected": [
                     *source_names,
@@ -679,36 +746,39 @@ def ingest_initial_public_sources_fast_job(
         # path for a new scan.  Give fresh public-source posts a clear runway
         # through matching before the bounded historical corpus uses threads.
         if tenant_id and service_profile_id and not run_completion_managed:
-            try:
-                from api.services.social_ingestion import (
-                    enqueue_existing_public_source_rematch,
-                )
+            from api.services.social.discovery_budget import initial_public_rematch_enabled
 
-                rematch_delay_ms = _int_env(
-                    "ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS",
-                    300_000,
-                    minimum=0,
-                )
-                rematch_message_id = enqueue_existing_public_source_rematch(
-                    tenant_id,
-                    service_profile_id,
-                    delay_ms=rematch_delay_ms,
-                )
-                logger.info(
-                    "existing_public_source_rematch_deferred_after_fast_check tenant_id=%s service_profile_id=%s message_id=%s delay_ms=%s",
-                    tenant_id,
-                    service_profile_id,
-                    rematch_message_id,
-                    rematch_delay_ms,
-                )
-            except Exception as rematch_exc:
-                logger.exception(
-                    "existing_public_source_rematch_enqueue_after_fast_check_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
-                    tenant_id,
-                    service_profile_id,
-                    rematch_exc.__class__.__name__,
-                    rematch_exc,
-                )
+            if initial_public_rematch_enabled():
+                try:
+                    from api.services.social_ingestion import (
+                        enqueue_existing_public_source_rematch,
+                    )
+
+                    rematch_delay_ms = _int_env(
+                        "ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS",
+                        300_000,
+                        minimum=0,
+                    )
+                    rematch_message_id = enqueue_existing_public_source_rematch(
+                        tenant_id,
+                        service_profile_id,
+                        delay_ms=rematch_delay_ms,
+                    )
+                    logger.info(
+                        "existing_public_source_rematch_deferred_after_fast_check tenant_id=%s service_profile_id=%s message_id=%s delay_ms=%s",
+                        tenant_id,
+                        service_profile_id,
+                        rematch_message_id,
+                        rematch_delay_ms,
+                    )
+                except Exception as rematch_exc:
+                    logger.exception(
+                        "existing_public_source_rematch_enqueue_after_fast_check_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+                        tenant_id,
+                        service_profile_id,
+                        rematch_exc.__class__.__name__,
+                        rematch_exc,
+                    )
     except Exception as exc:
         _record_discovery_event(
             discovery_run_id=discovery_run_id,
@@ -761,6 +831,10 @@ def ingest_initial_public_sources_fast_job(
         hits_found=total_hits,
         matching_source_posts=total_matching_source_posts,
         embedding_jobs=embedding_jobs,
+        embedding_posts_selected=len(selected_embedding_keys),
+        embedding_posts_excluded=embedding_posts_excluded,
+        embedding_signal_score_total=selected_embedding_signal_score_total,
+        embedding_signal_reasons=selected_embedding_signal_reasons,
         discovery_run_completed=not run_completion_managed,
     )
 
@@ -908,7 +982,9 @@ def monitor_initial_public_discovery_run(
         )
         return
 
-    if not rematch_attempted:
+    from api.services.social.discovery_budget import initial_public_rematch_enabled
+
+    if not rematch_attempted and initial_public_rematch_enabled():
         try:
             from api.services.social_ingestion import enqueue_existing_public_source_rematch
 
@@ -936,6 +1012,18 @@ def monitor_initial_public_discovery_run(
             )
         schedule_next(next_rematch_attempted=True)
         return
+
+    if not rematch_attempted:
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source="public_corpus",
+            query_type=None,
+            query=None,
+            phase="rematch",
+            outcome="skipped",
+            details={"reason": "disabled_by_configuration"},
+        )
 
     schedule_next(next_rematch_attempted=True)
 

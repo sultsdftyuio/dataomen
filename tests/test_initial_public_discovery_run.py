@@ -166,6 +166,40 @@ def test_monitor_runs_one_cached_corpus_rematch_before_the_deadline() -> None:
     complete_run.assert_not_called()
 
 
+def test_monitor_skips_cached_corpus_rematch_when_cost_control_disables_it(monkeypatch) -> None:
+    from api.workers import actors
+
+    monkeypatch.setenv("ARCLI_INITIAL_PUBLIC_REMATCH_ENABLED", "false")
+    next_message = SimpleNamespace(message_id="next-monitor")
+    complete_run = MagicMock()
+    with (
+        patch("api.services.social.run_control.initial_discovery_run_limits", return_value=_limits()),
+        patch("api.services.social.run_control.elapsed_run_seconds", return_value=120),
+        patch("api.services.social.run_control.ready_for_review_count_since", return_value=0),
+        patch(
+            "api.services.social_ingestion.enqueue_existing_public_source_rematch",
+        ) as rematch,
+        patch.object(
+            actors.monitor_initial_public_discovery_run,
+            "send_with_options",
+            return_value=next_message,
+        ) as schedule,
+        patch.object(actors, "_complete_discovery_run", complete_run),
+        patch.object(actors, "_record_discovery_event") as record_event,
+    ):
+        actors.monitor_initial_public_discovery_run.fn(
+            TENANT_ID,
+            PROFILE_ID,
+            RUN_ID,
+            STARTED_AT,
+        )
+
+    rematch.assert_not_called()
+    assert schedule.call_args.kwargs["kwargs"] == {"rematch_attempted": True}
+    assert record_event.call_args.kwargs["outcome"] == "skipped"
+    complete_run.assert_not_called()
+
+
 def test_monitor_stops_with_a_partial_run_at_five_minutes() -> None:
     from api.workers import actors
 

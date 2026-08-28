@@ -197,10 +197,28 @@ class PublicSourcePostRef:
 
     source: str
     source_post_id: str
+    # This is transient activation metadata, never a cross-tenant lead score.
+    # It lets a bounded embedding handoff prefer posts with stronger free
+    # buying signals while preserving the provider-qualified identity.
+    lead_signal_score: int = field(default=0, compare=False)
+    lead_signal_reasons: tuple[str, ...] = field(default=(), compare=False)
+    lead_signal_group: str | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.source.strip() or not self.source_post_id.strip():
             raise ValueError("source and source_post_id are required")
+        object.__setattr__(
+            self,
+            "lead_signal_score",
+            max(0, min(100, int(self.lead_signal_score))),
+        )
+        object.__setattr__(
+            self,
+            "lead_signal_reasons",
+            tuple(str(reason) for reason in self.lead_signal_reasons if str(reason)),
+        )
+        group = str(self.lead_signal_group or "").strip()
+        object.__setattr__(self, "lead_signal_group", group or None)
 
     def to_payload(self) -> dict[str, str]:
         return {

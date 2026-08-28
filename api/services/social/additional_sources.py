@@ -122,7 +122,7 @@ def ingest_x_posts(
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
         matchable_source_post_ids=_matchable_source_post_ids(posts),
-        matchable_source_post_refs=_matchable_source_post_refs(posts),
+        matchable_source_post_refs=prioritized_source_post_refs(posts),
     )
     logger.info(
         "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -378,7 +378,7 @@ def ingest_additional_public_source_posts(
             hits_found=len(posts),
             inserted_count=len(inserted_source_post_ids),
             inserted_source_post_ids=inserted_source_post_ids,
-            matchable_source_post_refs=_matchable_source_post_refs(plausible_posts),
+            matchable_source_post_refs=prioritized_source_post_refs(plausible_posts),
             plausible_hits=len(plausible_posts),
         )
     logger.info(
@@ -393,6 +393,7 @@ def ingest_additional_public_source_posts(
 
 # Cross-module helper imports for static analysis and direct module use.
 from .activation import _source_post_is_plausible_for_discovery_query
+from .lead_signals import prioritized_source_post_refs
 from .models import (
     ADDITIONAL_PUBLIC_SOURCE_NAMES,
     DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
@@ -400,6 +401,5 @@ from .models import (
 )
 from .public_storage import (
     _matchable_source_post_ids,
-    _matchable_source_post_refs,
     _persist_new_public_source_posts,
 )

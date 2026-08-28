@@ -63,6 +63,19 @@ def _source_post_ref_key(ref: Any) -> tuple[str, str] | None:
     return (source, source_post_id) if source and source_post_id else None
 
 
+def _keep_higher_priority_ref(refs: dict[tuple[str, str], Any], ref: Any) -> None:
+    """Preserve the strongest signal when a post matched several query phrases."""
+
+    key = _source_post_ref_key(ref)
+    if not key:
+        return
+    previous = refs.get(key)
+    if previous is None or int(getattr(ref, "lead_signal_score", 0) or 0) > int(
+        getattr(previous, "lead_signal_score", 0) or 0
+    ):
+        refs[key] = ref
+
+
 def _source_result_for_hackernews(
     queries: Sequence[dict[str, str]],
     *,
@@ -112,9 +125,7 @@ def _source_result_for_hackernews(
             )
         )
         for ref in _result_source_post_refs(result, source="hackernews"):
-            key = _source_post_ref_key(ref)
-            if key:
-                refs.setdefault(key, ref)
+            _keep_higher_priority_ref(refs, ref)
 
     return FastCheckSourceResult(
         source="hackernews",
@@ -212,9 +223,7 @@ def _source_result_for_additional_source(
             )
         )
         for ref in result.matchable_source_post_refs:
-            key = _source_post_ref_key(ref)
-            if key:
-                refs.setdefault(key, ref)
+            _keep_higher_priority_ref(refs, ref)
 
     return FastCheckSourceResult(
         source=source,
