@@ -27,7 +27,7 @@ import type {
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 
-type QueueFilter = "all" | "leads" | "potential";
+type QueueFilter = "all" | "leads" | "potential" | "screened";
 type QueueSort = "priority" | "newest" | "confidence";
 type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
 type DetailTab = "match" | "evidence" | "context";
@@ -36,6 +36,7 @@ type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
   leads: QualifiedLeadView[];
   potentialBuyers: QualifiedLeadView[];
+  screenedMatches: QualifiedLeadView[];
   filteredQueueItems: QualifiedLeadView[];
   selectedLead: QualifiedLeadView | null;
   selectedLeadId: string | null;
@@ -81,6 +82,10 @@ const FEEDBACK_ACTIONS: Array<{
 
 function isPotentialBuyer(lead: QualifiedLeadView) {
   return lead.matchStatus === "discovery_candidate";
+}
+
+function isScreenedMatch(lead: QualifiedLeadView) {
+  return lead.matchStatus === "rejected";
 }
 
 function sourceDisplayName(source: string) {
@@ -135,6 +140,9 @@ function leadStatus(lead: QualifiedLeadView) {
   if (isPotentialBuyer(lead)) {
     return { label: "Potential", color: C.amber, background: C.amberPale };
   }
+  if (isScreenedMatch(lead)) {
+    return { label: "Screened out", color: C.muted, background: C.offWhite };
+  }
   return { label: "Review", color: C.blue, background: C.bluePale };
 }
 
@@ -162,6 +170,7 @@ export function ProspectLeadDesk({
   serviceProfile,
   leads,
   potentialBuyers,
+  screenedMatches,
   filteredQueueItems,
   selectedLead,
   selectedLeadId,
@@ -327,6 +336,7 @@ export function ProspectLeadDesk({
             <option value="all">All signals</option>
             <option value="leads">Ready to review</option>
             <option value="potential">Potential buyers</option>
+            <option value="screened">Screened out</option>
           </select>
         </label>
 
@@ -394,13 +404,13 @@ export function ProspectLeadDesk({
         className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Signals in review" value={metricValue(filteredQueueItems.length)} icon={<Radar className="size-5" />} />
+        <Metric label="Public matches" value={metricValue(filteredQueueItems.length)} icon={<Radar className="size-5" />} />
         <Metric label="Ready to act" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} />
         <Metric label="Potential buyers" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} />
         <Metric
-          label="Sources reporting"
-          value={sourceCount > 0 ? `${reportingSourceCount}/${sourceCount}` : "—"}
-          detail={freshnessLabel(lastUpdatedAt)}
+          label="Screened matches"
+          value={metricValue(screenedMatches.length)}
+          detail="Not lead-ready"
           icon={<Network className="size-5" />}
         />
       </section>
@@ -472,7 +482,9 @@ export function ProspectLeadDesk({
                     </span>
                   </div>
                   <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                    Public-source evidence, not a verified company record.
+                    {isScreenedMatch(selectedLead)
+                      ? "This semantic match did not pass verification. It is shown for inspection only."
+                      : "Public-source evidence, not a verified company record."}
                   </p>
                 </div>
               </div>
@@ -562,7 +574,7 @@ export function ProspectLeadDesk({
                 <div className="mt-auto space-y-3 border-t pt-4" style={{ borderColor: C.rule }}>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" size="sm" className="bg-[#1B6EBF] text-white hover:bg-[#155a9f]" onClick={onOpenFocusedReview}>
-                      Review lead
+                      {isScreenedMatch(selectedLead) ? "Inspect post" : "Review lead"}
                       <ChevronRight aria-hidden="true" />
                     </Button>
                     <div className="flex flex-wrap gap-2">
@@ -574,7 +586,7 @@ export function ProspectLeadDesk({
                         </a>
                       </Button>
                     ) : null}
-                    {!isPotentialBuyer(selectedLead) && selectedLead.matchStatus !== "qualified" ? (
+                    {selectedLead.matchStatus === "ready_for_review" ? (
                       <Button
                         type="button"
                         size="sm"

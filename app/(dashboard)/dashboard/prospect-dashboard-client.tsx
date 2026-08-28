@@ -54,6 +54,7 @@ type ProspectDashboardClientProps = {
   crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
+  screenedMatches: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
   isWarmingUp: boolean;
 };
@@ -63,7 +64,7 @@ type FeedbackNotice = {
   ok: boolean;
 };
 
-type QueueFilter = "all" | "leads" | "potential";
+type QueueFilter = "all" | "leads" | "potential" | "screened";
 type QueueSort = "priority" | "newest" | "confidence";
 type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
 type DashboardView = "overview" | "focus" | "queue";
@@ -165,6 +166,14 @@ function isPotentialBuyer(lead: QualifiedLeadView) {
   return lead.matchStatus === "discovery_candidate";
 }
 
+function isScreenedMatch(lead: QualifiedLeadView) {
+  return lead.matchStatus === "rejected";
+}
+
+function isVerifiedLead(lead: QualifiedLeadView) {
+  return lead.matchStatus === "ready_for_review" || lead.matchStatus === "qualified";
+}
+
 function matchesQueueSearch(lead: QualifiedLeadView, query: string) {
   if (!query.trim()) return true;
 
@@ -193,7 +202,7 @@ function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
     if (sort === "confidence") return b.verifierScore - a.verifierScore;
 
     const priority = (lead: QualifiedLeadView) =>
-      (isPotentialBuyer(lead) ? 0 : 4) +
+      (isScreenedMatch(lead) ? -2 : isPotentialBuyer(lead) ? 0 : 4) +
       (lead.urgencyReason ? 2 : 0) +
       (lead.matchStatus === "qualified" ? 1 : 0);
     const priorityDifference = priority(b) - priority(a);
@@ -415,10 +424,10 @@ function LeadOutreach({
   const isQualified = lead.matchStatus === "qualified";
   const draftStorageKey = `arcli:reply-draft:${lead.id}`;
   const sourceName = sourceDisplayName(lead.sourcePost.source);
-  // A discovery candidate is useful evidence to inspect, not a lead that a
-  // browser user can promote. The server and RLS policy enforce the same
-  // boundary; keeping it explicit here prevents a misleading CRM action.
-  const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate";
+  // Potential and screened matches are useful evidence to inspect, but only a
+  // verifier-confirmed lead can be promoted. The server and RLS policy enforce
+  // the same boundary; keeping it explicit prevents a misleading CRM action.
+  const isReviewOnly = reviewOnly || !isVerifiedLead(lead);
   const hasSuggestedReply = Boolean(lead.suggestedReply.trim());
   const draftId = `suggested-reply-${lead.id}`;
 
@@ -528,9 +537,10 @@ function LeadOutreach({
   ) : null;
 
   const reviewOnlyNotice = isReviewOnly ? (
-    <p className="text-xs font-medium" style={{ color: C.amber }}>
-      Potential buyer — review the evidence before outreach. It cannot be
-      qualified or exported to your CRM yet.
+    <p className="text-xs font-medium" style={{ color: isScreenedMatch(lead) ? C.red : C.amber }}>
+      {isScreenedMatch(lead)
+        ? "Screened out by verification — inspect the evidence, but do not use it for outreach or CRM export."
+        : "Potential buyer — review the evidence before outreach. It cannot be qualified or exported to your CRM yet."}
     </p>
   ) : null;
 
@@ -2672,6 +2682,7 @@ export default function ProspectDashboardClient({
   crawlJob,
   leads,
   discoveryCandidates,
+  screenedMatches,
   buyerDemandReport,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
@@ -2718,7 +2729,7 @@ export default function ProspectDashboardClient({
 
   useEffect(() => {
     setLastUpdatedAt(new Date());
-  }, [buyerDemandReport?.updatedAt, discoveryCandidates, leads]);
+  }, [buyerDemandReport?.updatedAt, discoveryCandidates, leads, screenedMatches]);
 
   useEffect(() => {
     if (!shouldRefreshForLeads) return;
@@ -2778,8 +2789,8 @@ export default function ProspectDashboardClient({
   };
 
   const queueItems = useMemo(
-    () => [...leads, ...discoveryCandidates],
-    [discoveryCandidates, leads],
+    () => [...leads, ...discoveryCandidates, ...screenedMatches],
+    [discoveryCandidates, leads, screenedMatches],
   );
   const queueSources = useMemo(
     () => Array.from(new Set(queueItems.map((lead) => lead.sourcePost.source)))
@@ -2789,8 +2800,9 @@ export default function ProspectDashboardClient({
   );
   const filteredQueueItems = useMemo(() => {
     const filtered = queueItems.filter((lead) => {
-      if (queueFilter === "leads" && isPotentialBuyer(lead)) return false;
+      if (queueFilter === "leads" && !isVerifiedLead(lead)) return false;
       if (queueFilter === "potential" && !isPotentialBuyer(lead)) return false;
+      if (queueFilter === "screened" && !isScreenedMatch(lead)) return false;
       if (queueConfidence === "high" && lead.verifierScore < 0.8) return false;
       if (queueConfidence === "sixty_plus" && lead.verifierScore < 0.6) return false;
       if (queueSource !== "all" && lead.sourcePost.source !== queueSource) return false;
@@ -2800,11 +2812,15 @@ export default function ProspectDashboardClient({
     return sortQueueItems(filtered, queueSort);
   }, [queueConfidence, queueFilter, queueItems, queueQuery, queueSort, queueSource]);
   const visibleLeads = useMemo(
-    () => filteredQueueItems.filter((lead) => !isPotentialBuyer(lead)),
+    () => filteredQueueItems.filter(isVerifiedLead),
     [filteredQueueItems],
   );
   const visiblePotentialBuyers = useMemo(
     () => filteredQueueItems.filter(isPotentialBuyer),
+    [filteredQueueItems],
+  );
+  const visibleScreenedMatches = useMemo(
+    () => filteredQueueItems.filter(isScreenedMatch),
     [filteredQueueItems],
   );
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(() =>
@@ -2890,6 +2906,7 @@ export default function ProspectDashboardClient({
         serviceProfile={serviceProfile}
         leads={leads}
         potentialBuyers={visiblePotentialBuyers}
+        screenedMatches={screenedMatches}
         filteredQueueItems={filteredQueueItems}
         selectedLead={selectedLead}
         selectedLeadId={selectedLeadId}
@@ -3232,8 +3249,14 @@ export default function ProspectDashboardClient({
             {isQueueControlsOpen ? (
               <div id="lead-queue-controls" className="mt-3 flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
                 <div className="flex items-center gap-1" role="group" aria-label="Lead type filter">
-                  {(["all", "leads", "potential"] as const).map((filter) => {
-                    const label = filter === "all" ? "All" : filter === "leads" ? "Leads" : "Potential buyers";
+                  {(["all", "leads", "potential", "screened"] as const).map((filter) => {
+                    const label = filter === "all"
+                      ? "All"
+                      : filter === "leads"
+                        ? "Leads"
+                        : filter === "potential"
+                          ? "Potential buyers"
+                          : "Screened out";
                     const active = queueFilter === filter;
 
                     return (
