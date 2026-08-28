@@ -713,10 +713,13 @@ export async function fetchQualifiedLeads(
     .filter((lead) => lead.verifierScore >= threshold);
 }
 
-async function runDiscoveryCandidateQuery(
+type ReviewOnlyMatchStatus = "discovery_candidate" | "rejected";
+
+async function runReviewOnlyMatchQuery(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   serviceProfileId: string,
+  matchStatus: ReviewOnlyMatchStatus,
   select: string,
   withOrder = true,
   activeSince: string | null = null,
@@ -726,7 +729,7 @@ async function runDiscoveryCandidateQuery(
     .select(select)
     .eq("tenant_id", tenantId)
     .eq("service_profile_id", serviceProfileId)
-    .eq("match_status", "discovery_candidate");
+    .eq("match_status", matchStatus);
 
   if (activeSince) {
     query = query.gte("updated_at", activeSince);
@@ -738,36 +741,38 @@ async function runDiscoveryCandidateQuery(
       .order("created_at", { ascending: false });
   }
 
-  return query.limit(10);
+  return query.limit(15);
 }
 
 /**
- * These posts passed the LLM's relevance check but did not meet the automatic
- * review score. They are deliberately separate from verified leads so a human
- * can inspect useful evidence without treating it as a qualified opportunity.
+ * Read tenant-owned, review-only records with resilient fallbacks for staged
+ * Supabase schema rollouts. Neither status can be treated as a CRM lead.
  */
-export async function fetchDiscoveryCandidates(
+async function fetchReviewOnlyMatches(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   serviceProfileId: string | null,
+  matchStatus: ReviewOnlyMatchStatus,
   activeSince: string | null = null,
 ): Promise<QualifiedLeadView[]> {
   if (!serviceProfileId) return [];
 
-  let result = await runDiscoveryCandidateQuery(
+  let result = await runReviewOnlyMatchQuery(
     supabase,
     tenantId,
     serviceProfileId,
+    matchStatus,
     "*, source_posts(*)",
     true,
     activeSince,
   );
 
   if (result.error) {
-    result = await runDiscoveryCandidateQuery(
+    result = await runReviewOnlyMatchQuery(
       supabase,
       tenantId,
       serviceProfileId,
+      matchStatus,
       "*",
       true,
       activeSince,
@@ -775,10 +780,11 @@ export async function fetchDiscoveryCandidates(
   }
 
   if (result.error) {
-    result = await runDiscoveryCandidateQuery(
+    result = await runReviewOnlyMatchQuery(
       supabase,
       tenantId,
       serviceProfileId,
+      matchStatus,
       "*",
       false,
       activeSince,
@@ -786,17 +792,19 @@ export async function fetchDiscoveryCandidates(
   }
 
   if (result.error && activeSince) {
-    result = await runDiscoveryCandidateQuery(
+    result = await runReviewOnlyMatchQuery(
       supabase,
       tenantId,
       serviceProfileId,
+      matchStatus,
       "*",
     );
   }
 
   if (result.error) {
-    console.error("[ProspectDashboard] discovery candidate lookup failed", {
+    console.error("[ProspectDashboard] review-only match lookup failed", {
       tenant_id: tenantId,
+      match_status: matchStatus,
       error: result.error,
     });
     return [];
@@ -804,6 +812,44 @@ export async function fetchDiscoveryCandidates(
 
   return ((result.data ?? []) as unknown[]).map((row, index) =>
     leadView(asRecord(row) ?? {}, index),
+  );
+}
+
+/**
+ * These posts passed the LLM's relevance check but did not meet the automatic
+ * review score. They remain separate from verified leads for human review.
+ */
+export async function fetchDiscoveryCandidates(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+  activeSince: string | null = null,
+): Promise<QualifiedLeadView[]> {
+  return fetchReviewOnlyMatches(
+    supabase,
+    tenantId,
+    serviceProfileId,
+    "discovery_candidate",
+    activeSince,
+  );
+}
+
+/**
+ * Semantic matches that the verifier screened out. The dashboard exposes them
+ * only as audit evidence, with no lead qualification or outreach controls.
+ */
+export async function fetchScreenedMatches(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+  activeSince: string | null = null,
+): Promise<QualifiedLeadView[]> {
+  return fetchReviewOnlyMatches(
+    supabase,
+    tenantId,
+    serviceProfileId,
+    "rejected",
+    activeSince,
   );
 }
 

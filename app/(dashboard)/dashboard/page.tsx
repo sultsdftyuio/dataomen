@@ -7,6 +7,7 @@ import {
   fetchLeadQueueCounts,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
+  fetchScreenedMatches,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
   isBuyerDemandReportCurrent,
@@ -108,7 +109,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const [leads, discoveryCandidates] = await Promise.all([
+  const [leads, discoveryCandidates, screenedMatches] = await Promise.all([
     fetchQualifiedLeads(
       supabase,
       tenantId,
@@ -122,6 +123,12 @@ export default async function DashboardPage() {
       serviceProfile.id,
       serviceProfile.updatedAt,
     ),
+    fetchScreenedMatches(
+      supabase,
+      tenantId,
+      serviceProfile.id,
+      serviceProfile.updatedAt,
+    ),
   ]);
   return (
     <ProspectDashboardClient
@@ -129,6 +136,7 @@ export default async function DashboardPage() {
       crawlJob={crawlJob}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
+      screenedMatches={screenedMatches}
       buyerDemandReport={buyerDemandReport}
       isWarmingUp={isDiscoveryWarmingUp}
     />
