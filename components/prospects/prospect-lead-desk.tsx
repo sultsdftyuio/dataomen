@@ -4,14 +4,17 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import {
   Check,
+  CircleCheckBig,
   ChevronRight,
   ExternalLink,
   Globe2,
+  Network,
   RefreshCw,
+  Radar,
   Search,
-  ShieldCheck,
   Sparkles,
   Target,
+  UsersRound,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -203,24 +206,24 @@ export function ProspectLeadDesk({
     : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-[1800px] flex-col gap-3 sm:gap-4" style={{ color: C.text }}>
-      <header className="flex flex-col justify-between gap-4 border-b pb-4 lg:flex-row lg:items-end" style={{ borderColor: C.rule }}>
+    <main className="flex w-full flex-col gap-2.5 sm:gap-3 lg:h-full lg:min-h-0 lg:overflow-hidden" style={{ color: C.text }}>
+      <header className="shrink-0 flex flex-col justify-between gap-3 border-b pb-3 lg:flex-row lg:items-end" style={{ borderColor: C.rule }}>
         <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+          <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
             <Target className="size-3.5" aria-hidden="true" />
             Prospect discovery
           </div>
-          <h1 className="pfd text-3xl leading-none sm:text-4xl" style={{ color: C.navy }}>
+          <h1 className="pfd text-3xl leading-none" style={{ color: C.navy }}>
             Leads
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+          <p className="mt-1.5 max-w-2xl text-[13px] leading-5" style={{ color: C.navySoft }}>
             Review public buyer signals with the clearest evidence and closest fit first.
           </p>
         </div>
 
         <section
           aria-label="Discovery health"
-          className="min-w-0 rounded-xl border px-4 py-3 lg:w-[330px]"
+          className="min-w-0 rounded-lg border px-3 py-2.5 lg:w-[330px]"
           style={{ borderColor: C.rule, backgroundColor: C.white }}
         >
           <div className="flex items-center justify-between gap-3">
@@ -244,7 +247,7 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead discovery controls"
-        className="grid gap-3 rounded-xl border p-3 xl:grid-cols-[minmax(185px,.75fr)_minmax(240px,1.25fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_minmax(135px,.55fr)_minmax(135px,.55fr)_auto] xl:items-center"
+        className="shrink-0 grid gap-2 rounded-lg border p-2.5 xl:grid-cols-[minmax(185px,.75fr)_minmax(240px,1.25fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_minmax(135px,.55fr)_minmax(135px,.55fr)_auto] xl:items-center"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
         <div className="flex min-w-0 items-center gap-3 border-b pb-3 lg:border-r lg:border-b-0 lg:pb-0 lg:pr-3" style={{ borderColor: C.rule }}>
@@ -339,26 +342,26 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead discovery summary"
-        className="grid divide-y overflow-hidden rounded-xl border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
+        className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Signals in review" value={metricValue(filteredQueueItems.length)} icon={<Sparkles className="size-5" />} />
-        <Metric label="Ready to act" value={metricValue(leads.length)} icon={<ShieldCheck className="size-5" />} />
-        <Metric label="Potential buyers" value={metricValue(potentialBuyers.length)} icon={<Target className="size-5" />} />
+        <Metric label="Signals in review" value={metricValue(filteredQueueItems.length)} icon={<Radar className="size-5" />} />
+        <Metric label="Ready to act" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} />
+        <Metric label="Potential buyers" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} />
         <Metric
           label="Sources reporting"
           value={sourceCount > 0 ? `${reportingSourceCount}/${sourceCount}` : "—"}
           detail={freshnessLabel(lastUpdatedAt)}
-          icon={<Globe2 className="size-5" />}
+          icon={<Network className="size-5" />}
         />
       </section>
 
       <section
         aria-label="Lead review workspace"
-        className="grid min-h-[590px] overflow-hidden rounded-xl border bg-white xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
+        className="grid min-h-[560px] overflow-hidden rounded-lg border bg-white xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
         style={{ borderColor: C.rule }}
       >
-        <div className="min-w-0 border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
+        <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-5" style={{ borderColor: C.rule }}>
             <div className="flex items-baseline gap-2">
               <h2 className="text-base font-semibold" style={{ color: C.navy }}>Signals</h2>
@@ -379,7 +382,7 @@ export function ProspectLeadDesk({
           </div>
 
           {filteredQueueItems.length > 0 ? (
-            <div className="divide-y" style={{ borderColor: C.rule }}>
+            <div className="min-h-0 flex-1 divide-y overflow-y-auto" style={{ borderColor: C.rule }}>
               {filteredQueueItems.map((lead) => (
                 <LeadRow
                   key={lead.id}
@@ -394,10 +397,10 @@ export function ProspectLeadDesk({
           )}
         </div>
 
-        <aside className="flex min-w-0 flex-col" aria-label="Signal intelligence">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto" aria-label="Signal intelligence">
           {selectedLead && selectedStatus ? (
             <>
-              <div className="flex items-start justify-between gap-3 border-b p-4 sm:p-5" style={{ borderColor: C.rule }}>
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b p-3.5 sm:p-4" style={{ borderColor: C.rule }}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold" style={{ color: C.navy }}>Signal intelligence</h2>
@@ -411,7 +414,7 @@ export function ProspectLeadDesk({
                 </div>
               </div>
 
-              <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
+              <div className="flex flex-1 flex-col gap-3.5 p-3.5 sm:p-4">
                 <div className="flex gap-3">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                     {sourceInitial(selectedLead.sourcePost.source)}
@@ -579,8 +582,8 @@ function Metric({
   icon: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[104px] items-center gap-3 px-4 py-4 sm:px-5">
-      <span className="relative flex size-12 shrink-0 items-center justify-center rounded-full" style={{ color: C.blue }} aria-hidden="true">
+    <div className="flex min-h-[88px] items-center gap-3 px-4 py-3 sm:px-5">
+      <span className="relative flex size-11 shrink-0 items-center justify-center rounded-full" style={{ color: C.blue }} aria-hidden="true">
         <span className="absolute inset-0 rounded-full border-2 border-dashed" style={{ borderColor: C.blueLight }} />
         <span className="absolute inset-1.5 rounded-full" style={{ backgroundColor: C.blueTint }} />
         <span className="relative flex size-7 items-center justify-center rounded-full" style={{ backgroundColor: C.white }}>
@@ -589,7 +592,7 @@ function Metric({
       </span>
       <div>
         <p className="text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
-        <p className="mt-0.5 text-[27px] font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
+        <p className="mt-0.5 text-2xl font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
         {detail ? <p className="mt-1 text-[11px]" style={{ color: C.muted }}>{detail}</p> : null}
       </div>
     </div>
@@ -702,7 +705,7 @@ function LeadRow({
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className="grid w-full gap-2 px-4 py-3 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
+      className="grid w-full gap-2 px-4 py-2.5 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
       style={{ backgroundColor: selected ? C.blueTint : C.white, outlineColor: C.blueLight }}
     >
       <span className="flex min-w-0 items-center gap-3">
