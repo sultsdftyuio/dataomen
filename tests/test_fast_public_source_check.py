@@ -78,6 +78,99 @@ class FastPublicSourceCheckTests(unittest.TestCase):
         self.assertEqual(completed_sources, ["bluesky", "hackernews"])
         self.assertEqual({result.source for result in results}, {"bluesky", "hackernews"})
 
+    def test_empty_additional_source_response_releases_the_query_claim(self) -> None:
+        """An empty search must not hide a newly indexed post until cache expiry."""
+        import api.services.social_ingestion as ingestion
+
+        empty_result = SimpleNamespace(
+            hits_found=0,
+            plausible_hits=0,
+            inserted_count=0,
+            matchable_source_post_refs=[],
+        )
+        with (
+            patch.object(
+                ingestion,
+                "additional_public_source_supports_discovery_query",
+                return_value=True,
+            ),
+            patch.object(
+                ingestion,
+                "additional_public_source_cache_scope",
+                return_value="scope",
+            ),
+            patch.object(
+                ingestion,
+                "claim_additional_public_source_query",
+                return_value=True,
+            ),
+            patch.object(
+                ingestion,
+                "ingest_additional_public_source_posts",
+                return_value=empty_result,
+            ),
+            patch.object(ingestion, "release_additional_public_source_query") as release,
+        ):
+            results = run_fast_public_source_check(
+                [{"query_type": "buyer_pain", "phrase": "need more leads"}],
+                sources=["bluesky"],
+                since_hours_ago=24,
+                posts_per_query=10,
+                max_concurrency=1,
+            )
+
+        release.assert_called_once_with(
+            source="bluesky",
+            query="need more leads",
+            since_hours_ago=24,
+            scope="scope",
+        )
+        self.assertEqual(results[0].query_outcomes[0].outcome, "completed")
+
+    def test_query_outcome_keeps_post_provenance_for_candidate_pooling(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        source_ref = SimpleNamespace(source="bluesky", source_post_id="post-1")
+        result = SimpleNamespace(
+            hits_found=1,
+            plausible_hits=1,
+            inserted_count=1,
+            matchable_source_post_refs=[source_ref],
+        )
+        with (
+            patch.object(
+                ingestion,
+                "additional_public_source_supports_discovery_query",
+                return_value=True,
+            ),
+            patch.object(
+                ingestion,
+                "additional_public_source_cache_scope",
+                return_value="scope",
+            ),
+            patch.object(
+                ingestion,
+                "claim_additional_public_source_query",
+                return_value=True,
+            ),
+            patch.object(
+                ingestion,
+                "ingest_additional_public_source_posts",
+                return_value=result,
+            ),
+        ):
+            results = run_fast_public_source_check(
+                [{"query_type": "buyer_pain", "phrase": "need more leads"}],
+                sources=["bluesky"],
+                since_hours_ago=24,
+                posts_per_query=10,
+                max_concurrency=1,
+            )
+
+        query_outcome = results[0].query_outcomes[0]
+        self.assertEqual(query_outcome.source_post_refs, (source_ref,))
+        self.assertEqual(results[0].source_post_refs, (source_ref,))
+
     def test_parent_actor_completes_only_after_every_source_callback(self) -> None:
         from api.workers import actors
 

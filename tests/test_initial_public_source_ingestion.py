@@ -189,9 +189,9 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(
             [query.phrase for query in queries[1::2]],
             [
-                "need more leads",
-                "signups dropping",
-                "find customers",
+                "need more paying customers",
+                "free users not converting",
+                "how to get paying customers",
                 "manual outreach",
                 "prospecting tools",
                 "outbound not working",
@@ -224,6 +224,41 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             )
 
         self.assertEqual(queries, canonical)
+
+    def test_customer_language_adds_a_complementary_paying_user_query(self) -> None:
+        profile = ServiceProfile(
+            company_name="Pipeline Co",
+            one_liner="Help SaaS teams grow paid conversion",
+            target_audience=["B2B SaaS founders"],
+            core_problem_solved="Not enough customers are becoming paid accounts",
+            key_value_propositions=["Find customer conversations"],
+            ideal_customer_pain_points=["Not enough paying customers"],
+            search_terms=[query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        canonical = [
+            DiscoveryQuery(
+                "buyer_pain",
+                "need more customers",
+            ),
+            *[
+                DiscoveryQuery(query["query_type"], query["phrase"])
+                for query in CANONICAL_DISCOVERY_QUERIES[1:]
+            ],
+        ]
+
+        with patch.dict(os.environ, {}, clear=True):
+            queries = public_source_search_queries(
+                profile,
+                discovery_queries=canonical,
+            )
+
+        buyer_pain_phrases = [
+            query.phrase for query in queries if query.query_type == "buyer_pain"
+        ]
+        self.assertEqual(
+            buyer_pain_phrases,
+            ["need more customers", "need more paying users"],
+        )
 
     def test_generic_profiles_keep_their_canonical_queries_by_default(self) -> None:
         profile = ServiceProfile(
@@ -315,7 +350,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         fast_send.assert_called_once()
         queued_call = fast_send.call_args
         self.assertEqual(queued_call.args[0], CANONICAL_DISCOVERY_QUERIES)
-        self.assertEqual(queued_call.args[1:], (720, 50))
+        self.assertEqual(queued_call.args[1:], (2160, 50))
         self.assertEqual(queued_call.kwargs["tenant_id"], "tenant-1")
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
         self.assertEqual(
@@ -407,7 +442,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.x_jobs, 1)
         x_send.assert_called_once_with(
             _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
-            720,
+            2160,
             50,
             strict_single_page=True,
             tenant_id="tenant-1",

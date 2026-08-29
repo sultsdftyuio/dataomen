@@ -182,6 +182,67 @@ def _empty_public_rematch_result() -> dict[str, int]:
     }
 
 
+def _advance_public_candidate_pool(
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+    post: Any,
+    status: str,
+    similarity_score: float | None = None,
+    verifier_score: float | None = None,
+    evidence: dict[str, Any] | None = None,
+) -> None:
+    """Advance the additive candidate pool without coupling matching to it.
+
+    Candidate storage is intentionally fail-open while its migration rolls out.
+    ``lead_matches`` remains the authoritative verifier workflow, so an
+    unavailable pool must never change matching or lead persistence.
+    """
+
+    if not service_profile_id or not post.external_id or not post.source:
+        return
+
+    scores: dict[str, Any] = {
+        "similarity_score": similarity_score,
+        "verifier_score": verifier_score,
+    }
+    if similarity_score is not None or verifier_score is not None:
+        similarity = max(0.0, min(1.0, float(similarity_score or 0.0)))
+        verifier = max(0.0, min(1.0, float(verifier_score or 0.0)))
+        scores["priority_score"] = round((similarity * 40) + (verifier * 60), 2)
+
+    try:
+        from api.services.social.candidate_pool import (
+            advance_public_source_candidate_status,
+        )
+
+        advance_public_source_candidate_status(
+            tenant_id,
+            service_profile_id,
+            source=post.source,
+            source_external_id=post.external_id,
+            status=status,
+            scores=scores,
+            evidence=evidence,
+            decision_by="system" if status == "rejected" else None,
+            decision_reason=(
+                str((evidence or {}).get("reason") or "")
+                if status == "rejected"
+                else None
+            ),
+        )
+    except Exception as error:
+        # The service has its own availability guard, but keep the matching
+        # loop safe if an older deployment has only part of the new module.
+        logger.info(
+            "discovery_candidate_pool_advance_skipped tenant_id=%s service_profile_id=%s source=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            post.source,
+            error.__class__.__name__,
+        )
+
+
 def _source_post_matches_profile_discovery_context(
     post: SocialPost,
     discovery_queries: Sequence[Any],
@@ -399,6 +460,19 @@ def rematch_existing_public_source_posts_for_profile(
             if not post:
                 continue
 
+            # A raw candidate may have been collected during the activation
+            # fast check before this cached-corpus rematch ran. Advance it
+            # through the same lifecycle as fresh embeddings before the
+            # verifier decides its terminal/review state.
+            _advance_public_candidate_pool(
+                tenant_id=normalized_tenant_id,
+                service_profile_id=normalized_profile_id,
+                post=post,
+                status="plausible",
+                similarity_score=candidate.score,
+                evidence={"reason_code": "semantic_profile_match"},
+            )
+
             with engine.begin() as conn:
                 verification = _cached_lead_verification(
                     conn,
@@ -431,6 +505,33 @@ def rematch_existing_public_source_posts_for_profile(
                 ready_for_review_count += 1
             elif match_status == "discovery_candidate":
                 discovery_candidate_count += 1
+
+            _advance_public_candidate_pool(
+                tenant_id=normalized_tenant_id,
+                service_profile_id=normalized_profile_id,
+                post=post,
+                status=(
+                    "review"
+                    if match_status in {"ready_for_review", "discovery_candidate"}
+                    else "rejected"
+                ),
+                similarity_score=candidate.score,
+                verifier_score=float(getattr(verification, "confidence", 0.0) or 0.0),
+                evidence={
+                    "reason_code": str(
+                        getattr(verification, "decision_label", "") or ""
+                    ),
+                    "rationale": str(
+                        getattr(verification, "why_this_matches", "") or ""
+                    ),
+                    "criterion": str(
+                        getattr(verification, "pain_detected", "") or ""
+                    ),
+                    "reason": str(
+                        getattr(verification, "rejection_reason", "") or ""
+                    ),
+                },
+            )
 
             with engine.begin() as conn:
                 _persist_lead_match(
@@ -651,6 +752,14 @@ def process_public_source_post_embedding(
 
                 candidate = candidates[0]
                 candidate_count += 1
+                _advance_public_candidate_pool(
+                    tenant_id=tenant_id,
+                    service_profile_id=service_profile_id,
+                    post=post,
+                    status="plausible",
+                    similarity_score=candidate.score,
+                    evidence={"reason_code": "semantic_profile_match"},
+                )
                 profile_embedding_sha256 = _embedding_sha256(profile_embedding)
                 with engine.begin() as conn:
                     verification = _cached_lead_verification(
@@ -685,6 +794,36 @@ def process_public_source_post_embedding(
                     ready_for_review_count += 1
                 elif match_status == "discovery_candidate":
                     discovery_candidate_count += 1
+
+                _advance_public_candidate_pool(
+                    tenant_id=tenant_id,
+                    service_profile_id=service_profile_id,
+                    post=post,
+                    status=(
+                        "review"
+                        if match_status
+                        in {"ready_for_review", "discovery_candidate"}
+                        else "rejected"
+                    ),
+                    similarity_score=candidate.score,
+                    verifier_score=float(
+                        getattr(verification, "confidence", 0.0) or 0.0
+                    ),
+                    evidence={
+                        "reason_code": str(
+                            getattr(verification, "decision_label", "") or ""
+                        ),
+                        "rationale": str(
+                            getattr(verification, "why_this_matches", "") or ""
+                        ),
+                        "criterion": str(
+                            getattr(verification, "pain_detected", "") or ""
+                        ),
+                        "reason": str(
+                            getattr(verification, "rejection_reason", "") or ""
+                        ),
+                    },
+                )
 
                 with engine.begin() as conn:
                     _persist_lead_match(

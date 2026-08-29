@@ -21,7 +21,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
+import { CandidatePool } from "@/components/prospects/candidate-pool";
 import type {
+  DiscoveryPoolCandidateView,
   LeadFeedbackValue,
   QualifiedLeadView,
   ServiceProfileView,
@@ -36,6 +38,7 @@ type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
   leads: QualifiedLeadView[];
   potentialBuyers: QualifiedLeadView[];
+  discoveryPoolCandidates: DiscoveryPoolCandidateView[];
   screenedMatches: QualifiedLeadView[];
   filteredQueueItems: QualifiedLeadView[];
   selectedLead: QualifiedLeadView | null;
@@ -170,6 +173,7 @@ export function ProspectLeadDesk({
   serviceProfile,
   leads,
   potentialBuyers,
+  discoveryPoolCandidates,
   screenedMatches,
   filteredQueueItems,
   selectedLead,
@@ -414,6 +418,8 @@ export function ProspectLeadDesk({
           icon={<Network className="size-5" />}
         />
       </section>
+
+      <CandidatePool candidates={discoveryPoolCandidates} />
 
       <section
         aria-label="Lead review workspace"

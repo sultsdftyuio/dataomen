@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LiveDiscoveryFunnel } from "@/components/discovery/live-discovery-funnel";
 import { C } from "@/lib/tokens";
 import type {
   BuyerDemandReportView,
@@ -258,6 +259,11 @@ export function DiscoveryLoadingPage({
   const isTakingLongerThanUsual =
     !hasError && !isReady && !isQueued && elapsedSeconds >= 90;
   const isWorkspaceScan = mode === "scan";
+  const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
+  const canShowLiveFunnel =
+    Boolean(buyerDemandReport) ||
+    (serviceProfile.hasProfile &&
+      (!embeddingStatus || embeddingStatus === "completed"));
 
   useEffect(() => {
     if (hasError || isReady) return;
@@ -386,6 +392,14 @@ export function DiscoveryLoadingPage({
           </ol>
         </section>
 
+        {canShowLiveFunnel ? (
+          <LiveDiscoveryFunnel
+            report={buyerDemandReport}
+            isWarmingUp={isWarmingUp}
+            elapsedSeconds={elapsedSeconds}
+          />
+        ) : null}
+
         {!hasError && !isReady ? (
           <p className="mt-5 text-xs leading-5" style={{ color: C.muted }}>
             <span className="font-semibold" style={{ color: C.navy }}>{lastUpdate}.</span>{" "}
@@ -395,13 +409,13 @@ export function DiscoveryLoadingPage({
           </p>
         ) : null}
 
-        {isTakingLongerThanUsual ? (
+        {isTakingLongerThanUsual && !canShowLiveFunnel ? (
           <div className="mx-auto mt-6 max-w-lg border-t pt-4" style={{ borderColor: C.amber }}>
             <p className="text-xs font-semibold" style={{ color: C.navy }}>
-              Taking longer than usual?
+              Still reading your website?
             </p>
             <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-              We are still working. If the website address needs changing, update it in settings.
+              Some sites take longer when key product pages are hard to reach. You can leave this page while the scan continues.
             </p>
             <Link href="/settings" className="mt-2 inline-flex text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
               Check website settings

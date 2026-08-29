@@ -25,6 +25,7 @@ import type { Database, Json } from "@/types/supabase";
 import type {
   BuyerDemandReportView,
   CrawlJobView,
+  DiscoveryPoolCandidateView,
   LeadMatchStatus,
   QualifiedLeadView,
   ServiceProfileFields,
@@ -831,6 +832,94 @@ export async function fetchDiscoveryCandidates(
     serviceProfileId,
     "discovery_candidate",
     activeSince,
+  );
+}
+
+function discoveryPoolCandidateView(
+  row: DbRecord,
+  index: number,
+): DiscoveryPoolCandidateView {
+  const snapshot = firstRecord(row.source_snapshot);
+  const evidence = firstRecord(row.evidence);
+  const sources = [snapshot, evidence, row];
+  const status =
+    readString([row], ["candidate_status"])?.toLowerCase() ?? "raw";
+  const candidateKind =
+    readString([row], ["candidate_kind"])?.toLowerCase() ?? "public_post";
+
+  return {
+    id: readString([row], ["id"]) ?? `candidate-${index}`,
+    candidateKind:
+      candidateKind === "account" || candidateKind === "contact"
+        ? candidateKind
+        : "public_post",
+    status: status === "plausible" || status === "review" ? status : "raw",
+    source:
+      readString(sources, ["source", "entity_provider", "provider"]) ??
+      "Public source",
+    sourceUrl: safeHttpUrl(
+      readString(sources, ["url", "entity_url", "source_url"]),
+    ),
+    title:
+      readString(sources, ["title", "headline", "name"]) ??
+      "Public buyer conversation",
+    text:
+      readString(sources, ["text", "body", "content", "excerpt"]) ??
+      "The source is available for matching, but has not been verified as a lead.",
+    matchedPhrase: readString([evidence], ["matched_phrase", "phrase"]),
+    reason: readString([evidence], ["reason", "reason_code", "rationale"]),
+    rawScore: numberValue(row.raw_score),
+    plausibilityScore: numberValue(row.plausibility_score),
+    similarityScore: numberValue(row.similarity_score),
+    verifierScore: numberValue(row.verifier_score),
+    priorityScore: numberValue(row.priority_score) ?? 0,
+    firstSeenAt: readString([row], ["first_seen_at", "created_at"]),
+    lastSeenAt: readString([row], ["last_seen_at", "updated_at"]),
+  };
+}
+
+/**
+ * Read the additive candidate-first pool. The SQL contract is intentionally
+ * deployed independently from lead_matches, so a staged rollout must leave
+ * the existing prospect desk readable when the new table is not present yet.
+ */
+export async function fetchDiscoveryPoolCandidates(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+  activeSince: string | null = null,
+): Promise<DiscoveryPoolCandidateView[]> {
+  if (!serviceProfileId) return [];
+
+  let query = supabase
+    .from("discovery_candidates")
+    .select(
+      "id,candidate_kind,entity_provider,entity_url,source,candidate_status,raw_score,plausibility_score,similarity_score,verifier_score,priority_score,source_snapshot,evidence,first_seen_at,last_seen_at,updated_at",
+    )
+    .eq("tenant_id", tenantId)
+    .eq("service_profile_id", serviceProfileId)
+    .in("candidate_status", ["raw", "plausible", "review"])
+    .order("priority_score", { ascending: false })
+    .order("last_seen_at", { ascending: false })
+    .limit(12);
+
+  if (activeSince) {
+    query = query.gte("updated_at", activeSince);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (!isOptionalAdditiveSchemaUnavailable(error)) {
+      console.error("[ProspectDashboard] discovery candidate pool lookup failed", {
+        tenant_id: tenantId,
+        error,
+      });
+    }
+    return [];
+  }
+
+  return ((data ?? []) as unknown[]).map((row, index) =>
+    discoveryPoolCandidateView(asRecord(row) ?? {}, index),
   );
 }
 

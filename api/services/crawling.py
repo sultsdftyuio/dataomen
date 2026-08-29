@@ -40,9 +40,9 @@ DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
 # creating an hours-long browser backlog.  It includes the active browser job.
 DEFAULT_CRAWL_MAX_QUEUED_JOBS = 6
 DEFAULT_CRAWL_ADMISSION_RETRY_AFTER_SECONDS = 60
-# v9 permits genuine demand-acquisition language (for example, leads and sales
-# pipeline) while continuing to reject Arcli's own retrieval mechanics.
-PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v9"
+# v10 refreshes matching briefs after buyer-language query expansion while
+# continuing to reject Arcli's own retrieval mechanics.
+PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v10"
 # A separate identity version protects the tenant boundary between website
 # replacements. A profile created before this marker may have been updated in
 # place by an older worker after the tenant changed its URL, so it must never
@@ -85,6 +85,45 @@ class CrawlQueueCapacityLimit:
 
     max_queued_jobs: int
     retry_after_seconds: int
+
+
+@dataclass(frozen=True)
+class CrawlContentQuality:
+    """Explain whether a crawl has enough product context for extraction.
+
+    A character count alone is easy to satisfy with a long blog post, a cookie
+    banner, or duplicate navigation.  This small report stays deterministic so
+    it can be recorded with a crawl job and explained to operators without
+    putting another model call in the critical path.
+    """
+
+    usable_document_count: int
+    unique_document_count: int
+    content_chars: int
+    unique_content_chars: int
+    commercial_page_count: int
+    commercial_signal_categories: tuple[str, ...]
+    homepage_present: bool
+    sufficient: bool
+    quality_tier: str
+    reasons: tuple[str, ...]
+    source_urls: tuple[str, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return JSON-safe, low-volume metadata suitable for job context."""
+        return {
+            "usable_document_count": self.usable_document_count,
+            "unique_document_count": self.unique_document_count,
+            "content_chars": self.content_chars,
+            "unique_content_chars": self.unique_content_chars,
+            "commercial_page_count": self.commercial_page_count,
+            "commercial_signal_categories": list(self.commercial_signal_categories),
+            "homepage_present": self.homepage_present,
+            "sufficient": self.sufficient,
+            "quality_tier": self.quality_tier,
+            "reasons": list(self.reasons),
+            "source_urls": list(self.source_urls),
+        }
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -756,6 +795,7 @@ def _touch_crawl_job_phase(
     pages_crawled: int | None = None,
     content_chars: int | None = None,
     service_profile_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     if not _table_exists(conn, "crawl_jobs"):
         return
@@ -771,6 +811,10 @@ def _touch_crawl_job_phase(
                    pages_crawled = COALESCE(:pages_crawled, pages_crawled),
                    content_chars = COALESCE(:content_chars, content_chars),
                    service_profile_id = COALESCE(:service_profile_id, service_profile_id),
+                   error_context = COALESCE(
+                       CAST(:metadata AS jsonb),
+                       error_context
+                   ),
                    last_heartbeat_at = CAST(:now AS timestamptz),
                    completed_at = CASE
                        WHEN :status = 'completed' THEN CAST(:now AS timestamptz)
@@ -798,6 +842,7 @@ def _touch_crawl_job_phase(
             "pages_crawled": pages_crawled,
             "content_chars": content_chars,
             "service_profile_id": service_profile_id,
+            "metadata": json.dumps(metadata) if metadata is not None else None,
             "now": now,
         },
     )
@@ -1090,6 +1135,45 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _jsonable_crawl_quality(value: Any) -> dict[str, Any]:
+    """Keep only the compact crawl evidence safe to return with a profile."""
+    source = _as_dict(value)
+    if not source:
+        return {}
+
+    result: dict[str, Any] = {}
+    for field_name in (
+        "usable_document_count",
+        "unique_document_count",
+        "content_chars",
+        "unique_content_chars",
+        "commercial_page_count",
+    ):
+        field_value = source.get(field_name)
+        if isinstance(field_value, int) and not isinstance(field_value, bool):
+            result[field_name] = max(0, field_value)
+
+    for field_name in ("homepage_present", "sufficient"):
+        field_value = source.get(field_name)
+        if isinstance(field_value, bool):
+            result[field_name] = field_value
+
+    quality_tier = _string_value(source.get("quality_tier"))
+    if quality_tier in {"strong", "usable", "weak"}:
+        result["quality_tier"] = quality_tier
+
+    for field_name in (
+        "commercial_signal_categories",
+        "reasons",
+        "source_urls",
+    ):
+        values = _jsonable_list(source.get(field_name))
+        if values:
+            result[field_name] = values[:12]
+
+    return result
+
+
 def _profile_document(
     profile: dict[str, Any],
     website_url: str,
@@ -1168,6 +1252,9 @@ def _profile_document(
         )
     if crawl_markdown_sha256:
         document["crawl_markdown_sha256"] = crawl_markdown_sha256
+    crawl_quality = _jsonable_crawl_quality(profile.get("crawl_quality"))
+    if crawl_quality:
+        document["crawl_quality"] = crawl_quality
 
     return document
 
@@ -1510,6 +1597,7 @@ def _workspace_brain_profile_from_document(
     parsed_url = urlparse(website_url)
     fallback_company = parsed_url.netloc.replace("www.", "") or "Workspace"
     discovery_queries = _jsonable_discovery_queries(document.get("discovery_queries"))
+    crawl_quality = _jsonable_crawl_quality(document.get("crawl_quality"))
     profile = {
         "company_name": _string_value(document.get("company_name"))
         or fallback_company,
@@ -1530,6 +1618,8 @@ def _workspace_brain_profile_from_document(
         "search_terms": _jsonable_list(document.get("search_terms")),
         "negative_keywords": _jsonable_list(document.get("negative_keywords")),
     }
+    if crawl_quality:
+        profile["crawl_quality"] = crawl_quality
 
     # Existing cached/manual profiles can legitimately predate the typed query
     # contract. Keep them usable while the cache-version bump forces fresh
@@ -1540,7 +1630,10 @@ def _workspace_brain_profile_from_document(
         return profile
 
     try:
-        return ServiceProfileDraft.model_validate(profile).model_dump()
+        validated_profile = ServiceProfileDraft.model_validate(profile).model_dump()
+        if crawl_quality:
+            validated_profile["crawl_quality"] = crawl_quality
+        return validated_profile
     except ValidationError:
         logger.info(
             "workspace_brain_profile_legacy_contract_preserved website_url=%s skip_reason=%s",
@@ -1722,17 +1815,126 @@ class WebsiteCrawler:
     """
     Crawl4AI-first website crawler for onboarding profile extraction.
 
-    Crawl4AI renders the homepage and common About/Pricing surfaces locally in
-    the dedicated browser worker. Firecrawl is retained only as a bounded
-    fallback when the browser cannot return enough usable source Markdown.
+    Crawl4AI renders the homepage plus the most useful linked commercial
+    surfaces locally in the dedicated browser worker. Firecrawl is retained
+    only as a bounded fallback when the browser cannot return enough usable
+    source Markdown.
     """
 
     TARGET_PATH_PATTERNS = (
-        r"(?:about|about-us|company)",
-        r"(?:pricing|plans|packages)",
-        r"(?:features|product|platform)",
-        r"(?:use-cases|usecases|solutions|customers)",
+        r"(?:about|about-us|company|our-story|team)",
+        r"(?:pricing|plans|packages|billing)",
+        r"(?:features|product|platform|capabilities|how-it-works)",
+        r"(?:use-cases|usecases|solutions|industries|who-we-serve)",
+        r"(?:customers|case-study|case-studies|success-stories)",
+        r"(?:integrations|partners|compare|alternatives)",
+        r"(?:docs|documentation)",
     )
+
+    COMMERCIAL_PATH_KEYWORDS = (
+        "pricing",
+        "plan",
+        "package",
+        "billing",
+        "feature",
+        "product",
+        "platform",
+        "capabilit",
+        "solution",
+        "use-case",
+        "usecase",
+        "industry",
+        "customer",
+        "case-stud",
+        "success-stor",
+        "integration",
+        "partner",
+        "compare",
+        "alternative",
+        "how-it-works",
+        "who-we-serve",
+    )
+
+    COMMERCIAL_SIGNAL_PATTERNS = {
+        "pricing": re.compile(
+            r"\b(?:pricing|plans?|packages?|per\s+(?:month|user|seat)|"
+            r"starting\s+at|annual(?:ly)?|monthly)\b",
+            re.IGNORECASE,
+        ),
+        "conversion": re.compile(
+            r"\b(?:book|request|schedule|get)\s+(?:a\s+)?demo\b|"
+            r"\b(?:free\s+trial|contact\s+sales|talk\s+to\s+sales)\b",
+            re.IGNORECASE,
+        ),
+        "offering": re.compile(
+            r"\b(?:product|platform|software|tool|features?|capabilities|"
+            r"integrations?)\b",
+            re.IGNORECASE,
+        ),
+        "customer_fit": re.compile(
+            r"\b(?:for|helping|built\s+for)\s+(?:teams?|businesses?|companies?|"
+            r"startups?|agencies?|marketers?|sales\s+teams?)\b",
+            re.IGNORECASE,
+        ),
+        "customer_proof": re.compile(
+            r"\b(?:customers?|case\s+stud(?:y|ies)|success\s+stor(?:y|ies)|"
+            r"trusted\s+by)\b",
+            re.IGNORECASE,
+        ),
+        "solutions": re.compile(
+            r"\b(?:use\s+cases?|solutions?|workflows?|industries)\b",
+            re.IGNORECASE,
+        ),
+    }
+
+    DISCOVERY_EXCLUDED_PATH_SEGMENTS = {
+        "account",
+        "auth",
+        "blog",
+        "careers",
+        "changelog",
+        "cookie",
+        "cookies",
+        "help",
+        "jobs",
+        "legal",
+        "login",
+        "logout",
+        "news",
+        "privacy",
+        "register",
+        "resources",
+        "signin",
+        "signup",
+        "status",
+        "terms",
+    }
+
+    NON_HTML_PATH_SUFFIXES = {
+        ".7z",
+        ".avi",
+        ".csv",
+        ".doc",
+        ".docx",
+        ".gif",
+        ".jpeg",
+        ".jpg",
+        ".mov",
+        ".mp3",
+        ".mp4",
+        ".pdf",
+        ".png",
+        ".ppt",
+        ".pptx",
+        ".svg",
+        ".tar",
+        ".webp",
+        ".xls",
+        ".xlsx",
+        ".zip",
+    }
+
+    MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]{0,180})\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 
     BOILERPLATE_PHRASES = (
         "skip to content",
@@ -1760,8 +1962,12 @@ class WebsiteCrawler:
         self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY")
         self.timeout_seconds = timeout_seconds
         self.page_timeout_ms = page_timeout_ms
-        self.max_pages = max_pages
+        self.max_pages = max(1, max_pages)
         self._client: Any | None = None
+        # Kept on the crawler for direct callers. The worker also recalculates
+        # this from the persisted Markdown so it can save the report without
+        # changing the long-standing string return type of crawl_and_scrape.
+        self.last_crawl_quality: dict[str, Any] = {}
 
     async def __aenter__(self) -> "WebsiteCrawler":
         return self
@@ -1782,31 +1988,278 @@ class WebsiteCrawler:
         if inspect.isawaitable(result):
             await result
 
-    def _crawl4ai_has_sufficient_content(self, documents: list[tuple[str, str]]) -> bool:
-        minimum_documents = env_int("ARCLI_CRAWL4AI_MIN_DOCUMENTS", 1)
-        minimum_characters = env_int("ARCLI_CRAWL4AI_MIN_CONTENT_CHARS", 700)
-        cleaned_documents = [
-            self._strip_boilerplate(markdown) for _, markdown in documents
-        ]
-        return (
-            sum(bool(markdown) for markdown in cleaned_documents) >= minimum_documents
-            and sum(len(markdown) for markdown in cleaned_documents)
-            >= minimum_characters
+    @staticmethod
+    def _site_host_key(url: str | None) -> str:
+        if not url:
+            return ""
+        hostname = urlparse(url).hostname or ""
+        return hostname.lower().removeprefix("www.")
+
+    @classmethod
+    def _source_key(cls, source_url: str) -> str:
+        """Use one URL identity for provider results and fallback candidates."""
+        try:
+            normalized = cls._normalize_url(source_url)
+        except ValueError:
+            return source_url.strip().rstrip("/").lower()
+        return normalized.rstrip("/").lower()
+
+    @classmethod
+    def _is_homepage_source(cls, source_url: str, website_url: str | None) -> bool:
+        parsed = urlparse(source_url)
+        if website_url and cls._site_host_key(source_url) != cls._site_host_key(website_url):
+            return False
+        return (parsed.path or "/").rstrip("/") == ""
+
+    @classmethod
+    def _commercial_signal_categories(cls, source_url: str, markdown: str) -> set[str]:
+        categories = {
+            name
+            for name, pattern in cls.COMMERCIAL_SIGNAL_PATTERNS.items()
+            if pattern.search(markdown)
+        }
+        path = urlparse(source_url).path.lower()
+        if any(term in path for term in ("pricing", "plan", "package", "billing")):
+            categories.add("pricing")
+        if any(
+            term in path
+            for term in ("feature", "product", "platform", "capabilit", "integration")
+        ):
+            categories.add("offering")
+        if any(term in path for term in ("customer", "case-stud", "success-stor")):
+            categories.add("customer_proof")
+        if any(term in path for term in ("solution", "use-case", "usecase", "industry")):
+            categories.add("solutions")
+        if any(term in path for term in ("compare", "alternative")):
+            categories.add("conversion")
+        return categories
+
+    @classmethod
+    def _crawl_content_quality(
+        cls,
+        documents: list[tuple[str, str]],
+        website_url: str | None = None,
+    ) -> CrawlContentQuality:
+        """Assess crawl usefulness without treating any one page as authoritative."""
+        content_chars = 0
+        unique_content_chars = 0
+        commercial_page_count = 0
+        commercial_categories: set[str] = set()
+        content_hashes: set[str] = set()
+        source_urls: list[str] = []
+        homepage_present = False
+
+        for source_url, markdown in documents:
+            if not isinstance(markdown, str):
+                continue
+            cleaned = cls._strip_boilerplate(markdown)
+            if not cleaned:
+                continue
+
+            source = str(source_url).strip() or "unknown"
+            source_urls.append(source)
+            content_chars += len(cleaned)
+            normalized_content = re.sub(r"\s+", " ", cleaned).strip().lower()
+            content_hash = hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
+            if content_hash not in content_hashes:
+                content_hashes.add(content_hash)
+                unique_content_chars += len(cleaned)
+
+            page_categories = cls._commercial_signal_categories(source, cleaned)
+            if page_categories:
+                commercial_page_count += 1
+                commercial_categories.update(page_categories)
+            homepage_present = homepage_present or cls._is_homepage_source(
+                source, website_url
+            )
+
+        usable_document_count = len(source_urls)
+        unique_document_count = len(content_hashes)
+        minimum_documents = env_int("ARCLI_CRAWL4AI_MIN_DOCUMENTS", 2)
+        minimum_characters = env_int("ARCLI_CRAWL4AI_MIN_CONTENT_CHARS", 1_200)
+        minimum_commercial_signals = env_int(
+            "ARCLI_CRAWL4AI_MIN_COMMERCIAL_SIGNALS", 2
+        )
+        single_page_minimum_characters = env_int(
+            "ARCLI_CRAWL4AI_SINGLE_PAGE_MIN_CONTENT_CHARS", 1_800
         )
 
+        reasons: list[str] = []
+        if unique_content_chars < minimum_characters:
+            reasons.append("insufficient_clean_content")
+        if len(commercial_categories) < minimum_commercial_signals:
+            reasons.append("insufficient_commercial_context")
+        if unique_document_count < minimum_documents:
+            reasons.append("limited_page_coverage")
+        if commercial_page_count == 0:
+            reasons.append("no_commercial_surface_detected")
+
+        enough_content = unique_content_chars >= minimum_characters
+        enough_signals = len(commercial_categories) >= minimum_commercial_signals
+        multi_page_coverage = unique_document_count >= minimum_documents
+        strong_single_page = (
+            unique_document_count == 1
+            and unique_content_chars >= single_page_minimum_characters
+            and enough_signals
+        )
+        sufficient = enough_content and enough_signals and (
+            multi_page_coverage or strong_single_page
+        )
+        if sufficient and unique_document_count >= 3 and len(commercial_categories) >= 3:
+            quality_tier = "strong"
+        elif sufficient:
+            quality_tier = "usable"
+        else:
+            quality_tier = "weak"
+
+        return CrawlContentQuality(
+            usable_document_count=usable_document_count,
+            unique_document_count=unique_document_count,
+            content_chars=content_chars,
+            unique_content_chars=unique_content_chars,
+            commercial_page_count=commercial_page_count,
+            commercial_signal_categories=tuple(sorted(commercial_categories)),
+            homepage_present=homepage_present,
+            sufficient=sufficient,
+            quality_tier=quality_tier,
+            reasons=tuple(reasons),
+            source_urls=tuple(source_urls),
+        )
+
+    @classmethod
+    def crawl_quality_metadata_for_markdown(
+        cls,
+        markdown: str,
+        website_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Expose the bounded crawl report while preserving string crawl APIs."""
+        return cls._crawl_content_quality(
+            _crawl_documents_from_markdown(markdown), website_url
+        ).to_payload()
+
+    def _crawl4ai_has_sufficient_content(self, documents: list[tuple[str, str]]) -> bool:
+        return self._crawl_content_quality(documents).sufficient
+
+    @classmethod
+    def _discovered_profile_urls(
+        cls,
+        website_url: str,
+        documents: list[tuple[str, str]],
+    ) -> list[str]:
+        """Rank same-site links that are likely to explain a product's ICP.
+
+        This deliberately uses only links already present in fetched Markdown;
+        it never adds a separate unbounded link-discovery request. Legal,
+        authentication, careers, and blog paths are excluded because they tend
+        to add volume without helping profile extraction.
+        """
+        expected_host = cls._site_host_key(website_url)
+        ranked: dict[str, tuple[int, int, str]] = {}
+        ordinal = 0
+
+        for source_url, markdown in documents:
+            if not isinstance(markdown, str):
+                continue
+            for match in cls.MARKDOWN_LINK_PATTERN.finditer(markdown):
+                label = re.sub(r"\s+", " ", match.group(1)).strip().lower()
+                href = match.group(2).strip()
+                if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+                    continue
+
+                candidate = urljoin(source_url, href)
+                parsed = urlparse(candidate)
+                if parsed.scheme not in {"http", "https"}:
+                    continue
+                if cls._site_host_key(candidate) != expected_host:
+                    continue
+
+                path = (parsed.path or "/").lower()
+                path_segments = [segment for segment in path.split("/") if segment]
+                if path.endswith(tuple(cls.NON_HTML_PATH_SUFFIXES)):
+                    continue
+                if any(segment in cls.DISCOVERY_EXCLUDED_PATH_SEGMENTS for segment in path_segments):
+                    continue
+
+                try:
+                    normalized = cls._normalize_url(candidate)
+                except ValueError:
+                    continue
+                key = cls._source_key(normalized)
+                if key == cls._source_key(website_url):
+                    continue
+
+                descriptor = f"{path.replace('-', ' ').replace('_', ' ')} {label}"
+                keyword_hits = sum(
+                    keyword in descriptor for keyword in cls.COMMERCIAL_PATH_KEYWORDS
+                )
+                categories = cls._commercial_signal_categories(normalized, descriptor)
+                # Prefer explicit commercial navigation labels, then concise
+                # product pages. A stable ordinal preserves website order for
+                # ties, which makes the crawl repeatable.
+                score = keyword_hits * 8 + len(categories) * 3
+                if len(path_segments) <= 2:
+                    score += 1
+                existing = ranked.get(key)
+                if existing is None or score > existing[0]:
+                    ranked[key] = (score, ordinal, normalized)
+                ordinal += 1
+
+        return [
+            candidate
+            for _score, _ordinal, candidate in sorted(
+                ranked.values(), key=lambda item: (-item[0], item[1], item[2])
+            )
+        ]
+
     async def _crawl_with_crawl4ai(self, url: str) -> list[tuple[str, str]]:
-        """Render bounded profile pages through the local Crawl4AI browser."""
+        """Render the homepage, then bounded high-value links through Crawl4AI."""
         from Crawl4AI.website_markdown import Crawl4AIWebsiteCrawler
 
+        seed_pages = min(
+            self.max_pages,
+            env_int("ARCLI_CRAWL4AI_SEED_PAGES", 1),
+        )
         crawler = Crawl4AIWebsiteCrawler(
             page_timeout_ms=env_int(
                 "ARCLI_CRAWL4AI_PAGE_TIMEOUT_MS",
                 min(self.page_timeout_ms, 20_000),
             ),
-            max_pages=self.max_pages,
+            max_pages=seed_pages,
         )
-        pages = await crawler.crawl_pages(self._fallback_urls(url)[: self.max_pages])
-        return [(page.url, page.markdown) for page in pages]
+        pages = await crawler.crawl_pages(self._fallback_urls(url)[:seed_pages])
+        documents = [(page.url, page.markdown) for page in pages]
+        remaining_pages = max(0, self.max_pages - len(documents))
+        if not remaining_pages:
+            return documents
+
+        seen_sources = {self._source_key(source_url) for source_url, _ in documents}
+        candidates = [
+            *self._discovered_profile_urls(url, documents),
+            *self._fallback_urls(url),
+        ]
+        next_urls: list[str] = []
+        for candidate in candidates:
+            key = self._source_key(candidate)
+            if key in seen_sources:
+                continue
+            seen_sources.add(key)
+            next_urls.append(candidate)
+            if len(next_urls) >= remaining_pages:
+                break
+
+        if not next_urls:
+            return documents
+
+        linked_crawler = Crawl4AIWebsiteCrawler(
+            page_timeout_ms=env_int(
+                "ARCLI_CRAWL4AI_PAGE_TIMEOUT_MS",
+                min(self.page_timeout_ms, 20_000),
+            ),
+            max_pages=remaining_pages,
+        )
+        linked_pages = await linked_crawler.crawl_pages(next_urls)
+        documents.extend((page.url, page.markdown) for page in linked_pages)
+        return documents
 
     @staticmethod
     def _crawl4ai_enabled() -> bool:
@@ -1863,29 +2316,38 @@ class WebsiteCrawler:
                     timeout=self.timeout_seconds,
                 )
                 for source_url, markdown in crawl4ai_documents:
-                    if source_url not in seen_sources:
-                        seen_sources.add(source_url)
+                    source_key = self._source_key(source_url)
+                    if source_key not in seen_sources:
+                        seen_sources.add(source_key)
                         documents.append((source_url, markdown))
-                crawl4ai_used = self._crawl4ai_has_sufficient_content(documents)
+                documents = self._select_profile_documents(documents, normalized_url)
+                crawl4ai_quality = self._crawl_content_quality(
+                    documents, normalized_url
+                )
+                crawl4ai_used = crawl4ai_quality.sufficient
                 if crawl4ai_used:
                     logger.info(
-                        "crawl4ai_primary_succeeded tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s",
+                        "crawl4ai_primary_succeeded tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s quality_tier=%s commercial_signals=%s",
                         resolved_tenant_id,
                         service_profile_id,
                         crawl_job_id,
                         normalized_url,
                         len(documents),
                         sum(len(markdown) for _, markdown in documents),
+                        crawl4ai_quality.quality_tier,
+                        list(crawl4ai_quality.commercial_signal_categories),
                     )
                 else:
                     logger.warning(
-                        "crawl4ai_primary_insufficient tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s fallback=firecrawl",
+                        "crawl4ai_primary_insufficient tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s quality_tier=%s reasons=%s fallback=firecrawl",
                         resolved_tenant_id,
                         service_profile_id,
                         crawl_job_id,
                         normalized_url,
                         len(documents),
                         sum(len(markdown) for _, markdown in documents),
+                        crawl4ai_quality.quality_tier,
+                        list(crawl4ai_quality.reasons),
                     )
                     # Do not mix a sparse browser result with the fallback.
                     # Firecrawl must be able to recover the homepage as well
@@ -1940,8 +2402,13 @@ class WebsiteCrawler:
                         max(90, self.timeout_seconds + 25),
                     ),
                 )
-                crawl_result = await self._crawl_target_pages(client, normalized_url)
+                crawl_result = await self._crawl_target_pages(
+                    client,
+                    normalized_url,
+                    page_limit=self._primary_crawl_page_budget(),
+                )
                 documents.extend(self._documents_from_result(crawl_result, seen_sources))
+                documents = self._select_profile_documents(documents, normalized_url)
                 crawl_error = None
             except asyncio.TimeoutError as exc:
                 logger.warning(
@@ -1966,7 +2433,11 @@ class WebsiteCrawler:
                 )
                 crawl_error = exc
             else:
-                if len(documents) < 3:
+                firecrawl_quality = self._crawl_content_quality(
+                    documents, normalized_url
+                )
+                remaining_pages = max(0, self.max_pages - len(documents))
+                if remaining_pages and not firecrawl_quality.sufficient:
                     fallback_docs = await self._scrape_common_pages(
                         client=client,
                         url=normalized_url,
@@ -1974,11 +2445,19 @@ class WebsiteCrawler:
                         tenant_id=resolved_tenant_id,
                         service_profile_id=service_profile_id,
                         crawl_job_id=crawl_job_id,
+                        max_pages=remaining_pages,
                     )
                     documents.extend(fallback_docs)
+                    documents = self._select_profile_documents(
+                        documents, normalized_url
+                    )
             finally:
                 if firecrawl_lease is not None:
                     provider_concurrency_limiter.release(firecrawl_lease)
+
+        documents = self._select_profile_documents(documents, normalized_url)
+        quality = self._crawl_content_quality(documents, normalized_url)
+        self.last_crawl_quality = quality.to_payload()
 
         cleaned_parts = []
         for source_url, markdown in documents:
@@ -1989,13 +2468,16 @@ class WebsiteCrawler:
         if cleaned_parts:
             content = "\n\n---\n\n".join(cleaned_parts)
             logger.info(
-                "website_crawl_completed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s",
+                "website_crawl_completed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s quality_tier=%s sufficient=%s commercial_signals=%s",
                 resolved_tenant_id,
                 service_profile_id,
                 crawl_job_id,
                 normalized_url,
                 len(cleaned_parts),
                 len(content),
+                quality.quality_tier,
+                quality.sufficient,
+                list(quality.commercial_signal_categories),
             )
             return content
 
@@ -2041,14 +2523,21 @@ class WebsiteCrawler:
             self._client = self._build_client()
         return self._client
 
-    async def _crawl_target_pages(self, client: Any, url: str) -> Any:
+    async def _crawl_target_pages(
+        self,
+        client: Any,
+        url: str,
+        *,
+        page_limit: int | None = None,
+    ) -> Any:
+        crawl_options = self._crawl_options(url, page_limit=page_limit)
         crawl = getattr(client, "crawl", None)
         if callable(crawl):
             return await asyncio.wait_for(
                 self._call_url_method(
                     crawl,
                     url,
-                    **self._crawl_options(url),
+                    **crawl_options,
                     poll_interval=2,
                     timeout=self.timeout_seconds,
                 ),
@@ -2060,7 +2549,7 @@ class WebsiteCrawler:
         if not callable(start_crawl) or not callable(get_crawl_status):
             raise RuntimeError("Installed firecrawl-py client does not support crawling.")
 
-        started = await self._call_url_method(start_crawl, url, **self._crawl_options(url))
+        started = await self._call_url_method(start_crawl, url, **crawl_options)
         crawl_id = self._read_field(started, "id")
         if not crawl_id:
             raise RuntimeError("Firecrawl did not return a crawl job id.")
@@ -2075,8 +2564,28 @@ class WebsiteCrawler:
                 raise asyncio.TimeoutError
             await asyncio.sleep(2)
 
-    def _crawl_options(self, url: str) -> dict[str, Any]:
+    def _primary_crawl_page_budget(self) -> int:
+        """Reserve a few requests for known commercial pages when needed.
+
+        Providers may spend their whole page limit on blog or legal pages even
+        when a sitemap is present. Reserving a small tail keeps the total crawl
+        bounded while letting the fallback replace weak coverage with product
+        surfaces such as pricing or use cases.
+        """
+        fallback_reserve = min(
+            self.max_pages - 1,
+            _env_int("ARCLI_CRAWL_FALLBACK_PAGE_RESERVE", 2, minimum=0),
+        )
+        return max(1, self.max_pages - fallback_reserve)
+
+    def _crawl_options(
+        self,
+        url: str,
+        *,
+        page_limit: int | None = None,
+    ) -> dict[str, Any]:
         include_paths = self._target_include_patterns(url)
+        limit = self.max_pages if page_limit is None else page_limit
         return {
             "include_paths": include_paths,
             "regex_on_full_url": True,
@@ -2085,8 +2594,11 @@ class WebsiteCrawler:
             "allow_subdomains": False,
             "ignore_query_parameters": True,
             "max_discovery_depth": 2,
-            "limit": self.max_pages,
-            "sitemap": "skip",
+            "limit": max(1, min(self.max_pages, limit)),
+            # A sitemap gives Firecrawl another bounded way to discover the
+            # pricing/use-case pages that are not linked from a homepage menu.
+            # include_paths and limit still constrain the actual fetch set.
+            "sitemap": "include",
             "max_concurrency": 2,
             "scrape_options": {
                 "formats": ["markdown"],
@@ -2117,6 +2629,7 @@ class WebsiteCrawler:
         tenant_id: str,
         service_profile_id: str | None,
         crawl_job_id: str | None,
+        max_pages: int | None = None,
     ) -> list[tuple[str, str]]:
         scrape = getattr(client, "scrape", None)
         if not callable(scrape):
@@ -2125,8 +2638,10 @@ class WebsiteCrawler:
         candidate_urls = [
             candidate_url
             for candidate_url in self._fallback_urls(url)
-            if candidate_url not in seen_sources
+            if self._source_key(candidate_url) not in seen_sources
         ]
+        if max_pages is not None:
+            candidate_urls = candidate_urls[: max(0, max_pages)]
         if not candidate_urls:
             return []
 
@@ -2231,12 +2746,59 @@ class WebsiteCrawler:
                 or "unknown"
             )
             source_url = str(source_url)
-            if source_url in seen_sources:
+            source_key = self._source_key(source_url)
+            if source_key in seen_sources:
                 continue
 
-            seen_sources.add(source_url)
+            seen_sources.add(source_key)
             documents.append((source_url, markdown))
         return documents
+
+    def _select_profile_documents(
+        self,
+        documents: list[tuple[str, str]],
+        website_url: str,
+    ) -> list[tuple[str, str]]:
+        """Keep the bounded page set focused on product-context surfaces.
+
+        Provider ordering is not a quality signal. The homepage remains first,
+        then pages with commercial URL/content evidence are preferred. Ties
+        preserve provider order, so this is deterministic and does not invent
+        content or expand the page budget.
+        """
+        selected: dict[str, tuple[int, int, str, str]] = {}
+        for index, (source_url, markdown) in enumerate(documents):
+            if not isinstance(markdown, str) or not markdown.strip():
+                continue
+            source = str(source_url).strip() or f"unknown:{index + 1}"
+            source_key = self._source_key(source)
+            cleaned = self._strip_boilerplate(markdown)
+            if not cleaned:
+                continue
+
+            categories = self._commercial_signal_categories(source, cleaned)
+            path = urlparse(source).path.lower()
+            path_hits = sum(
+                keyword in path for keyword in self.COMMERCIAL_PATH_KEYWORDS
+            )
+            score = len(categories) * 10 + path_hits * 4
+            if self._is_homepage_source(source, website_url):
+                score += 1_000
+            # Prefer a substantive page over a mostly empty matching URL, but
+            # cap the contribution so a long article cannot outweigh pricing.
+            score += min(len(cleaned) // 800, 5)
+
+            current = selected.get(source_key)
+            candidate = (score, index, source, markdown)
+            if current is None or score > current[0]:
+                selected[source_key] = candidate
+
+        return [
+            (source, markdown)
+            for _score, _index, source, markdown in sorted(
+                selected.values(), key=lambda item: (-item[0], item[1], item[2])
+            )[: self.max_pages]
+        ]
 
     def _target_include_patterns(self, url: str) -> list[str]:
         parsed = urlparse(url)
@@ -2257,11 +2819,19 @@ class WebsiteCrawler:
         candidates = [
             url,
             origin,
+            urljoin(origin, "/pricing"),
+            urljoin(origin, "/plans"),
+            urljoin(origin, "/features"),
+            urljoin(origin, "/product"),
+            urljoin(origin, "/solutions"),
+            urljoin(origin, "/use-cases"),
+            urljoin(origin, "/customers"),
+            urljoin(origin, "/case-studies"),
+            urljoin(origin, "/integrations"),
+            urljoin(origin, "/compare"),
             urljoin(origin, "/about"),
             urljoin(origin, "/about-us"),
             urljoin(origin, "/company"),
-            urljoin(origin, "/pricing"),
-            urljoin(origin, "/plans"),
             urljoin(origin, "/packages"),
         ]
 
@@ -2272,7 +2842,8 @@ class WebsiteCrawler:
                 deduped.append(normalized)
         return deduped
 
-    def _strip_boilerplate(self, markdown: str) -> str:
+    @classmethod
+    def _strip_boilerplate(cls, markdown: str) -> str:
         markdown = re.sub(r"!\[[^\]]*]\([^)]*\)", "", markdown)
         markdown = re.sub(r"\[!\[[^\]]*]\([^)]*\)]\([^)]*\)", "", markdown)
         markdown = re.sub(r"data:image/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+", "", markdown)
@@ -2288,7 +2859,9 @@ class WebsiteCrawler:
                 continue
 
             lowered = line.lower()
-            if len(line) <= 90 and any(phrase in lowered for phrase in self.BOILERPLATE_PHRASES):
+            if len(line) <= 90 and any(
+                phrase in lowered for phrase in cls.BOILERPLATE_PHRASES
+            ):
                 continue
 
             normalized_short = re.sub(r"\s+", " ", lowered)
@@ -2395,6 +2968,10 @@ def generate_workspace_brain_profile(
         website_url=normalized_url,
         crawl_job_id=generation_id,
     )
+    crawl_quality = WebsiteCrawler.crawl_quality_metadata_for_markdown(
+        markdown,
+        normalized_url,
+    )
     crawl_markdown_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
 
     with engine.begin() as conn:
@@ -2438,6 +3015,7 @@ def generate_workspace_brain_profile(
             "website_url": normalized_url,
             "extraction_status": "completed",
             "crawl_markdown_sha256": crawl_markdown_sha256,
+            "crawl_quality": crawl_quality,
         },
         normalized_url,
     )
@@ -2616,6 +3194,7 @@ def process_crawl_job(
     )
 
     service_profile_id: str | None = None
+    crawl_quality: dict[str, Any] | None = None
     try:
         phase = "crawling"
         with engine.begin() as conn:
@@ -2648,6 +3227,10 @@ def process_crawl_job(
             website_url=normalized_url,
             crawl_job_id=crawl_job_id,
         )
+        crawl_quality = WebsiteCrawler.crawl_quality_metadata_for_markdown(
+            markdown,
+            normalized_url,
+        )
 
         with engine.begin() as conn:
             pages_crawled = _persist_crawl_pages(
@@ -2665,6 +3248,7 @@ def process_crawl_job(
                 phase="crawl_persisted",
                 pages_crawled=pages_crawled or len(_crawl_documents_from_markdown(markdown)),
                 content_chars=len(markdown),
+                metadata={"crawl_quality": crawl_quality},
             )
 
         phase = "extracting_profile"
@@ -2710,6 +3294,10 @@ def process_crawl_job(
                 crawl_job_id=crawl_job_id,
                 timeout_seconds=extraction_timeout_seconds,
             )
+        # Profile JSON is schema-flexible and is the record returned to the
+        # workspace. Carry the deterministic crawl evidence forward so a weak
+        # website read can be diagnosed without exposing its source Markdown.
+        profile["crawl_quality"] = crawl_quality
 
         phase = "persisting_profile"
         with engine.begin() as conn:
@@ -2800,6 +3388,7 @@ def process_crawl_job(
             "total_timeout_seconds": total_timeout_seconds,
             "website_url": normalized_url,
             "service_profile_id": service_profile_id,
+            "crawl_quality": crawl_quality,
         }
         _mark_crawl_job_failed(
             engine,

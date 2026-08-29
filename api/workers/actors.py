@@ -438,6 +438,8 @@ def ingest_initial_public_sources_fast_job(
     total_plausible_hits = 0
     total_new_inserts = 0
     total_matching_source_posts = 0
+    candidate_pool_observations = 0
+    candidate_pool_created = 0
     plausible_query_types: set[str] = set()
     embedding_jobs = 0
     embedding_posts_excluded = 0
@@ -499,6 +501,8 @@ def ingest_initial_public_sources_fast_job(
         nonlocal total_new_inserts
         nonlocal total_matching_source_posts
         nonlocal embedding_jobs
+        nonlocal candidate_pool_observations
+        nonlocal candidate_pool_created
 
         source = str(result.source)
         source_counts[source] = result.hits_found
@@ -507,6 +511,71 @@ def ingest_initial_public_sources_fast_job(
         total_new_inserts += result.inserted_count
         total_matching_source_posts += len(result.source_post_refs)
         plausible_query_types.update(result.plausible_query_types)
+
+        # Preserve each plausible post before the embedding/verifier gates.
+        # Per-query provenance makes the pool explainable even when one post
+        # matched several buyer phrases or was excluded by the bounded
+        # embedding budget below.
+        if tenant_id and service_profile_id and discovery_run_id:
+            from api.services.social.candidate_pool import (
+                record_public_source_candidates,
+            )
+            from api.services.social.lead_signals import source_post_ref_signal
+
+            pool_entries: list[dict[str, Any]] = []
+            for query_result in result.query_outcomes:
+                if query_result.outcome != "completed":
+                    continue
+                for ref in query_result.source_post_refs:
+                    ref_source = str(getattr(ref, "source", "") or source).strip()
+                    source_external_id = str(
+                        getattr(ref, "source_post_id", "") or ""
+                    ).strip()
+                    if not source_external_id:
+                        continue
+                    signal = source_post_ref_signal(ref)
+                    pool_entries.append(
+                        {
+                            "source": ref_source,
+                            "source_external_id": source_external_id,
+                            "query_type": query_result.query_type,
+                            "query_phrase": query_result.query,
+                            "status": "raw",
+                            "scores": {
+                                "raw_score": 1.0,
+                                "plausibility_score": 1.0,
+                                "priority_score": signal.score,
+                                "components": {
+                                    "signal": ", ".join(signal.reasons),
+                                },
+                            },
+                            "evidence": {
+                                "matched_phrase": query_result.query,
+                                "reason_code": "query_grounded_public_signal",
+                            },
+                        }
+                    )
+
+            # Fast-check results should be source-homogeneous. If a connector
+            # supplies a malformed ref from another source, record it in its
+            # own small batch rather than assigning the wrong provenance.
+            entries_by_source: dict[str, list[dict[str, Any]]] = {}
+            for entry in pool_entries:
+                entries_by_source.setdefault(
+                    str(entry.pop("source", source) or source).strip(), []
+                ).append(entry)
+            for pool_source, entries in entries_by_source.items():
+                writes = record_public_source_candidates(
+                    tenant_id,
+                    service_profile_id,
+                    discovery_run_id,
+                    source=pool_source,
+                    candidates=entries,
+                )
+                candidate_pool_observations += len(writes)
+                candidate_pool_created += sum(
+                    1 for write in writes if write.candidate_created
+                )
 
         # This is intentionally inside the per-source callback: a fast
         # provider can make leads available while a slower provider continues
@@ -561,6 +630,7 @@ def ingest_initial_public_sources_fast_job(
                 "plausible_hits": result.plausible_hits,
                 "new_inserts": result.inserted_count,
                 "matching_source_posts": len(result.source_post_refs),
+                "candidate_pool_observations": candidate_pool_observations,
             },
         )
 
@@ -681,6 +751,13 @@ def ingest_initial_public_sources_fast_job(
             "plausible_query_types": sorted(plausible_query_types),
             "new_inserts": total_new_inserts,
             "matching_source_posts": total_matching_source_posts,
+            "candidate_pool": {
+                "raw_observations": candidate_pool_observations,
+                "new_raw_candidates": candidate_pool_created,
+                "plausible_public_posts": total_matching_source_posts,
+                "queued_for_embedding": len(selected_embedding_keys),
+                "deferred_by_embedding_budget": embedding_posts_excluded,
+            },
             "embedding_jobs": embedding_jobs,
             "embedding_post_budget": (
                 {
@@ -1457,6 +1534,17 @@ def ingest_additional_public_sources_batch_job(
                         },
                     )
                     break
+
+                # Do not pin an empty provider response in the global query
+                # cache. A post indexed moments later should be available to
+                # the next discovery run instead of waiting for cache expiry.
+                if int(result.hits_found or 0) == 0:
+                    release_additional_public_source_query(
+                        source=source,
+                        query=query["phrase"],
+                        since_hours_ago=since_hours_ago,
+                        scope=additional_public_source_cache_scope(source),
+                    )
 
                 source_hits += result.hits_found
                 total_hits += result.hits_found

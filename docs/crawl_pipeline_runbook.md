@@ -263,11 +263,12 @@ ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT=6
 # per intent.
 ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE=2
 
-# Scan the last 30 days and retain up to 50 results for each source query.
+# Scan the last 90 days by default (configurable up to 180 days) and retain up
+# to 50 results for each source query.
 # At the default six intents x two formulations, this is at most 600 provider
 # results per enabled free source before de-duplication, caching, plausibility,
 # embedding, and verifier gates reduce the set.
-ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS=720
+ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS=2160
 ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY=50
 
 # Keep each public-post embedding handoff small enough to avoid worker memory
@@ -334,7 +335,9 @@ ARCLI_PROFILE_EXTRACTION_TIMEOUT_SECONDS=35
 ARCLI_CRAWL_JOB_TIME_LIMIT_MS=135000
 
 # Fallback About/Pricing/Product pages retain the same coverage but are fetched
-# concurrently, up to this provider-safe limit.
+# concurrently, up to this provider-safe limit. Crawl4AI first evaluates
+# homepage-linked commercial pages; Firecrawl takes over when that page set is
+# too thin or lacks commercial context.
 ARCLI_FALLBACK_SCRAPE_CONCURRENCY=3
 ```
 
@@ -352,7 +355,9 @@ disabled until its developer API integration is ready.
 
 For an existing database, apply
 `scripts/hn_source_posts_global_contract.sql` after `scripts/RLS_updates.sql`,
-then apply `scripts/lead_match_qualification_guard.sql`. The public-source
+then apply `scripts/lead_match_qualification_guard.sql` and
+`scripts/discovery_candidate_pool_contract.sql` after the prospect-intelligence
+contract. The public-source
 contract uses `(source, source_post_id)` as its global identity, which matters
 now that different providers can use the same external IDs.
 It keeps tenant-scoped reads while allowing an authenticated user to promote

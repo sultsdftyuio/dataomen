@@ -431,6 +431,13 @@ def _search_hackernews(
 
         result_hits = int(getattr(result, "hits_found", 0) or 0)
         result_plausible_hits = int(getattr(result, "plausible_hits", 0) or 0)
+        if result_hits == 0:
+            release_additional_public_source_query(
+                source="hackernews",
+                query=query.phrase,
+                since_hours_ago=lookback_hours,
+                scope=scope,
+            )
         hits += result_hits
         plausible_hits += result_plausible_hits
         if result_plausible_hits:
@@ -529,6 +536,13 @@ def _search_additional_sources(
 
             result_hits = int(getattr(result, "hits_found", 0) or 0)
             result_plausible_hits = int(getattr(result, "plausible_hits", 0) or 0)
+            if result_hits == 0:
+                release_additional_public_source_query(
+                    source=source,
+                    query=query.phrase,
+                    since_hours_ago=lookback_hours,
+                    scope=scope,
+                )
             source_hits += result_hits
             plausible_hits += result_plausible_hits
             if result_plausible_hits:
@@ -644,6 +658,13 @@ def _search_x_once_if_explicitly_enabled(
         return 0, [], "failed", "research_x_provider_failed"
 
     hits = int(getattr(result, "hits_found", 0) or 0)
+    if hits == 0:
+        release_additional_public_source_query(
+            source="x",
+            query=query,
+            since_hours_ago=lookback_hours,
+            scope=scope,
+        )
     _record_event(
         run_id,
         tenant_id,

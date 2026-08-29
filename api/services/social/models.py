@@ -94,7 +94,11 @@ DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_LIMIT = 6
 
 
 
-DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS = 720
+# Search a useful historical window on first activation. Providers remain
+# bounded by their own result/page limits, while the wider window makes a new
+# profile less likely to appear empty just because its buyers did not post in
+# the last few weeks.
+DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS = 2_160
 
 
 

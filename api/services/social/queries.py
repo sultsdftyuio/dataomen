@@ -166,7 +166,9 @@ def public_source_queries(
 _DEMAND_ACQUISITION_PROFILE_PATTERN = re.compile(
     r"\b(?:buyers?|leads?|prospects?|prospecting|outbound|sales\s+pipeline|"
     r"customer\s+acquisition|customer\s+discovery|demand\s+generation|"
-    r"outreach|signups?|signing\s+up|customer\s+growth|growth\s+plan)\b",
+    r"outreach|signups?|signing\s+up|customer\s+growth|growth\s+plan|"
+    r"paying\s+(?:customers?|users?)|paid\s+(?:conversion|accounts?|customers?|users?)|"
+    r"free\s+users?\s+not\s+converting|conversion\s+rate)\b",
     re.IGNORECASE,
 )
 
@@ -175,9 +177,25 @@ _DEMAND_ACQUISITION_PROFILE_PATTERN = re.compile(
 # widen retrieval for products whose buyers genuinely discuss customer and
 # pipeline acquisition.  The verifier remains the qualification gate.
 _DEMAND_ACQUISITION_QUERY_VARIANTS: dict[str, tuple[str, ...]] = {
-    "buyer_pain": ("need more leads", "need more customers"),
-    "urgent_failure": ("signups dropping", "pipeline drying up"),
-    "recommendation_request": ("find customers", "get more leads"),
+    # Prefer commercial outcomes over acquisition-operator vocabulary. A
+    # buyer will often say they need paying customers or that free users are
+    # not converting long before they describe the problem as "lead gen".
+    "buyer_pain": (
+        "need more paying customers",
+        "need more paying users",
+        "need more leads",
+        "need more customers",
+    ),
+    "urgent_failure": (
+        "free users not converting",
+        "signups dropping",
+        "pipeline drying up",
+    ),
+    "recommendation_request": (
+        "how to get paying customers",
+        "find customers",
+        "get more leads",
+    ),
     "manual_workflow_frustration": ("manual outreach", "manual prospecting"),
     "category_tool_search": ("prospecting tools", "lead generation tools"),
     "switching_trigger": ("outbound not working", "better prospecting tool"),
@@ -278,6 +296,39 @@ def _profile_has_demand_acquisition_intent(profile: ServiceProfile) -> bool:
     return bool(_DEMAND_ACQUISITION_PROFILE_PATTERN.search(context))
 
 
+def _demand_acquisition_alternatives(
+    canonical: DiscoveryQuery,
+) -> tuple[str, ...]:
+    """Favor complementary customer/user wording within the normal budget.
+
+    The default plan retains one alternate per intent. If a website already
+    describes its outcome in customer terms, use the user-conversion phrasing
+    first (and vice versa) rather than spending both slots on the same noun.
+    This preserves bounded provider work while reaching how SaaS buyers often
+    describe the exact same commercial problem.
+    """
+
+    alternatives = _DEMAND_ACQUISITION_QUERY_VARIANTS.get(
+        canonical.query_type, ()
+    )
+    if canonical.query_type != "buyer_pain":
+        return alternatives
+
+    phrase = canonical.phrase.casefold()
+    customer_phrase = "need more paying customers"
+    user_phrase = "need more paying users"
+    remaining = tuple(
+        alternative
+        for alternative in alternatives
+        if alternative not in {customer_phrase, user_phrase}
+    )
+    if re.search(r"\bcustomers?\b", phrase) and not re.search(r"\busers?\b", phrase):
+        return (user_phrase, customer_phrase, *remaining)
+    if re.search(r"\busers?\b", phrase) and not re.search(r"\bcustomers?\b", phrase):
+        return (customer_phrase, user_phrase, *remaining)
+    return alternatives
+
+
 def _initial_source_query_variants_per_type() -> int:
     return max(
         1,
@@ -336,9 +387,7 @@ def public_source_search_queries(
     for canonical in canonical_queries:
         specific_alternatives = ()
         if is_demand_acquisition_profile:
-            specific_alternatives = _DEMAND_ACQUISITION_QUERY_VARIANTS.get(
-                canonical.query_type, ()
-            )
+            specific_alternatives = _demand_acquisition_alternatives(canonical)
         elif _generic_query_variants_are_enabled():
             specific_alternatives = _generic_query_variants(canonical)
         alternatives = (canonical.phrase, *specific_alternatives)
@@ -553,8 +602,9 @@ def release_additional_public_source_query(
     """Release a failed query claim so a later activation can retry it.
 
     This is called only by the worker that acquired the cache slot and then
-    received a provider error. Successful and empty searches retain the TTL,
-    while outages do not masquerade as a cached zero-result response.
+    received a provider error or no hits. Successful searches retain the TTL;
+    empty and failed searches are released so a newly indexed buyer post can
+    be found by the next activation instead of looking like a cached zero.
     """
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
@@ -644,7 +694,9 @@ def _initial_source_lookback_hours() -> int:
     return max(
         1,
         min(
-            720,
+            # 180 days is intentionally an upper bound: activation should
+            # gain recall without becoming an unbounded historical crawl.
+            4_320,
             env_int(
                 "ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS",
                 DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS,

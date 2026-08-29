@@ -213,6 +213,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
             patch.object(ingestion, "_persist_public_source_post_embedding_cache"),
             patch.object(ingestion, "_cached_lead_verification", return_value=None),
             patch.object(ingestion, "_persist_lead_match", side_effect=record_lead_match),
+            patch.object(ingestion, "_advance_public_candidate_pool") as advance_pool,
             patch.object(ingestion, "EmbeddingService", FakeEmbeddingService),
             patch.object(ingestion, "VerifierService", FakeVerifier),
         ):
@@ -232,6 +233,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertEqual(
             persisted[0]["verifier_policy_version"],
             VERIFIER_POLICY_VERSION,
+        )
+        self.assertEqual(
+            [call.kwargs["status"] for call in advance_pool.call_args_list],
+            ["plausible", "review"],
         )
 
     def test_initial_batch_matches_only_the_profile_that_requested_it(self) -> None:
@@ -374,6 +379,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
             ),
             patch.object(ingestion, "_cached_lead_verification", return_value=None),
             patch.object(ingestion, "_persist_lead_match", side_effect=record_lead_match),
+            patch.object(ingestion, "_advance_public_candidate_pool") as advance_pool,
             patch.object(ingestion, "EmbeddingService", FakeEmbeddingService),
             patch.object(ingestion, "VerifierService", FakeVerifier),
         ):
@@ -399,6 +405,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertEqual(
             persisted[0]["verifier_policy_version"],
             VERIFIER_POLICY_VERSION,
+        )
+        self.assertEqual(
+            [call.kwargs["status"] for call in advance_pool.call_args_list],
+            ["plausible", "review"],
         )
 
     def test_cached_verdict_requires_the_current_verifier_policy_version(self) -> None:

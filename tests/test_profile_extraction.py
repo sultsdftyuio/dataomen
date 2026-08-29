@@ -403,9 +403,9 @@ def test_deep_profile_uses_demand_outcome_fallback_after_one_invalid_repair() ->
 
     assert len(requests) == 2
     assert [query["phrase"] for query in profile["discovery_queries"]] == [
-        "need more leads",
-        "signups dropping",
-        "how to find customers",
+        "need more paying customers",
+        "free users not converting",
+        "how to get paying customers",
         "manual prospecting takes too long",
         "looking for lead generation tools",
         "outbound is not working",

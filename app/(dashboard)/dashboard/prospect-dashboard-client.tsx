@@ -44,6 +44,7 @@ import {
   type BuyerLanguageResearchView,
   type BuyerDemandReportView,
   type CrawlJobView,
+  type DiscoveryPoolCandidateView,
   type LeadFeedbackValue,
   type QualifiedLeadView,
   type ServiceProfileView,
@@ -54,6 +55,7 @@ type ProspectDashboardClientProps = {
   crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
+  discoveryPoolCandidates: DiscoveryPoolCandidateView[];
   screenedMatches: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
   isWarmingUp: boolean;
@@ -2682,6 +2684,7 @@ export default function ProspectDashboardClient({
   crawlJob,
   leads,
   discoveryCandidates,
+  discoveryPoolCandidates,
   screenedMatches,
   buyerDemandReport,
   isWarmingUp,
@@ -2729,7 +2732,13 @@ export default function ProspectDashboardClient({
 
   useEffect(() => {
     setLastUpdatedAt(new Date());
-  }, [buyerDemandReport?.updatedAt, discoveryCandidates, leads, screenedMatches]);
+  }, [
+    buyerDemandReport?.updatedAt,
+    discoveryCandidates,
+    discoveryPoolCandidates,
+    leads,
+    screenedMatches,
+  ]);
 
   useEffect(() => {
     if (!shouldRefreshForLeads) return;
@@ -2906,6 +2915,7 @@ export default function ProspectDashboardClient({
         serviceProfile={serviceProfile}
         leads={leads}
         potentialBuyers={visiblePotentialBuyers}
+        discoveryPoolCandidates={discoveryPoolCandidates}
         screenedMatches={screenedMatches}
         filteredQueueItems={filteredQueueItems}
         selectedLead={selectedLead}

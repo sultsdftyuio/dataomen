@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   fetchBuyerDemandReport,
   fetchDiscoveryCandidates,
+  fetchDiscoveryPoolCandidates,
   fetchLeadQueueCounts,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
@@ -109,7 +110,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const [leads, discoveryCandidates, screenedMatches] = await Promise.all([
+  const [leads, discoveryCandidates, discoveryPoolCandidates, screenedMatches] = await Promise.all([
     fetchQualifiedLeads(
       supabase,
       tenantId,
@@ -118,6 +119,12 @@ export default async function DashboardPage() {
       serviceProfile.updatedAt,
     ),
     fetchDiscoveryCandidates(
+      supabase,
+      tenantId,
+      serviceProfile.id,
+      serviceProfile.updatedAt,
+    ),
+    fetchDiscoveryPoolCandidates(
       supabase,
       tenantId,
       serviceProfile.id,
@@ -136,6 +143,7 @@ export default async function DashboardPage() {
       crawlJob={crawlJob}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
+      discoveryPoolCandidates={discoveryPoolCandidates}
       screenedMatches={screenedMatches}
       buyerDemandReport={buyerDemandReport}
       isWarmingUp={isDiscoveryWarmingUp}

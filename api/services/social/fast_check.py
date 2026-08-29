@@ -24,6 +24,10 @@ class FastCheckQueryOutcome:
     inserted_count: int = 0
     error_type: str | None = None
     status_code: int | None = None
+    # Keep retrieval provenance with each query. The candidate pool can then
+    # explain why a raw post entered the funnel even when the same post is
+    # later deduplicated across several buyer phrases.
+    source_post_refs: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,6 +117,7 @@ def _source_result_for_hackernews(
             # stop rather than spend through a known bad source.
             break
 
+        query_refs = tuple(_result_source_post_refs(result, source="hackernews"))
         outcomes.append(
             FastCheckQueryOutcome(
                 source="hackernews",
@@ -122,9 +127,10 @@ def _source_result_for_hackernews(
                 hits_found=max(0, int(result.hits_found)),
                 plausible_hits=max(0, int(result.plausible_hits)),
                 inserted_count=max(0, int(result.inserted_count)),
+                source_post_refs=query_refs,
             )
         )
-        for ref in _result_source_post_refs(result, source="hackernews"):
+        for ref in query_refs:
             _keep_higher_priority_ref(refs, ref)
 
     return FastCheckSourceResult(
@@ -211,6 +217,19 @@ def _source_result_for_additional_source(
             # budget, but it must not hold back the other providers.
             break
 
+        # Empty source responses are not useful cache entries. Holding the
+        # claim for the TTL made a newly indexed post invisible until a later
+        # run, which is especially damaging during first-time discovery.
+        if int(result.hits_found) == 0:
+            release_additional_public_source_query(
+                source=source,
+                query=query["phrase"],
+                since_hours_ago=since_hours_ago,
+                scope=cache_scope,
+            )
+
+        query_refs = tuple(result.matchable_source_post_refs)
+
         outcomes.append(
             FastCheckQueryOutcome(
                 source=source,
@@ -220,9 +239,10 @@ def _source_result_for_additional_source(
                 hits_found=max(0, int(result.hits_found)),
                 plausible_hits=max(0, int(result.plausible_hits)),
                 inserted_count=max(0, int(result.inserted_count)),
+                source_post_refs=query_refs,
             )
         )
-        for ref in result.matchable_source_post_refs:
+        for ref in query_refs:
             _keep_higher_priority_ref(refs, ref)
 
     return FastCheckSourceResult(

@@ -237,19 +237,30 @@ def test_crawl4ai_primary_skips_firecrawl_when_it_returns_enough_content() -> No
 
     crawler = crawling.WebsiteCrawler()
     limiter = _Limiter()
+    commercial_markdown = (
+        "# Acme\n\n"
+        + (
+            "Acme is a customer acquisition platform for B2B teams. "
+            "Explore pricing, product features, integrations, and customer stories. "
+            "Book a demo or start a free trial with the sales team today. "
+            * 14
+        )
+    )
     with (
         patch.dict(os.environ, {"ARCLI_CRAWL4AI_ENABLED": "true"}),
         patch.object(crawling, "provider_concurrency_limiter", limiter),
         patch.object(
             crawler,
             "_crawl_with_crawl4ai",
-            new=AsyncMock(return_value=[("https://example.com/", "A" * 900)]),
+            new=AsyncMock(
+                return_value=[("https://example.com/", commercial_markdown)]
+            ),
         ),
         patch.object(crawler, "_get_client") as firecrawl_client,
     ):
         markdown = asyncio.run(crawler.crawl_and_scrape("https://example.com/"))
 
-    assert markdown == "## Source: https://example.com/\n\n" + "A" * 900
+    assert markdown == "## Source: https://example.com/\n\n" + commercial_markdown.strip()
     assert limiter.providers == ["crawl4ai-browser"]
     firecrawl_client.assert_not_called()
 
@@ -292,3 +303,140 @@ def test_crawl4ai_failure_uses_firecrawl_fallback() -> None:
         markdown = asyncio.run(crawler.crawl_and_scrape("https://example.com/"))
 
     assert "Firecrawl fallback" in markdown
+
+
+def test_crawl_quality_rejects_long_noncommercial_content_and_accepts_product_surfaces() -> None:
+    crawler = crawling.WebsiteCrawler()
+    noncommercial = crawler._crawl_content_quality(
+        [
+            (
+                "https://example.com/",
+                "A long editorial note about a community event and its history. " * 45,
+            )
+        ],
+        "https://example.com/",
+    )
+
+    assert noncommercial.sufficient is False
+    assert "insufficient_commercial_context" in noncommercial.reasons
+    assert "limited_page_coverage" in noncommercial.reasons
+
+    commercial = crawler._crawl_content_quality(
+        [
+            (
+                "https://example.com/",
+                (
+                    "Acme is a platform for revenue teams that need a predictable "
+                    "customer acquisition workflow. Book a demo to see the product "
+                    "and start a free trial with your sales team. "
+                    * 8
+                ),
+            ),
+            (
+                "https://example.com/pricing",
+                (
+                    "Pricing plans give growing companies a clear monthly path to "
+                    "use Acme software, integrations, and customer success support. "
+                    * 8
+                ),
+            ),
+        ],
+        "https://example.com/",
+    )
+
+    assert commercial.sufficient is True
+    assert commercial.quality_tier == "usable"
+    assert commercial.homepage_present is True
+    assert {"conversion", "offering", "pricing"}.issubset(
+        commercial.commercial_signal_categories
+    )
+
+
+def test_linked_commercial_pages_are_discovered_without_following_noise() -> None:
+    urls = crawling.WebsiteCrawler._discovered_profile_urls(
+        "https://example.com/",
+        [
+            (
+                "https://example.com/",
+                "\n".join(
+                    [
+                        "[Pricing](/pricing?source=menu)",
+                        "[Customer stories](/case-studies)",
+                        "[Integrations](/integrations#catalog)",
+                        "[Blog](/blog/founder-letter)",
+                        "[Careers](/careers)",
+                        "[Privacy](/privacy)",
+                        "[Download PDF](/sales-deck.pdf)",
+                        "[External](https://other.example/pricing)",
+                    ]
+                ),
+            )
+        ],
+    )
+
+    assert urls == [
+        "https://example.com/pricing",
+        "https://example.com/case-studies",
+        "https://example.com/integrations",
+    ]
+
+
+def test_crawl_options_use_bounded_sitemap_discovery_and_commercial_paths() -> None:
+    crawler = crawling.WebsiteCrawler(max_pages=6)
+
+    options = crawler._crawl_options("https://example.com/", page_limit=4)
+
+    assert options["sitemap"] == "include"
+    assert options["limit"] == 4
+    assert options["max_discovery_depth"] == 2
+    include_pattern = options["include_paths"][-1]
+    assert "integrations" in include_pattern
+    assert "case-studies" in include_pattern
+    assert "documentation" in include_pattern
+
+
+def test_fallback_scrapes_respect_remaining_page_budget() -> None:
+    class FakeClient:
+        calls: list[str] = []
+
+        async def scrape(self, *, url: str, **_kwargs: object) -> dict[str, str]:
+            self.calls.append(url)
+            return {"markdown": f"# {url}"}
+
+    crawler = crawling.WebsiteCrawler()
+    client = FakeClient()
+    fallback_urls = [f"https://example.com/page-{index}" for index in range(5)]
+    with patch.object(crawler, "_fallback_urls", return_value=fallback_urls):
+        documents = asyncio.run(
+            crawler._scrape_common_pages(
+                client,
+                "https://example.com/",
+                set(),
+                tenant_id="tenant-1",
+                service_profile_id="profile-1",
+                crawl_job_id="crawl-1",
+                max_pages=2,
+            )
+        )
+
+    assert client.calls == fallback_urls[:2]
+    assert [source for source, _markdown in documents] == fallback_urls[:2]
+
+
+def test_crawl_quality_metadata_is_carried_into_profile_json() -> None:
+    quality = crawling.WebsiteCrawler.crawl_quality_metadata_for_markdown(
+        "## Source: https://example.com/\n\n"
+        + (
+            "Acme is a product platform for teams. Book a demo and view pricing. "
+            * 30
+        ),
+        "https://example.com/",
+    )
+    document = crawling._profile_document(
+        {"company_name": "Acme", "crawl_quality": quality},
+        "https://example.com/",
+    )
+
+    assert document["crawl_quality"]["quality_tier"] in {"usable", "strong"}
+    assert document["crawl_quality"]["sufficient"] is True
+    assert document["crawl_quality"]["source_urls"] == ["https://example.com/"]
