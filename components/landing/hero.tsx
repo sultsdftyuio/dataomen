@@ -2,13 +2,10 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { C } from "@/lib/tokens";
-import { useVisible } from "@/hooks/useVisible";
-import { RevealWords } from "@/components/landing/reveal";
 
 export function Hero() {
-  const [ref, vis] = useVisible(0.1);
-
   return (
     <section
       className="dot-grid"
@@ -26,8 +23,6 @@ export function Hero() {
       <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
         <div
           style={{ textAlign: "center", marginBottom: 36 }}
-          className={`fu ${vis ? "vis" : ""}`}
-          ref={ref as React.RefObject<HTMLDivElement>}
         >
           <h1
             className="pfd"
@@ -41,15 +36,15 @@ export function Hero() {
               margin: "0 auto 20px",
             }}
           >
-            <RevealWords text="Find people who need" />
+            Find B2B buyers already talking
             <br />
             <span style={{ color: C.blue }}>
-              <RevealWords text="what you sell." delay={180} />
+              about the problem you solve.
             </span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-            Add your website. Arcli learns what you sell, finds people talking about that problem online, checks if they look like a real fit, and sends you the best ones.
+            Add your website. Arcli learns what you sell, finds relevant public conversations, checks the context, and gives you evidence to review before you decide what to do next.
           </p>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
@@ -78,6 +73,12 @@ export function Hero() {
               Find Prospects <ArrowRight size={16} />
             </a>
           </div>
+          <Link
+            href="/resources/buyer-intent-signals"
+            style={{ color: C.navySoft, fontSize: 14, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 4 }}
+          >
+            Learn how buyer-intent signals work
+          </Link>
         </div>
       </div>
     </section>

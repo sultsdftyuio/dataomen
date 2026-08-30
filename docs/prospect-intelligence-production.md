@@ -8,16 +8,22 @@ Apply the database contracts in this order, using the normal production migratio
 2. `scripts/hn_source_posts_global_contract.sql`
 3. `scripts/lead_match_qualification_guard.sql`
 4. `scripts/prospect_intelligence_contract.sql`
-5. `scripts/buyer_language_research_contract.sql`
-6. `scripts/watchlists_contract.sql`
+5. `scripts/discovery_candidate_pool_contract.sql`
+6. `scripts/buyer_language_research_contract.sql`
+7. `scripts/watchlists_contract.sql`
 
-The final migration is additive and keeps buyer-language research separate from
-`lead_matches`. Do not enable its worker until it has completed successfully.
+The candidate-pool migration is required for candidate-first discovery. Do not
+enable the discovery worker until it has completed successfully: otherwise the
+worker can retrieve posts but cannot retain raw or plausible candidates.
 
 ## Required worker configuration
 
 - `DATABASE_URL` (or `SUPABASE_DB_URL` / `POSTGRES_URL`): worker storage and
   tenant-scope checks.
+- `SUPABASE_URL`: validates Supabase-issued browser tokens through the new
+  project's JWKS endpoint.
+- `SUPABASE_SERVICE_ROLE_KEY`: server-only public-source storage and trusted
+  worker writes. Never expose this key to the browser.
 - `REDIS_URL`: Dramatiq, source-query cache, and tenant quotas.
 - `INTERNAL_WORKER_SECRET`: trusted handoffs from the Next.js server to the
   Python API.

@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next';
+import { RESOURCE_LAST_MODIFIED, resourceGuides } from '@/lib/seo/resources';
 import { SITE_URL } from '@/lib/site';
 
 /**
@@ -7,7 +8,7 @@ import { SITE_URL } from '@/lib/site';
  * budget on legacy product pages that return 404.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [
+  const staticPages: MetadataRoute.Sitemap = [
     {
       url: SITE_URL,
       changeFrequency: 'weekly',
@@ -39,4 +40,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.3,
     },
   ];
+
+  const resourcePages: MetadataRoute.Sitemap = [
+    {
+      url: `${SITE_URL}/resources`,
+      lastModified: RESOURCE_LAST_MODIFIED,
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    },
+    ...resourceGuides.map((guide) => ({
+      url: `${SITE_URL}${guide.path}`,
+      lastModified: RESOURCE_LAST_MODIFIED,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    })),
+  ];
+
+  return [...staticPages, ...resourcePages];
 }

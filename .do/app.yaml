@@ -6,6 +6,18 @@ envs:
     scope: RUN_TIME
     type: secret
     value: REPLACE_WITH_SUPABASE_DATABASE_URL
+  # Backend authentication validates Supabase-issued tokens through this
+  # project URL. Set it again whenever a Supabase project is replaced.
+  - key: SUPABASE_URL
+    scope: RUN_TIME
+    type: general
+    value: REPLACE_WITH_SUPABASE_PROJECT_URL
+  # Keep this server-only. The browser receives the separate publishable/anon
+  # key through the frontend deployment, never this service-role credential.
+  - key: SUPABASE_SERVICE_ROLE_KEY
+    scope: RUN_TIME
+    type: secret
+    value: REPLACE_WITH_SUPABASE_SERVICE_ROLE_KEY
   - key: REDIS_URL
     scope: RUN_TIME
     type: secret
@@ -252,11 +264,14 @@ workers:
       - key: ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE
         scope: RUN_TIME
         type: general
-        value: "1"
+        value: "2"
       - key: ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS
         scope: RUN_TIME
         type: general
-        value: "168"
+        # A new workspace has no historical corpus. Use the supported 90-day
+        # first-pass window so low-volume buyer language is not mistaken for
+        # a zero-demand market; the embedding caps below still bound cost.
+        value: "2160"
       - key: ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY
         scope: RUN_TIME
         type: general
@@ -275,6 +290,13 @@ workers:
         scope: RUN_TIME
         type: general
         value: "20"
+      # The discovery worker owns raw -> plausible -> review candidate state.
+      # It is explicit here so a new deployment cannot silently omit the
+      # candidate-first funnel after its database contract is installed.
+      - key: ARCLI_DISCOVERY_CANDIDATE_POOL_ENABLED
+        scope: RUN_TIME
+        type: general
+        value: "true"
       - key: ARCLI_INITIAL_PUBLIC_REMATCH_ENABLED
         scope: RUN_TIME
         type: general

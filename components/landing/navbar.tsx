@@ -26,6 +26,7 @@ export function Navbar() {
     { name: "Sources", href: "/#sources" },
     { name: "How it works", href: "/#pipeline" },
     { name: "Why it fits", href: "/#quality" },
+    { name: "Resources", href: "/resources" },
     { name: "Pricing", href: "/#pricing" },
   ];
 

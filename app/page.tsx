@@ -13,16 +13,16 @@ import Footer from "@/components/landing/footer";
 import { DEFAULT_OG_IMAGE_URL, SITE_URL } from "@/lib/site";
 
 const description =
-  "Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.";
+  "Find public conversations where potential B2B buyers describe the problem you solve, then review the evidence before you reach out.";
 
 export const metadata: Metadata = {
-  title: "Arcli | Find New Customers",
+  title: "Arcli | Buyer Intent Discovery for B2B Founders",
   description,
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Arcli | Find New Customers",
+    title: "Arcli | Buyer Intent Discovery for B2B Founders",
     description,
     url: SITE_URL,
     siteName: "Arcli",
@@ -32,13 +32,13 @@ export const metadata: Metadata = {
         url: DEFAULT_OG_IMAGE_URL,
         width: 1200,
         height: 630,
-        alt: "Arcli finds prospects from public conversations",
+        alt: "Arcli helps B2B founders review buyer-intent evidence from public conversations",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Arcli | Find New Customers",
+    title: "Arcli | Buyer Intent Discovery for B2B Founders",
     description,
     images: [DEFAULT_OG_IMAGE_URL],
   },
@@ -59,6 +59,11 @@ const structuredData = [
     operatingSystem: "Web",
     url: SITE_URL,
     description,
+    featureList: [
+      "Website-led buyer-language research",
+      "Public-conversation matching",
+      "Evidence-backed prospect review",
+    ],
   },
 ];
 

@@ -59,6 +59,11 @@ export default function Footer() {
                     Pricing
                   </Link>
                 </li>
+                <li>
+                  <Link href="/resources" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    Buyer Intent Resources
+                  </Link>
+                </li>
               </ul>
             </div>
 

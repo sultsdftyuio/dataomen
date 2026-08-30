@@ -1,148 +1,127 @@
-// app/(landing)/security/page.tsx
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 
-import React from 'react';
-import { Metadata } from 'next';
-import Link from 'next/link';
-
-import { createOgImageUrl } from '@/lib/og-image';
-import { SITE_URL } from '@/lib/site';
+import { createOgImageUrl } from "@/lib/og-image";
+import { SITE_URL } from "@/lib/site";
 
 const PAGE_URL = `${SITE_URL}/security`;
+const description =
+  "How Arcli protects workspaces and handles selected public-source information for evidence-first prospect discovery.";
 const OG_IMAGE_URL = new URL(
-  createOgImageUrl('Security and GDPR for prospect discovery', 'security'),
+  createOgImageUrl("Security and public-source data practices", "security"),
   SITE_URL,
 ).toString();
 
 export const metadata: Metadata = {
-  title: 'Security & GDPR | Arcli.tech',
-  description: 'Learn how Arcli.tech secures your analytical data with ephemeral compute, strict tenant isolation, and GDPR-compliant infrastructure.',
+  title: "Security and Public-Source Data Practices | Arcli",
+  description,
   alternates: {
     canonical: PAGE_URL,
   },
   openGraph: {
-    title: 'Security & GDPR | Arcli',
-    description: 'Learn how Arcli secures your analytical data with ephemeral compute, strict tenant isolation, and GDPR-compliant infrastructure.',
+    title: "Security and Public-Source Data Practices | Arcli",
+    description,
     url: PAGE_URL,
-    siteName: 'Arcli',
-    locale: 'en_US',
-    type: 'website',
+    siteName: "Arcli",
+    locale: "en_US",
+    type: "website",
     images: [
       {
         url: OG_IMAGE_URL,
         width: 1200,
         height: 630,
-        alt: 'Arcli Security and GDPR',
+        alt: "Arcli security and public-source data practices",
       },
     ],
   },
   twitter: {
-    card: 'summary_large_image',
-    title: 'Security & GDPR | Arcli',
-    description: 'Learn how Arcli secures your analytical data with ephemeral compute, strict tenant isolation, and GDPR-compliant infrastructure.',
+    card: "summary_large_image",
+    title: "Security and Public-Source Data Practices | Arcli",
+    description,
     images: [OG_IMAGE_URL],
   },
 };
 
+const practices = [
+  {
+    title: "Workspace-scoped access",
+    description:
+      "Arcli is designed so a workspace can access its own settings, discovery results, and review decisions—not another workspace's information.",
+  },
+  {
+    title: "Public-source boundaries",
+    description:
+      "Arcli is intended for supported public sources and public discussions. It does not collect private groups, direct messages, or private profiles as part of the discovery workflow.",
+  },
+  {
+    title: "Human review before action",
+    description:
+      "A match is a reviewable suggestion with source evidence. Arcli does not send messages from a candidate queue or make an automated decision about a person.",
+  },
+  {
+    title: "Removal and suppression requests",
+    description:
+      "People can request removal of a public-source record. Arcli uses a suppression identity where technically possible to avoid collecting the same item again.",
+  },
+];
+
 export default function SecurityPage() {
   return (
-    <main className="max-w-4xl mx-auto px-6 py-16 sm:py-24 space-y-12 text-slate-800 dark:text-slate-200">
-      
-      {/* Header Section */}
-      <header className="space-y-4">
-        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          Security & GDPR
-        </h1>
-        <p className="text-lg text-slate-600 dark:text-slate-400">
-          At Arcli.tech, security is an architectural baseline, not an afterthought. 
-          We built our Zero-ETL pipeline on the principles of ephemeral compute, strict tenant isolation, and least-privilege access.
-        </p>
-      </header>
+    <main className="min-h-screen bg-slate-50 px-4 py-12 text-slate-950 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl">
+        <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950">
+          <ArrowLeft className="h-4 w-4" /> Back to home
+        </Link>
 
-      {/* Security Architecture Section */}
-      <section className="space-y-6">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white border-b pb-2 border-slate-200 dark:border-slate-800">
-          Infrastructure & Architecture Security
-        </h2>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <SecurityCard 
-            title="Strict Tenant Isolation" 
-            description="Your data is never co-mingled in a monolithic database. Ingested JSON is normalized and saved to dedicated, cryptographically isolated S3/Cloudflare R2 prefixes (e.g., /tenant={id}/). Queries can only access files within your specific prefix."
-          />
-          <SecurityCard 
-            title="Ephemeral Compute (DuckDB)" 
-            description="Our query engine spins up an isolated, sandboxed DuckDB process for every single query. Memory is strictly governed, and the process is immediately destroyed after execution, meaning no residual data remains in memory."
-          />
-          <SecurityCard 
-            title="Authentication & Identity" 
-            description="We utilize Supabase for enterprise-grade authentication. All sessions are secured via JWTs, and row-level security (RLS) is enforced at the database layer to ensure users can only access their authorized environments."
-          />
-          <SecurityCard 
-            title="Data in Transit & At Rest" 
-            description="All traffic to and from Arcli.tech is encrypted via TLS 1.3. Data at rest in our data lake (Parquet files) is encrypted using AES-256 standard encryption via our storage providers."
-          />
-        </div>
-      </section>
-
-      {/* GDPR Section */}
-      <section className="space-y-6">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white border-b pb-2 border-slate-200 dark:border-slate-800">
-          GDPR & Data Privacy
-        </h2>
-        <div className="prose prose-slate dark:prose-invert max-w-none">
-          <p>
-            Arcli.tech complies with the General Data Protection Regulation (GDPR). We act as a <strong>Data Processor</strong> for the SaaS data you connect, while you remain the Data Controller.
+        <header className="mt-10 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+            <ShieldCheck className="h-6 w-6" />
+          </div>
+          <p className="mt-6 text-xs font-bold uppercase tracking-[0.12em] text-blue-700">Arcli trust center</p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Security and public-source data practices</h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">
+            Arcli helps businesses review relevant public conversations about problems their product may solve. This page explains the operating boundaries behind that workflow.
           </p>
-          <ul className="list-disc pl-6 space-y-2 mt-4">
-            <li>
-              <strong>Right to Erasure (Right to be Forgotten):</strong> Because of our decentralized data lake architecture, executing a data deletion request is instantaneous and absolute. When a workspace is deleted, the corresponding isolated storage prefix is permanently purged.
-            </li>
-            <li>
-              <strong>Data Portability:</strong> You maintain full ownership of your data. You can request an export of your normalized Parquet files at any time.
-            </li>
-            <li>
-              <strong>Sub-processors:</strong> We use industry-leading, compliant sub-processors including DigitalOcean (hosting), Vercel (edge delivery), Cloudflare (networking & storage), and Supabase (authentication).
-            </li>
-          </ul>
-        </div>
-      </section>
+        </header>
 
-      {/* Contact Section */}
-      <section className="bg-slate-50 dark:bg-slate-900 rounded-xl p-8 border border-slate-200 dark:border-slate-800 text-center space-y-4">
-        <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Security Inquiries</h3>
-        <p className="text-slate-600 dark:text-slate-400">
-          Have specific questions about our security posture, or need to report a vulnerability? 
-          Our engineering team is ready to assist.
-        </p>
-        <div className="pt-4">
-          <a 
-            href="mailto:support@arcli.tech" 
-            className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-          >
-            Contact support@arcli.tech
-          </a>
-        </div>
-      </section>
+        <article className="mt-8 space-y-10 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
+          <section>
+            <h2 className="text-2xl font-semibold tracking-tight">How Arcli approaches prospect discovery</h2>
+            <p className="mt-4 text-[16px] leading-7 text-slate-600">
+              Arcli is built for evidence-first research. A customer supplies a website and matching brief; Arcli evaluates selected public discussions for possible relevance, preserves the source link and matching reason, and leaves the final judgment to a person.
+            </p>
+          </section>
 
-      <footer className="pt-8 text-sm text-slate-500 dark:text-slate-400 text-center">
-        <p>Last updated: {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
-        <div className="flex justify-center gap-4 mt-4">
-          <Link href="/privacy" className="hover:text-blue-600 transition-colors">Privacy Policy</Link>
-          <Link href="/terms" className="hover:text-blue-600 transition-colors">Terms of Service</Link>
-        </div>
-      </footer>
+          <section className="grid gap-5 sm:grid-cols-2">
+            {practices.map((practice) => (
+              <div key={practice.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                <h3 className="text-lg font-semibold tracking-tight text-slate-900">{practice.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{practice.description}</p>
+              </div>
+            ))}
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold tracking-tight">What Arcli does not do</h2>
+            <ul className="mt-4 list-disc space-y-2 pl-5 text-[16px] leading-7 text-slate-600">
+              <li>It does not read private conversations or private communities.</li>
+              <li>It does not automatically send cold outreach from a candidate queue.</li>
+              <li>It does not treat a public post as proof that someone wants to buy.</li>
+              <li>It does not use sensitive personal data for prospect targeting.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold tracking-tight">Questions, removal requests, and policy details</h2>
+            <p className="mt-4 text-[16px] leading-7 text-slate-600">
+              Read our <Link href="/privacy" className="font-medium text-blue-700 underline underline-offset-4">Privacy Policy</Link> for details on information handling and our <Link href="/privacy/remove" className="font-medium text-blue-700 underline underline-offset-4">public-source removal form</Link> to request removal. For security questions, contact <a className="font-medium text-blue-700 underline underline-offset-4" href="mailto:support@arcli.tech">support@arcli.tech</a>.
+            </p>
+          </section>
+        </article>
+
+        <p className="mt-6 text-center text-sm text-slate-500">Last updated August 30, 2026</p>
+      </div>
     </main>
-  );
-}
-
-// Helper component for clean, modular UI
-function SecurityCard({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="bg-white dark:bg-slate-950 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-      <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">{title}</h3>
-      <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-        {description}
-      </p>
-    </div>
   );
 }

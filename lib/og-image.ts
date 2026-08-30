@@ -1,6 +1,6 @@
 export const OG_IMAGE_PATH = '/api/og';
 
-const DEFAULT_OG_TITLE = 'Arcli | Find New Customers';
+const DEFAULT_OG_TITLE = 'Buyer Intent Discovery for B2B Founders';
 const MAX_TITLE_LENGTH = 140;
 
 export type OgImageType = 'default' | 'security';

@@ -28,6 +28,15 @@ export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const EDGE_LAYER = 'next-edge-middleware'
 
+  // Keep every public URL on the same host declared in metadata and the
+  // sitemap. This prevents the apex and www hosts from competing as duplicate
+  // pages when both are attached to the deployment.
+  if (request.nextUrl.hostname === 'arcli.tech') {
+    const canonicalUrl = request.nextUrl.clone()
+    canonicalUrl.hostname = 'www.arcli.tech'
+    return NextResponse.redirect(canonicalUrl, 308)
+  }
+
   const isRootAuthCallback =
     pathname === '/' &&
     (request.nextUrl.searchParams.has('code') ||
@@ -88,7 +97,7 @@ export default async function proxy(request: NextRequest) {
     '/privacy/remove',
     '/terms',
     '/cookies',
-  ].includes(pathname)
+  ].includes(pathname) || pathname === '/resources' || pathname.startsWith('/resources/')
   const hasSupabaseSessionCookie = request.cookies.getAll().some(({ name }) =>
     /^sb-.+-auth-token(?:\.\d+)?$/.test(name),
   )

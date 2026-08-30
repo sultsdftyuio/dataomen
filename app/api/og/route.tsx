@@ -41,14 +41,14 @@ export function GET(request: Request) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22, maxWidth: '960px' }}>
           <div style={{ color: '#93c5fd', display: 'flex', fontSize: 26, fontWeight: 600 }}>
-            {isSecurity ? 'SECURITY & GDPR' : 'FIND NEW CUSTOMERS'}
+            {isSecurity ? 'SECURITY & GDPR' : 'BUYER INTENT DISCOVERY'}
           </div>
           <div style={{ display: 'flex', fontSize: 64, fontWeight: 700, letterSpacing: '-3px', lineHeight: 1.08 }}>
             {title}
           </div>
         </div>
         <div style={{ color: '#bfdbfe', display: 'flex', fontSize: 24 }}>
-          Find people already looking for what you offer.
+          Find public conversations where buyers describe the problem you solve.
         </div>
       </div>
     ),
