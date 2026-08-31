@@ -57,6 +57,20 @@ def test_watchlist_queries_cover_all_buyer_intents_in_plain_language() -> None:
     assert all(len(query.phrase.split()) <= 14 for query in queries)
 
 
+def test_watchlist_include_terms_keep_the_buyer_intent_templates() -> None:
+    queries = build_watchlist_discovery_queries(
+        "design-system leaders at product companies",
+        "design handoff work is fragmented across tools",
+        include_terms=["manual design QA causes rework"],
+    )
+
+    assert "struggling with" in queries[0].phrase
+    assert "needs fixing today" in queries[1].phrase
+    assert queries[2].phrase.startswith("what do ")
+    assert "manually takes too much time" in queries[3].phrase
+    assert "manual design QA" in " ".join(query.phrase for query in queries)
+
+
 def test_watchlist_profile_keeps_website_offer_and_focuses_the_selected_group() -> None:
     profile = build_watchlist_profile(
         _base_profile(),

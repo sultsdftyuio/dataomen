@@ -1,10 +1,18 @@
-import { ExternalLink, Search, Sparkles } from "lucide-react";
+import { ExternalLink, Search } from "lucide-react";
 
 import type { DiscoveryPoolCandidateView } from "@/app/(dashboard)/dashboard/prospect-types";
 import { C } from "@/lib/tokens";
 
 type CandidatePoolProps = {
   candidates: DiscoveryPoolCandidateView[];
+};
+
+const UNVERIFIED_STATUS = {
+  label: "Collected, not reviewed",
+  detail:
+    "This post was found by a source search. It has not passed relevance or buyer-intent verification.",
+  color: C.navySoft,
+  background: C.offWhite,
 };
 
 function sourceName(source: string) {
@@ -21,31 +29,6 @@ function sourceName(source: string) {
   };
   const normalized = source.trim().toLowerCase();
   return names[normalized] ?? source.replace(/[_-]+/g, " ");
-}
-
-function statusCopy(status: DiscoveryPoolCandidateView["status"]) {
-  if (status === "review") {
-    return {
-      label: "Ready for review",
-      detail: "Passed the matching checks; it is still not a qualified lead.",
-      color: C.blue,
-      background: C.bluePale,
-    };
-  }
-  if (status === "plausible") {
-    return {
-      label: "Plausible signal",
-      detail: "Passed a first relevance check and is moving through matching.",
-      color: C.amber,
-      background: C.amberPale,
-    };
-  }
-  return {
-    label: "Collected",
-    detail: "A public post matched a buyer phrase; verification has not run yet.",
-    color: C.navySoft,
-    background: C.offWhite,
-  };
 }
 
 function relativeTime(value: string | null) {
@@ -68,15 +51,18 @@ function candidateLabel(candidate: DiscoveryPoolCandidateView) {
 }
 
 /**
- * Makes the candidate-first stage visible without conflating it with a lead.
- * It intentionally offers only the original public source, not CRM or contact
- * actions, until verifier-owned lead records are available.
+ * The candidate pool is a collection queue, not a buyer-intent queue. The
+ * server only returns raw rows, and the defensive filter keeps a malformed
+ * response from making a matched or screened record look unverified.
  */
 export function CandidatePool({ candidates }: CandidatePoolProps) {
-  if (candidates.length === 0) return null;
+  const unverifiedCandidates = candidates.filter(
+    (candidate) => candidate.status === "raw",
+  );
+  if (unverifiedCandidates.length === 0) return null;
 
-  const shownCandidates = candidates.slice(0, 6);
-  const hiddenCount = Math.max(0, candidates.length - shownCandidates.length);
+  const shownCandidates = unverifiedCandidates.slice(0, 6);
+  const hiddenCount = Math.max(0, unverifiedCandidates.length - shownCandidates.length);
 
   return (
     <section
@@ -91,76 +77,76 @@ export function CandidatePool({ candidates }: CandidatePoolProps) {
           </span>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-              Candidate-first discovery
+              Unverified discovery
             </p>
             <h2 id="early-candidate-pool-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
-              {candidates.length} early {candidates.length === 1 ? "candidate" : "candidates"} found
+              {unverifiedCandidates.length} unverified {unverifiedCandidates.length === 1 ? "conversation" : "conversations"} collected
             </h2>
             <p className="mt-1 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>
-              These are collected public conversations, shown before full verification. They may become leads, or be screened out.
+              These posts were found by a search query. They are not buyer signals or leads until matching and verification finish.
             </p>
           </div>
         </div>
-        <span className="rounded-full px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: C.amberPale, color: C.amber }}>
-          Not qualified leads
+        <span className="rounded-full px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: C.offWhite, color: C.navySoft }}>
+          Not reviewed
         </span>
       </div>
 
       <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3" style={{ borderColor: C.rule }}>
-        {shownCandidates.map((candidate) => {
-          const status = statusCopy(candidate.status);
-          return (
-            <article key={candidate.id} className="min-w-0 p-3.5 sm:p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
-                    {candidateLabel(candidate)} · {sourceName(candidate.source)}
-                  </p>
-                  <h3 className="mt-1 line-clamp-2 text-sm font-semibold leading-5" style={{ color: C.navy }}>
-                    {candidate.title}
-                  </h3>
-                </div>
-                <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: status.background, color: status.color }}>
-                  {status.label}
-                </span>
+        {shownCandidates.map((candidate) => (
+          <article key={candidate.id} className="min-w-0 p-3.5 sm:p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
+                  {candidateLabel(candidate)} · {sourceName(candidate.source)}
+                </p>
+                <h3 className="mt-1 line-clamp-2 text-sm font-semibold leading-5" style={{ color: C.navy }}>
+                  {candidate.title}
+                </h3>
               </div>
-              <p className="mt-2 line-clamp-3 text-xs leading-5" style={{ color: C.navySoft }}>
-                {candidate.text}
-              </p>
-              <p className="mt-2 line-clamp-2 text-[11px] leading-4" style={{ color: C.muted }}>
-                {candidate.matchedPhrase
-                  ? `Matched phrase: “${candidate.matchedPhrase}”`
-                  : status.detail}
-              </p>
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <span className="text-[10px]" style={{ color: C.muted }}>
-                  Seen {relativeTime(candidate.lastSeenAt ?? candidate.firstSeenAt)}
-                </span>
-                {candidate.sourceUrl ? (
-                  <a
-                    href={candidate.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-sm text-[11px] font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                    style={{ color: C.blue }}
-                  >
-                    Open source
-                    <ExternalLink className="size-3" aria-hidden="true" />
-                  </a>
-                ) : null}
-              </div>
-            </article>
-          );
-        })}
+              <span
+                className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold"
+                style={{ backgroundColor: UNVERIFIED_STATUS.background, color: UNVERIFIED_STATUS.color }}
+              >
+                {UNVERIFIED_STATUS.label}
+              </span>
+            </div>
+            <p className="mt-2 line-clamp-3 text-xs leading-5" style={{ color: C.navySoft }}>
+              {candidate.text}
+            </p>
+            <p className="mt-2 line-clamp-2 text-[11px] leading-4" style={{ color: C.muted }}>
+              {candidate.matchedPhrase
+                ? `Found via search query: "${candidate.matchedPhrase}"`
+                : UNVERIFIED_STATUS.detail}
+            </p>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-[10px]" style={{ color: C.muted }}>
+                Seen {relativeTime(candidate.lastSeenAt ?? candidate.firstSeenAt)}
+              </span>
+              {candidate.sourceUrl ? (
+                <a
+                  href={candidate.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-sm text-[11px] font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                  style={{ color: C.blue }}
+                >
+                  Open source
+                  <ExternalLink className="size-3" aria-hidden="true" />
+                </a>
+              ) : null}
+            </div>
+          </article>
+        ))}
       </div>
 
       {hiddenCount > 0 ? (
         <p className="border-t px-4 py-2.5 text-xs" style={{ borderColor: C.rule, color: C.muted }}>
-          {hiddenCount} more early {hiddenCount === 1 ? "candidate is" : "candidates are"} retained for this scan.
+          {hiddenCount} more unverified {hiddenCount === 1 ? "conversation is" : "conversations are"} retained for this scan.
         </p>
       ) : null}
       <p className="sr-only">
-        {candidates.length} candidate conversations are present before lead verification.
+        {unverifiedCandidates.length} unverified conversations are present before lead verification.
       </p>
     </section>
   );

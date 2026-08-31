@@ -920,7 +920,7 @@ def advance_candidate_status(
         values = resolved_scores.values()
         safe_evidence = sanitize_candidate_evidence(evidence)
         actor = (
-            _collapse_space(decision_by, maximum=_MAX_IDENTIFIER_CHARS)
+            _collapse_space(decision_by, maximum=MAX_IDENTIFIER_CHARS)
             if decision_by is not None
             else ""
         )

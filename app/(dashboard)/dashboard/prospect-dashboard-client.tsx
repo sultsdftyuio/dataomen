@@ -33,6 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { markLeadAsQualified } from "@/app/actions/leads";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
+import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { StartingDiscoveryScreen } from "@/components/discovery/starting-discovery-screen";
@@ -43,6 +44,7 @@ import {
   type BuyerLanguageResearchRequestAction,
   type BuyerLanguageResearchView,
   type BuyerDemandReportView,
+  type BuyerGroupActivationAction,
   type CrawlJobView,
   type DiscoveryPoolCandidateView,
   type LeadFeedbackValue,
@@ -58,6 +60,8 @@ type ProspectDashboardClientProps = {
   discoveryPoolCandidates: DiscoveryPoolCandidateView[];
   screenedMatches: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
+  buyerGroupSuggestions: BuyerGroupSuggestion[];
+  activateBuyerGroup: BuyerGroupActivationAction;
   isWarmingUp: boolean;
 };
 
@@ -2687,6 +2691,8 @@ export default function ProspectDashboardClient({
   discoveryPoolCandidates,
   screenedMatches,
   buyerDemandReport,
+  buyerGroupSuggestions,
+  activateBuyerGroup,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
@@ -2914,8 +2920,11 @@ export default function ProspectDashboardClient({
       <ProspectLeadDesk
         serviceProfile={serviceProfile}
         leads={leads}
-        potentialBuyers={visiblePotentialBuyers}
+        potentialBuyers={discoveryCandidates}
         discoveryPoolCandidates={discoveryPoolCandidates}
+        buyerGroupSuggestions={buyerGroupSuggestions}
+        activateBuyerGroup={activateBuyerGroup}
+        reviewedConversationCount={queueItems.length}
         screenedMatches={screenedMatches}
         filteredQueueItems={filteredQueueItems}
         selectedLead={selectedLead}

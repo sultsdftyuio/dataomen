@@ -175,6 +175,43 @@ def test_matching_can_advance_a_pool_item_by_provider_identity(monkeypatch) -> N
     )
 
 
+def test_rejected_public_candidate_advances_without_a_name_error(monkeypatch) -> None:
+    """Exercise the real lifecycle path used by matching workers.
+
+    This must not mock ``advance_candidate_status``: the worker advances a
+    candidate with ``decision_by`` after the verifier rejects it, which is the
+    path that previously referenced an undefined identifier limit constant.
+    """
+
+    _enable_pool(monkeypatch)
+
+    class Connection:
+        def execute(self, *_args, **_kwargs):
+            return self
+
+        def scalar_one_or_none(self):
+            return CANDIDATE_ID
+
+    class Engine:
+        def begin(self):
+            return nullcontext(Connection())
+
+    with patch.object(candidate_pool, "_database_engine", return_value=Engine()):
+        result = candidate_pool.advance_public_source_candidate_status(
+            TENANT_ID,
+            PROFILE_ID,
+            source="hackernews",
+            source_external_id="post-42",
+            status="rejected",
+            scores={"similarity_score": 0.32, "verifier_score": 0.08},
+            evidence={"reason_code": "not_a_match"},
+            decision_by="system",
+            decision_reason="Not a buyer-intent signal.",
+        )
+
+    assert result is True
+
+
 def test_candidate_contract_enforces_tenant_scope_lifecycle_and_read_only_browser_access() -> None:
     contract = Path("scripts/discovery_candidate_pool_contract.sql").read_text(
         encoding="utf-8"

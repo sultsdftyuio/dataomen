@@ -8,6 +8,7 @@ import {
   DISCOVERY_QUERY_TYPES,
   discoveryQueryPlanValidationError,
 } from "@/lib/discovery-queries";
+import { deriveBuyerGroupSuggestions } from "@/lib/buyer-group-suggestions";
 import { PRO_PLAN_REQUIRED_MESSAGE, requireProEntitlement } from "@/lib/entitlements";
 import { freePlanDomainChangeError } from "@/lib/plan-limits";
 import type { Json } from "@/types/supabase";
@@ -18,6 +19,11 @@ import {
   type ProspectActionResult,
   type WatchlistCreateInput,
 } from "./prospect-types";
+import {
+  fetchServiceProfile,
+  fetchTenantWebsiteUrl,
+  isServiceProfileApproved,
+} from "./data";
 
 type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
@@ -785,24 +791,13 @@ async function postWatchlistDiscoveryTrigger(
   }
 }
 
-export async function createWatchlist(
-  input: WatchlistCreateInput,
+type ValidWatchlistInput = z.infer<typeof WATCHLIST_SCHEMA>;
+
+async function createWatchlistForProfile(
+  context: TenantContext,
+  serviceProfileId: string,
+  values: ValidWatchlistInput,
 ): Promise<ProspectActionResult> {
-  const context = await requireProTenant();
-  if ("ok" in context) return context;
-
-  const parsed = WATCHLIST_SCHEMA.safeParse(input);
-  if (!parsed.success) {
-    return actionError(
-      parsed.error.issues[0]?.message ?? "Check the Watchlist details and try again.",
-    );
-  }
-  const serviceProfileId = await latestApprovedServiceProfileId(context);
-  if (!serviceProfileId) {
-    return actionError("Create and approve a website matching brief before adding a Watchlist.");
-  }
-
-  const values = parsed.data;
   const result = await context.supabase
     .from("watchlists")
     .insert({
@@ -842,6 +837,143 @@ export async function createWatchlist(
     return actionOk(`Buyer group saved. ${triggerResult.message}`);
   }
   return triggerResult;
+}
+
+export async function createWatchlist(
+  input: WatchlistCreateInput,
+): Promise<ProspectActionResult> {
+  const context = await requireProTenant();
+  if ("ok" in context) return context;
+
+  const parsed = WATCHLIST_SCHEMA.safeParse(input);
+  if (!parsed.success) {
+    return actionError(
+      parsed.error.issues[0]?.message ?? "Check the Watchlist details and try again.",
+    );
+  }
+  const serviceProfileId = await latestApprovedServiceProfileId(context);
+  if (!serviceProfileId) {
+    return actionError("Create and approve a website matching brief before adding a Watchlist.");
+  }
+
+  return createWatchlistForProfile(context, serviceProfileId, parsed.data);
+}
+
+/**
+ * Activate a website-derived buyer-group hypothesis through the normal
+ * Watchlist path. The browser supplies only the stable suggestion ID; buyer
+ * details are re-derived from the current tenant-owned website profile here
+ * so a stale tab or forged request cannot widen another workspace's scan.
+ */
+export async function activateSuggestedBuyerGroup(
+  suggestionId: string,
+): Promise<ProspectActionResult> {
+  const context = await requireProTenant();
+  if ("ok" in context) return context;
+
+  const normalizedId = typeof suggestionId === "string"
+    ? suggestionId.trim()
+    : "";
+  if (!normalizedId) {
+    return actionError("That website buyer-group suggestion is no longer available.");
+  }
+
+  const websiteUrl = await fetchTenantWebsiteUrl(
+    context.supabase,
+    context.tenantId,
+  );
+  const serviceProfile = await fetchServiceProfile(
+    context.supabase,
+    context.tenantId,
+    websiteUrl,
+  );
+  if (!serviceProfile.id || !isServiceProfileApproved(serviceProfile)) {
+    return actionError(
+      "Create and approve a website matching brief before testing a buyer group.",
+    );
+  }
+
+  const suggestions = deriveBuyerGroupSuggestions({
+    targetAudience: serviceProfile.fields.target_audience,
+    coreProblem: serviceProfile.fields.core_problem,
+    useCases: serviceProfile.fields.use_cases,
+    painPoints: serviceProfile.fields.pain_points,
+    buyingTriggers: serviceProfile.fields.buying_triggers,
+    negativeKeywords: serviceProfile.fields.negative_keywords,
+    excludedAudiences: serviceProfile.fields.excluded_audiences,
+  });
+  const suggestion = suggestions.find((item) => item.id === normalizedId);
+  if (!suggestion) {
+    return actionError(
+      "That website buyer-group suggestion changed. Refresh the demand map and choose a current direction.",
+    );
+  }
+
+  const existing = await context.supabase
+    .from("watchlists")
+    .select("id, is_active")
+    .eq("tenant_id", context.tenantId)
+    .eq("service_profile_id", serviceProfile.id)
+    .eq("target_buyer", suggestion.targetBuyer)
+    .eq("problem_to_solve", suggestion.problemToSolve)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing.error) {
+    console.error("[BuyerGroups] suggested group lookup failed", {
+      tenant_id: context.tenantId,
+      error: existing.error,
+    });
+    return actionError(
+      "Could not prepare this buyer group. Apply the Buyer Groups database contract and try again.",
+    );
+  }
+
+  if (existing.data) {
+    if (!existing.data.is_active) {
+      const resumeResult = await context.supabase
+        .from("watchlists")
+        .update({ is_active: true })
+        .eq("tenant_id", context.tenantId)
+        .eq("id", existing.data.id)
+        .select("id")
+        .maybeSingle();
+      if (resumeResult.error || !resumeResult.data) {
+        return actionError("Could not resume this buyer group.");
+      }
+    }
+
+    const scanResult = await postWatchlistDiscoveryTrigger(
+      context,
+      existing.data.id,
+      serviceProfile.id,
+    );
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/watchlists");
+    if (!scanResult.ok) {
+      return actionOk(`Buyer group is active. ${scanResult.message}`);
+    }
+    return actionOk("Buyer group is active. A focused discovery scan has started.");
+  }
+
+  const parsed = WATCHLIST_SCHEMA.safeParse({
+    name: suggestion.name,
+    targetBuyer: suggestion.targetBuyer,
+    problemToSolve: suggestion.problemToSolve,
+    includeTerms: suggestion.includeTerms,
+    excludeTerms: suggestion.excludeTerms,
+    sourcePreferences: suggestion.sourcePreferences,
+    suggestedPlaces: [],
+  });
+  if (!parsed.success) {
+    console.error("[BuyerGroups] generated suggestion failed watchlist validation", {
+      tenant_id: context.tenantId,
+      suggestion_id: suggestion.id,
+      error: parsed.error.issues,
+    });
+    return actionError("This website suggestion is incomplete. Refresh the demand map and try another direction.");
+  }
+  return createWatchlistForProfile(context, serviceProfile.id, parsed.data);
 }
 
 export async function runWatchlistDiscovery(

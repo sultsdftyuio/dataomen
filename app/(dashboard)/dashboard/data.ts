@@ -879,14 +879,18 @@ function discoveryPoolCandidateView(
 }
 
 /**
- * Read the additive candidate-first pool. The SQL contract is intentionally
- * deployed independently from lead_matches, so a staged rollout must leave
- * the existing prospect desk readable when the new table is not present yet.
+ * Read only unverified collection items from the additive candidate-first
+ * pool. A candidate is not a buyer signal merely because a source search
+ * retrieved it, so any post with a verifier-owned lead outcome is excluded.
+ * The SQL contract is intentionally deployed independently from lead_matches,
+ * so a staged rollout must leave the existing prospect desk readable when the
+ * new table is not present yet.
  */
 export async function fetchDiscoveryPoolCandidates(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   serviceProfileId: string | null,
+  discoveryRunId: string | null = null,
   activeSince: string | null = null,
 ): Promise<DiscoveryPoolCandidateView[]> {
   if (!serviceProfileId) return [];
@@ -894,16 +898,18 @@ export async function fetchDiscoveryPoolCandidates(
   let query = supabase
     .from("discovery_candidates")
     .select(
-      "id,candidate_kind,entity_provider,entity_url,source,candidate_status,raw_score,plausibility_score,similarity_score,verifier_score,priority_score,source_snapshot,evidence,first_seen_at,last_seen_at,updated_at",
+      "id,candidate_kind,entity_provider,entity_url,source,source_post_id,last_discovery_run_id,candidate_status,raw_score,plausibility_score,similarity_score,verifier_score,priority_score,source_snapshot,evidence,first_seen_at,last_seen_at,updated_at",
     )
     .eq("tenant_id", tenantId)
     .eq("service_profile_id", serviceProfileId)
-    .in("candidate_status", ["raw", "plausible", "review"])
+    .in("candidate_status", ["raw"])
     .order("priority_score", { ascending: false })
     .order("last_seen_at", { ascending: false })
     .limit(12);
 
-  if (activeSince) {
+  if (discoveryRunId) {
+    query = query.eq("last_discovery_run_id", discoveryRunId);
+  } else if (activeSince) {
     query = query.gte("updated_at", activeSince);
   }
 
@@ -918,9 +924,52 @@ export async function fetchDiscoveryPoolCandidates(
     return [];
   }
 
-  return ((data ?? []) as unknown[]).map((row, index) =>
-    discoveryPoolCandidateView(asRecord(row) ?? {}, index),
+  const candidateRows = ((data ?? []) as unknown[]).map(
+    (row) => asRecord(row) ?? {},
   );
+  const sourcePostIds = Array.from(
+    new Set(
+      candidateRows
+        .map((row) => readString([row], ["source_post_id"]))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+
+  if (sourcePostIds.length === 0) {
+    return candidateRows.map((row, index) =>
+      discoveryPoolCandidateView(row, index),
+    );
+  }
+
+  const resolvedMatchResult = await supabase
+    .from("lead_matches")
+    .select("source_post_id")
+    .eq("tenant_id", tenantId)
+    .eq("service_profile_id", serviceProfileId)
+    .in("source_post_id", sourcePostIds);
+
+  if (resolvedMatchResult.error) {
+    console.error("[ProspectDashboard] candidate outcome reconciliation failed", {
+      tenant_id: tenantId,
+      error: resolvedMatchResult.error,
+    });
+    return candidateRows.map((row, index) =>
+      discoveryPoolCandidateView(row, index),
+    );
+  }
+
+  const resolvedSourcePostIds = new Set(
+    ((resolvedMatchResult.data ?? []) as unknown[])
+      .map((row) => readString([asRecord(row) ?? {}], ["source_post_id"]))
+      .filter((value): value is string => Boolean(value)),
+  );
+
+  return candidateRows
+    .filter((row) => {
+      const sourcePostId = readString([row], ["source_post_id"]);
+      return !sourcePostId || !resolvedSourcePostIds.has(sourcePostId);
+    })
+    .map((row, index) => discoveryPoolCandidateView(row, index));
 }
 
 /**

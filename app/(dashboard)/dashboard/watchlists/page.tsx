@@ -3,17 +3,22 @@ import { redirect } from "next/navigation";
 import { UsersRound } from "lucide-react";
 
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
+import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
+import { deriveBuyerGroupSuggestions } from "@/lib/buyer-group-suggestions";
 import { C } from "@/lib/tokens";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import {
   createWatchlist,
+  activateSuggestedBuyerGroup,
   runWatchlistDiscovery,
   setWatchlistActive,
 } from "../actions";
 import {
   fetchWatchlistResults,
   fetchWatchlists,
+  fetchServiceProfile,
+  fetchTenantWebsiteUrl,
   verifierScoreThreshold,
 } from "../data";
 import WatchlistsPanel from "../watchlists-panel";
@@ -49,7 +54,20 @@ export default async function WatchlistsPage() {
   }
 
   const threshold = verifierScoreThreshold();
-  const watchlists = await fetchWatchlists(supabase, tenantId);
+  const [watchlists, websiteUrl] = await Promise.all([
+    fetchWatchlists(supabase, tenantId),
+    fetchTenantWebsiteUrl(supabase, tenantId),
+  ]);
+  const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
+  const buyerGroupSuggestions = deriveBuyerGroupSuggestions({
+    targetAudience: serviceProfile.fields.target_audience,
+    coreProblem: serviceProfile.fields.core_problem,
+    useCases: serviceProfile.fields.use_cases,
+    painPoints: serviceProfile.fields.pain_points,
+    buyingTriggers: serviceProfile.fields.buying_triggers,
+    negativeKeywords: serviceProfile.fields.negative_keywords,
+    excludedAudiences: serviceProfile.fields.excluded_audiences,
+  });
   const results = await fetchWatchlistResults(
     supabase,
     tenantId,
@@ -70,7 +88,7 @@ export default async function WatchlistsPage() {
         title="Buyer groups"
         description={
           watchlists.length === 0
-            ? "Create your first buyer group to focus discovery on one audience and the problem they are trying to solve."
+            ? "Start with a website-derived direction on Prospects, then use Buyer Groups to manage and refine the focused scans you keep."
             : "Watch the audiences that matter most, one real problem at a time."
         }
         icon={UsersRound}
@@ -81,10 +99,10 @@ export default async function WatchlistsPage() {
                 First step
               </p>
               <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
-                Define one audience and one problem.
+                Start from the website demand map.
               </p>
               <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                Arcli will start discovery as soon as the group is created.
+                Choose a suggested direction to start a focused scan, or add a custom market here.
               </p>
             </div>
           ) : (
@@ -105,6 +123,11 @@ export default async function WatchlistsPage() {
             </div>
           )
         }
+      />
+
+      <WebsiteDemandMap
+        suggestions={buyerGroupSuggestions}
+        activateBuyerGroup={activateSuggestedBuyerGroup}
       />
 
       <WatchlistsPanel

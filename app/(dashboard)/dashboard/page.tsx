@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { deriveBuyerGroupSuggestions } from "@/lib/buyer-group-suggestions";
 import {
   fetchBuyerDemandReport,
   fetchDiscoveryCandidates,
@@ -15,6 +16,7 @@ import {
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
+import { activateSuggestedBuyerGroup } from "./actions";
 import FreeProspectPreview from "./free-prospect-preview";
 import ProspectDashboardClient from "./prospect-dashboard-client";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
@@ -76,6 +78,15 @@ export default async function DashboardPage() {
   );
   const isDiscoveryWarmingUp =
     isServiceProfileWarmingUp(serviceProfile) || discoveryRunIsActive;
+  const buyerGroupSuggestions = deriveBuyerGroupSuggestions({
+    targetAudience: serviceProfile.fields.target_audience,
+    coreProblem: serviceProfile.fields.core_problem,
+    useCases: serviceProfile.fields.use_cases,
+    painPoints: serviceProfile.fields.pain_points,
+    buyingTriggers: serviceProfile.fields.buying_triggers,
+    negativeKeywords: serviceProfile.fields.negative_keywords,
+    excludedAudiences: serviceProfile.fields.excluded_audiences,
+  });
 
   // An active crawl still gets the focused progress view. If a job is missing
   // or has failed, keep the dashboard available so the person can see the
@@ -128,6 +139,7 @@ export default async function DashboardPage() {
       supabase,
       tenantId,
       serviceProfile.id,
+      buyerDemandReport?.id ?? null,
       serviceProfile.updatedAt,
     ),
     fetchScreenedMatches(
@@ -146,6 +158,8 @@ export default async function DashboardPage() {
       discoveryPoolCandidates={discoveryPoolCandidates}
       screenedMatches={screenedMatches}
       buyerDemandReport={buyerDemandReport}
+      buyerGroupSuggestions={buyerGroupSuggestions}
+      activateBuyerGroup={activateSuggestedBuyerGroup}
       isWarmingUp={isDiscoveryWarmingUp}
     />
   );

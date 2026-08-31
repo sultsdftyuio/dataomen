@@ -22,7 +22,10 @@ import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { CandidatePool } from "@/components/prospects/candidate-pool";
+import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
+import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import type {
+  BuyerGroupActivationAction,
   DiscoveryPoolCandidateView,
   LeadFeedbackValue,
   QualifiedLeadView,
@@ -39,6 +42,9 @@ type ProspectLeadDeskProps = {
   leads: QualifiedLeadView[];
   potentialBuyers: QualifiedLeadView[];
   discoveryPoolCandidates: DiscoveryPoolCandidateView[];
+  buyerGroupSuggestions: BuyerGroupSuggestion[];
+  activateBuyerGroup: BuyerGroupActivationAction;
+  reviewedConversationCount: number;
   screenedMatches: QualifiedLeadView[];
   filteredQueueItems: QualifiedLeadView[];
   selectedLead: QualifiedLeadView | null;
@@ -174,6 +180,9 @@ export function ProspectLeadDesk({
   leads,
   potentialBuyers,
   discoveryPoolCandidates,
+  buyerGroupSuggestions,
+  activateBuyerGroup,
+  reviewedConversationCount,
   screenedMatches,
   filteredQueueItems,
   selectedLead,
@@ -211,12 +220,25 @@ export function ProspectLeadDesk({
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
-  const healthTone = status.label === "Needs attention"
+  const hasIncompleteSourceCoverage =
+    status.label !== "Warming up" &&
+    sourceCount > 0 &&
+    reportingSourceCount < sourceCount;
+  const displayedStatus = hasIncompleteSourceCoverage
+    ? {
+        label: "Partial coverage",
+        title: "Your latest scan finished with incomplete source coverage.",
+        detail: "Some selected sources did not report results, so this scan may be incomplete.",
+      }
+    : status;
+  const healthTone =
+    displayedStatus.label === "Needs attention" ||
+    displayedStatus.label === "Partial coverage"
     ? { background: C.amberPale, color: C.amber, border: C.amberPale }
     : { background: C.greenPale, color: C.green, border: C.greenPale };
   const healthDetail = sourceCount > 0
-    ? `${reportingSourceCount}/${sourceCount} source${sourceCount === 1 ? "" : "s"} reporting in the latest scan`
-    : status.detail;
+    ? `${reportingSourceCount}/${sourceCount} source${sourceCount === 1 ? "" : "s"} reported in the latest scan${hasIncompleteSourceCoverage ? "; results may be incomplete." : "."}`
+    : displayedStatus.detail;
   const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
   const evidence = selectedLead
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
@@ -274,7 +296,7 @@ export function ProspectLeadDesk({
             Leads
           </h1>
           <p className="mt-1.5 max-w-2xl text-[13px] leading-5" style={{ color: C.navySoft }}>
-            Review public buyer signals with the clearest evidence and closest fit first.
+            Start with a website-derived direction, then review public buyer signals with the clearest evidence and closest fit first.
           </p>
         </div>
 
@@ -286,13 +308,13 @@ export function ProspectLeadDesk({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold" style={{ color: C.navy }}>Discovery health</p>
-              <p className="mt-0.5 text-sm font-semibold" style={{ color: C.navySoft }}>{status.title}</p>
+              <p className="mt-0.5 text-sm font-semibold" style={{ color: C.navySoft }}>{displayedStatus.title}</p>
             </div>
             <span
               className="shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold"
               style={{ backgroundColor: healthTone.background, borderColor: healthTone.border, color: healthTone.color }}
             >
-              {status.label}
+              {displayedStatus.label}
             </span>
           </div>
           <div className="mt-2 flex items-end justify-between gap-3">
@@ -394,7 +416,7 @@ export function ProspectLeadDesk({
           className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
         >
           <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
-          {isDiscoveryPending ? "Starting scan…" : "Check new leads"}
+          {isDiscoveryPending ? "Starting scan…" : "Scan website demand"}
         </Button>
         {discoveryMessage ? (
           <p className="text-xs leading-5 xl:col-span-full" role="alert" style={{ color: C.red }}>
@@ -408,16 +430,21 @@ export function ProspectLeadDesk({
         className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Public matches" value={metricValue(filteredQueueItems.length)} icon={<Radar className="size-5" />} />
+        <Metric label="Reviewed conversations" value={metricValue(reviewedConversationCount)} icon={<Radar className="size-5" />} />
         <Metric label="Ready to act" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} />
         <Metric label="Potential buyers" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} />
         <Metric
-          label="Screened matches"
+          label="Screened out"
           value={metricValue(screenedMatches.length)}
           detail="Not lead-ready"
           icon={<Network className="size-5" />}
         />
       </section>
+
+      <WebsiteDemandMap
+        suggestions={buyerGroupSuggestions}
+        activateBuyerGroup={activateBuyerGroup}
+      />
 
       <CandidatePool candidates={discoveryPoolCandidates} />
 

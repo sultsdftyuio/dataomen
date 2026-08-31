@@ -155,24 +155,32 @@ def build_watchlist_discovery_queries(
     if not buyer or not problem:
         return []
 
-    candidates = (
-        ("buyer_pain", f"{buyer} struggling with {problem}"),
-        ("urgent_failure", f"{buyer} {problem} needs fixing today"),
-        ("recommendation_request", f"what do {buyer} use for {problem}"),
-        ("manual_workflow_frustration", f"handling {problem} manually takes too much time"),
-        ("category_tool_search", f"tool to make {problem} easier"),
-        ("switching_trigger", f"switching from our current way of handling {problem}"),
+    # Include terms are evidence anchors, not replacements for buyer intent.
+    # The old ``buyer + include term`` shortcut could turn a focused group into
+    # an ungrammatical topical search and retrieve generic discussions. Rotate
+    # a bounded anchor through the intent templates instead.
+    focuses = [problem]
+    focuses.extend(
+        item
+        for item in (_buyer_language(raw_item) for raw_item in include_terms)
+        if item
     )
-    # Customer-supplied language can improve recall. It is paired with the
-    # buyer group and translated out of product/operator shorthand first.
-    extras = [_buyer_language(item) for item in include_terms if _buyer_language(item)]
+
+    def focus_for(index: int) -> str:
+        return focuses[index % len(focuses)]
+
+    candidates = (
+        ("buyer_pain", f"{buyer} struggling with {focus_for(0)}"),
+        ("urgent_failure", f"{focus_for(1)} needs fixing today"),
+        ("recommendation_request", f"what do {buyer} use for {focus_for(2)}"),
+        ("manual_workflow_frustration", f"handling {focus_for(3)} manually takes too much time"),
+        ("category_tool_search", f"tool to make {focus_for(4)} easier"),
+        ("switching_trigger", f"switching from our current way of handling {focus_for(5)}"),
+    )
     queries: list[DiscoveryQuery] = []
     seen_phrases: set[str] = set()
-    for index, (query_type, phrase) in enumerate(candidates):
-        selected_phrase = (
-            f"{buyer} {extras[index]}" if index < len(extras) else phrase
-        )
-        normalized = _query_phrase(selected_phrase)
+    for query_type, phrase in candidates:
+        normalized = _query_phrase(phrase)
         key = normalized.casefold()
         if not normalized or key in seen_phrases:
             continue

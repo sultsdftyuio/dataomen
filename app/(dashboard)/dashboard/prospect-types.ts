@@ -164,6 +164,11 @@ export type ProspectActionResult = {
   message: string;
 };
 
+/** A server-owned website hypothesis can be activated without trusting browser-supplied buyer text. */
+export type BuyerGroupActivationAction = (
+  suggestionId: string,
+) => Promise<ProspectActionResult>;
+
 /**
  * A server action may be passed to the client once the optional research
  * worker is deployed. It deliberately receives no tenant or profile ID: the

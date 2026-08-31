@@ -48,33 +48,6 @@ const SOURCE_OPTIONS = [
 
 const DEFAULT_SOURCES = SOURCE_OPTIONS.map((source) => source.value);
 
-const FIRST_GROUP_IDEAS = [
-  {
-    name: "Founder growth friction",
-    targetBuyer: "Early-stage SaaS founders",
-    problemToSolve: "They are looking for dependable ways to earn more trial signups and reach their first customers.",
-    sourcePreferences: ["hackernews", "bluesky", "lemmy"],
-    signal: "Trial signups and customer acquisition",
-    icon: Radar,
-  },
-  {
-    name: "Developer workflow bottlenecks",
-    targetBuyer: "Engineering leads at growing product teams",
-    problemToSolve: "They are trying to replace brittle internal workflows and are comparing developer tools that can save engineering time.",
-    sourcePreferences: ["github", "stackexchange", "hackernews"],
-    signal: "Workflow friction and tool evaluation",
-    icon: Search,
-  },
-  {
-    name: "Small-team sales execution",
-    targetBuyer: "B2B founders and small sales teams",
-    problemToSolve: "They need a repeatable way to keep pipeline moving without adding more manual prospecting and follow-up work.",
-    sourcePreferences: ["hackernews", "bluesky", "stackexchange"],
-    signal: "Pipeline and outreach bottlenecks",
-    icon: Users,
-  },
-] as const;
-
 function splitLines(value: string) {
   const seen = new Set<string>();
   return value
@@ -397,16 +370,6 @@ function FirstBuyerGroupSetup({
     );
   };
 
-  const beginWithIdea = (idea: (typeof FIRST_GROUP_IDEAS)[number]) => {
-    setName(idea.name);
-    setTargetBuyer(idea.targetBuyer);
-    setProblemToSolve(idea.problemToSolve);
-    setSources([...idea.sourcePreferences]);
-    setStep(1);
-    setError(null);
-    setHasStarted(true);
-  };
-
   const advance = () => {
     if (step === 1) {
       if (!name.trim()) {
@@ -469,30 +432,37 @@ function FirstBuyerGroupSetup({
                 First buyer group
               </p>
               <h2 id="first-buyer-group-heading" className="pfd mt-2 text-2xl leading-tight" style={{ color: C.navy }}>
-                Tell Arcli who is worth watching next.
+                Start from the demand map on your website.
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
-                A buyer group focuses discovery on one audience and one problem, so the next scan finds conversations that are useful to act on.
+                Arcli proposes focused buyer directions from your website on the Prospects page. Test one there, or create a custom group when you already know the market you want to watch.
               </p>
-              <Button
-                type="button"
-                className="mt-5"
-                onClick={() => setHasStarted(true)}
-                style={{ backgroundColor: C.blue, color: C.white }}
-              >
-                Create a buyer group
-                <ArrowRight className="size-4" />
-              </Button>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button asChild style={{ backgroundColor: C.blue, color: C.white }}>
+                  <Link href="/dashboard">
+                    See website demand map
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setHasStarted(true)}
+                  style={{ borderColor: C.blueLight, color: C.blue }}
+                >
+                  Create custom group
+                </Button>
+              </div>
             </div>
             <div className="border-t p-5 lg:border-l lg:border-t-0" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
               <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
-                Three quick questions
+                Use this when needed
               </p>
               <ol className="mt-4 space-y-4">
                 {[
-                  ["1", "Who are you looking for?"],
-                  ["2", "What are they trying to solve?"],
-                  ["3", "Where should discovery look?"],
+                  ["1", "Choose a website-derived direction first."],
+                  ["2", "Check the evidence and refine it if needed."],
+                  ["3", "Create a custom group only for a new market."],
                 ].map(([number, label]) => (
                   <li key={number} className="flex items-start gap-3 text-sm" style={{ color: C.navySoft }}>
                     <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold" style={{ backgroundColor: C.blueTint, color: C.blue }}>
@@ -506,58 +476,6 @@ function FirstBuyerGroupSetup({
           </div>
         </section>
 
-        <section aria-labelledby="buyer-group-ideas-heading" className="border-t pt-4" style={{ borderColor: C.rule }}>
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                Starting points
-              </p>
-              <h2 id="buyer-group-ideas-heading" className="pfd mt-1 text-xl leading-none" style={{ color: C.navy }}>
-                Begin with a useful direction.
-              </h2>
-            </div>
-            <p className="max-w-md text-xs leading-5" style={{ color: C.muted }}>
-              Choose a starting point to prefill the questions, then adjust it to fit your market.
-            </p>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {FIRST_GROUP_IDEAS.map((idea) => {
-              const Icon = idea.icon;
-
-              return (
-                <button
-                  key={idea.name}
-                  type="button"
-                  onClick={() => beginWithIdea(idea)}
-                  className="flex min-h-[190px] flex-col rounded-xl border bg-white p-4 text-left shadow-sm transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                  style={{ borderColor: C.rule }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="flex size-9 items-center justify-center rounded-full border" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}>
-                      <Icon className="size-4" aria-hidden="true" />
-                    </span>
-                    <span className="rounded-full px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: C.offWhite, color: C.muted }}>
-                      Starter group
-                    </span>
-                  </div>
-                  <h3 className="mt-4 text-sm font-semibold" style={{ color: C.navy }}>
-                    {idea.name}
-                  </h3>
-                  <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-                    {idea.targetBuyer}
-                  </p>
-                  <p className="mt-3 line-clamp-2 text-xs leading-5" style={{ color: C.muted }}>
-                    {idea.signal}
-                  </p>
-                  <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-[11px] font-semibold" style={{ borderColor: C.rule, color: C.blue }}>
-                    <span className="truncate">{idea.sourcePreferences.map(sourceLabel).join(" / ")}</span>
-                    <ArrowRight className="size-3.5 shrink-0" aria-hidden="true" />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
       </div>
     );
   }
