@@ -285,7 +285,7 @@ export function ProspectLeadDesk({
   };
 
   return (
-    <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-hidden" style={{ color: C.text }}>
+    <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
       <header className="shrink-0 flex flex-col justify-between gap-2.5 border-b pb-2.5 lg:flex-row lg:items-end" style={{ borderColor: C.rule }}>
         <div>
           <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
@@ -450,7 +450,7 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead review workspace"
-        className="grid min-h-[560px] overflow-hidden rounded-lg border bg-white xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
+        className="grid min-h-[560px] overflow-hidden rounded-lg border bg-white xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
         style={{ borderColor: C.rule }}
       >
         <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
