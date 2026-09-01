@@ -171,8 +171,8 @@ def _configure_dramatiq_broker() -> None:
     if getattr(current_broker, "_arcli_redis_url", None) == redis_url:
         return
 
-    connect_timeout = _env_float("ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0)
-    socket_timeout = _env_float("ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
+    connect_timeout = _env_float("ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 5.0)
+    socket_timeout = _env_float("ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", 15.0)
     configure_redis_broker(redis_url)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s connect_timeout_seconds=%s socket_timeout_seconds=%s",

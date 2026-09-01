@@ -2,13 +2,22 @@
 
 import os
 import threading
+from collections.abc import Iterable
 
 import dramatiq
+from dramatiq.broker import Consumer, MessageProxy
 from dramatiq.brokers.redis import RedisBroker
+from dramatiq.errors import ConnectionClosed
 from redis import BlockingConnectionPool, Redis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 
 _broker_lock = threading.Lock()
+
+DEFAULT_REDIS_POOL_TIMEOUT_SECONDS = 5.0
+DEFAULT_REDIS_CONNECT_TIMEOUT_SECONDS = 5.0
+DEFAULT_REDIS_SOCKET_TIMEOUT_SECONDS = 15.0
+DEFAULT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS = 30
 
 
 def _positive_int_env(name: str, default: int, *, minimum: int = 1) -> int:
@@ -32,7 +41,56 @@ def _positive_float_env(name: str, default: float) -> float:
         return default
 
 
-def build_redis_broker(redis_url: str) -> RedisBroker:
+class _TimeoutAwareRedisConsumer(Consumer):
+    """Translate Redis read timeouts into Dramatiq connection recovery.
+
+    Dramatiq 2.2 catches ``redis.exceptions.ConnectionError`` in its Redis
+    consumer, but redis-py exposes ``TimeoutError`` as a sibling exception.
+    Without this adapter, a transient read timeout is logged as an unexpected
+    worker exception instead of following Dramatiq's safe reconnect path.
+    """
+
+    def __init__(self, consumer: Consumer) -> None:
+        self._consumer = consumer
+
+    def __next__(self) -> MessageProxy | None:
+        try:
+            return next(self._consumer)
+        except RedisTimeoutError as exc:
+            raise ConnectionClosed(exc) from None
+
+    def ack(self, message: MessageProxy) -> None:
+        try:
+            return self._consumer.ack(message)
+        except RedisTimeoutError as exc:
+            raise ConnectionClosed(exc) from None
+
+    def nack(self, message: MessageProxy) -> None:
+        try:
+            return self._consumer.nack(message)
+        except RedisTimeoutError as exc:
+            raise ConnectionClosed(exc) from None
+
+    def requeue(self, messages: Iterable[MessageProxy]) -> None:
+        try:
+            return self._consumer.requeue(messages)
+        except RedisTimeoutError as exc:
+            raise ConnectionClosed(exc) from None
+
+    def close(self) -> None:
+        self._consumer.close()
+
+
+class ResilientRedisBroker(RedisBroker):
+    """Redis broker that keeps timeout recovery compatible with Dramatiq."""
+
+    def consume(self, queue_name: str, prefetch: int = 1, timeout: int = 5_000) -> Consumer:
+        return _TimeoutAwareRedisConsumer(
+            super().consume(queue_name, prefetch=prefetch, timeout=timeout)
+        )
+
+
+def build_redis_broker(redis_url: str) -> ResilientRedisBroker:
     """Create a broker with a bounded pool sized for every queue consumer."""
     pool = BlockingConnectionPool.from_url(
         redis_url,
@@ -44,16 +102,25 @@ def build_redis_broker(redis_url: str) -> RedisBroker:
         max_connections=_positive_int_env("ARCLI_REDIS_MAX_CONNECTIONS", 16),
         # Retain a hard cap without turning a short burst of concurrent queue
         # operations into a permanent consumer failure.
-        timeout=_positive_float_env("ARCLI_REDIS_POOL_TIMEOUT_SECONDS", 5.0),
-        socket_connect_timeout=_positive_float_env(
-            "ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0
+        timeout=_positive_float_env(
+            "ARCLI_REDIS_POOL_TIMEOUT_SECONDS", DEFAULT_REDIS_POOL_TIMEOUT_SECONDS
         ),
-        socket_timeout=_positive_float_env("ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", 2.0),
+        socket_connect_timeout=_positive_float_env(
+            "ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", DEFAULT_REDIS_CONNECT_TIMEOUT_SECONDS
+        ),
+        # A 2-second TLS read deadline turns routine managed-Redis latency
+        # spikes into simultaneous failures across every consumer. Keep reads
+        # bounded, but give the broker enough time to bridge a short network
+        # stall before it reconnects.
+        socket_timeout=_positive_float_env(
+            "ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", DEFAULT_REDIS_SOCKET_TIMEOUT_SECONDS
+        ),
         health_check_interval=_non_negative_int_env(
-            "ARCLI_REDIS_HEALTH_CHECK_INTERVAL_SECONDS", 30
+            "ARCLI_REDIS_HEALTH_CHECK_INTERVAL_SECONDS",
+            DEFAULT_REDIS_HEALTH_CHECK_INTERVAL_SECONDS,
         ),
     )
-    broker = RedisBroker(client=Redis(connection_pool=pool))
+    broker = ResilientRedisBroker(client=Redis(connection_pool=pool))
     setattr(broker, "_arcli_redis_url", redis_url)
     return broker
 

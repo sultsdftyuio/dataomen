@@ -9,6 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DRAMATIQ_PROCESSES=1 \
     DRAMATIQ_THREADS=1 \
     ARCLI_REDIS_MAX_CONNECTIONS=8 \
+    ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS=5 \
+    ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS=15 \
     # This image installs the Crawl4AI package and Chromium below, so it owns
     # the primary browser crawl path.
     ARCLI_CRAWL4AI_ENABLED=true

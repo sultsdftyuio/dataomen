@@ -152,6 +152,9 @@ redis-cli -u "$REDIS_URL" KEYS 'dramatiq:__acks__.*.embeddings'
 Interpretation:
 
 - Queue `LLEN > 0` and no fresh worker heartbeat means workers are down or cannot reach Redis.
+- Workers use a 5-second connect limit and a 15-second Redis read limit. A
+  brief Redis/TLS stall triggers consumer reconnection without failing a job;
+  a sustained outage still needs provider and network investigation.
 - `dramatiq:crawling.DQ.msgs` growing means retry backoff is active.
 - `dramatiq:crawling.XQ` growing means retries exhausted or workers are failing messages.
 - `dramatiq:embeddings` growing while profiles remain `pending` means the
