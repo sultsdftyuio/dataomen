@@ -54,13 +54,6 @@ type ProspectLeadDeskProps = {
   queueConfidence: QueueConfidenceFilter;
   queueSource: string;
   queueSources: string[];
-  sourceCount: number;
-  reportingSourceCount: number;
-  status: {
-    label: string;
-    title: string;
-    detail: string;
-  };
   isRefreshing: boolean;
   lastUpdatedAt: Date | null;
   feedbackNotice: { message: string; ok: boolean } | null;
@@ -192,9 +185,6 @@ export function ProspectLeadDesk({
   queueConfidence,
   queueSource,
   queueSources,
-  sourceCount,
-  reportingSourceCount,
-  status,
   isRefreshing,
   lastUpdatedAt,
   feedbackNotice,
@@ -219,25 +209,6 @@ export function ProspectLeadDesk({
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
-  const hasIncompleteSourceCoverage =
-    status.label !== "Warming up" &&
-    sourceCount > 0 &&
-    reportingSourceCount < sourceCount;
-  const displayedStatus = hasIncompleteSourceCoverage
-    ? {
-        label: "Partial coverage",
-        title: "Your latest scan finished with incomplete source coverage.",
-        detail: "Some selected sources did not report results, so this scan may be incomplete.",
-      }
-    : status;
-  const healthTone =
-    displayedStatus.label === "Needs attention" ||
-    displayedStatus.label === "Partial coverage"
-    ? { background: C.amberPale, color: C.amber, border: C.amberPale }
-    : { background: C.greenPale, color: C.green, border: C.greenPale };
-  const healthDetail = sourceCount > 0
-    ? `${reportingSourceCount}/${sourceCount} source${sourceCount === 1 ? "" : "s"} reported in the latest scan${hasIncompleteSourceCoverage ? "; results may be incomplete." : "."}`
-    : displayedStatus.detail;
   const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
   const evidence = selectedLead
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
@@ -262,7 +233,7 @@ export function ProspectLeadDesk({
 
   return (
     <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
-      <header className="shrink-0 flex flex-col justify-between gap-2.5 border-b pb-2.5 lg:flex-row lg:items-end" style={{ borderColor: C.rule }}>
+      <header className="shrink-0 border-b pb-2.5" style={{ borderColor: C.rule }}>
         <div>
           <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
             <Target className="size-3.5" aria-hidden="true" />
@@ -276,28 +247,6 @@ export function ProspectLeadDesk({
           </p>
         </div>
 
-        <section
-          aria-label="Discovery health"
-          className="min-w-0 rounded-lg border px-3 py-2 lg:w-[310px]"
-          style={{ borderColor: C.rule, backgroundColor: C.white }}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold" style={{ color: C.navy }}>Discovery health</p>
-              <p className="mt-0.5 text-sm font-semibold" style={{ color: C.navySoft }}>{displayedStatus.title}</p>
-            </div>
-            <span
-              className="shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold"
-              style={{ backgroundColor: healthTone.background, borderColor: healthTone.border, color: healthTone.color }}
-            >
-              {displayedStatus.label}
-            </span>
-          </div>
-          <div className="mt-2 flex items-end justify-between gap-3">
-            <p className="max-w-[190px] text-xs leading-5" style={{ color: C.muted }}>{healthDetail}</p>
-            <SourceCoverageMark sourceCount={sourceCount} reportingSourceCount={reportingSourceCount} />
-          </div>
-        </section>
       </header>
 
       <section
@@ -678,36 +627,6 @@ function Metric({
         <p className="mt-0.5 text-xl font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
         {detail ? <p className="mt-1 text-[11px]" style={{ color: C.muted }}>{detail}</p> : null}
       </div>
-    </div>
-  );
-}
-
-function SourceCoverageMark({
-  sourceCount,
-  reportingSourceCount,
-}: {
-  sourceCount: number;
-  reportingSourceCount: number;
-}) {
-  const displayedCount = Math.max(4, Math.min(sourceCount, 8));
-  const reportingSegments = sourceCount > 0
-    ? Math.round((reportingSourceCount / sourceCount) * displayedCount)
-    : 0;
-
-  return (
-    <div className="flex shrink-0 items-end gap-1" aria-label={`${reportingSourceCount} of ${sourceCount} sources reporting`}>
-      {Array.from({ length: displayedCount }, (_, index) => {
-        const isReporting = index < reportingSegments;
-        const height = [9, 14, 11, 18, 13, 21, 16, 24][index] ?? 12;
-        return (
-          <span
-            key={index}
-            className="w-1.5 rounded-full"
-            style={{ height, backgroundColor: isReporting ? C.blue : C.ruleDark }}
-            aria-hidden="true"
-          />
-        );
-      })}
     </div>
   );
 }

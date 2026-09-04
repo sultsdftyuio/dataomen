@@ -2910,11 +2910,6 @@ export default function ProspectDashboardClient({
   };
 
   if (shouldRenderLeadDesk(dashboardView)) {
-    const sourceCount = buyerDemandReport?.sourceProgress.length ?? 0;
-    const reportingSourceCount = buyerDemandReport?.sourceProgress.filter(
-      (source) => source.state !== "checking" && source.state !== "unavailable",
-    ).length ?? 0;
-
     return (
       <ProspectLeadDesk
         serviceProfile={serviceProfile}
@@ -2934,9 +2929,6 @@ export default function ProspectDashboardClient({
         queueConfidence={queueConfidence}
         queueSource={queueSource}
         queueSources={queueSources}
-        sourceCount={sourceCount}
-        reportingSourceCount={reportingSourceCount}
-        status={status}
         isRefreshing={isRefreshPending}
         lastUpdatedAt={lastUpdatedAt}
         feedbackNotice={selectedLead ? feedbackMessages[selectedLead.id] ?? null : null}
