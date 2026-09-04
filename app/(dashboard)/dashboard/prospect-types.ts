@@ -98,32 +98,6 @@ export type QualifiedLeadView = {
   sourcePost: SourcePostView;
 };
 
-/**
- * A public conversation retained before it reaches the verifier-owned lead
- * workflow. It is intentionally not shaped as a lead: callers must keep its
- * status and incomplete scores visible to avoid implying qualification.
- */
-export type DiscoveryPoolCandidateStatus = "raw" | "plausible" | "review";
-
-export type DiscoveryPoolCandidateView = {
-  id: string;
-  candidateKind: "public_post" | "account" | "contact";
-  status: DiscoveryPoolCandidateStatus;
-  source: string;
-  sourceUrl: string | null;
-  title: string;
-  text: string;
-  matchedPhrase: string | null;
-  reason: string | null;
-  rawScore: number | null;
-  plausibilityScore: number | null;
-  similarityScore: number | null;
-  verifierScore: number | null;
-  priorityScore: number;
-  firstSeenAt: string | null;
-  lastSeenAt: string | null;
-};
-
 /** A customer-owned buyer group layered on the website-derived profile. */
 export type WatchlistView = {
   id: string;

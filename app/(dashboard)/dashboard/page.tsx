@@ -5,7 +5,6 @@ import { deriveBuyerGroupSuggestions } from "@/lib/buyer-group-suggestions";
 import {
   fetchBuyerDemandReport,
   fetchDiscoveryCandidates,
-  fetchDiscoveryPoolCandidates,
   fetchLeadQueueCounts,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
@@ -124,7 +123,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const [leads, discoveryCandidates, discoveryPoolCandidates, screenedMatches] = await Promise.all([
+  const [leads, discoveryCandidates, screenedMatches] = await Promise.all([
     fetchQualifiedLeads(
       supabase,
       tenantId,
@@ -136,13 +135,6 @@ export default async function DashboardPage() {
       supabase,
       tenantId,
       serviceProfile.id,
-      serviceProfile.updatedAt,
-    ),
-    fetchDiscoveryPoolCandidates(
-      supabase,
-      tenantId,
-      serviceProfile.id,
-      buyerDemandReport?.id ?? null,
       serviceProfile.updatedAt,
     ),
     fetchScreenedMatches(
@@ -158,7 +150,6 @@ export default async function DashboardPage() {
       crawlJob={crawlJob}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
-      discoveryPoolCandidates={discoveryPoolCandidates}
       screenedMatches={screenedMatches}
       buyerDemandReport={buyerDemandReport}
       buyerGroupSuggestions={buyerGroupSuggestions}

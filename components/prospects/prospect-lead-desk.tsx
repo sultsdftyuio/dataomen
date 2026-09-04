@@ -21,12 +21,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
-import { CandidatePool } from "@/components/prospects/candidate-pool";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import type {
   BuyerGroupActivationAction,
-  DiscoveryPoolCandidateView,
   LeadFeedbackValue,
   QualifiedLeadView,
   ServiceProfileView,
@@ -42,7 +40,6 @@ type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
   leads: QualifiedLeadView[];
   potentialBuyers: QualifiedLeadView[];
-  discoveryPoolCandidates: DiscoveryPoolCandidateView[];
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
   startWebsiteDemandScan: WebsiteDemandScanAction;
@@ -181,7 +178,6 @@ export function ProspectLeadDesk({
   serviceProfile,
   leads,
   potentialBuyers,
-  discoveryPoolCandidates,
   buyerGroupSuggestions,
   activateBuyerGroup,
   startWebsiteDemandScan,
@@ -426,8 +422,6 @@ export function ProspectLeadDesk({
         activateBuyerGroup={activateBuyerGroup}
         collapsible
       />
-
-      <CandidatePool candidates={discoveryPoolCandidates} />
 
       <section
         aria-label="Lead review workspace"

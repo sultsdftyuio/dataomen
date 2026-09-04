@@ -35,6 +35,10 @@ export function WebsiteDemandMap({
 
   if (suggestions.length === 0) return null;
 
+  const suggestionCountLabel = `${suggestions.length} ${
+    suggestions.length === 1 ? "idea" : "ideas"
+  }`;
+
   const activate = (suggestionId: string) => {
     setNotice(null);
     setPendingId(suggestionId);
@@ -107,27 +111,25 @@ export function WebsiteDemandMap({
       >
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF] sm:px-5 [&::-webkit-details-marker]:hidden">
-            <div className="flex min-w-0 items-start gap-2.5">
+            <div className="flex min-w-0 items-center gap-2.5">
               <span
-                className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md"
+                className="flex size-9 shrink-0 items-center justify-center rounded-lg"
                 style={{ backgroundColor: C.blueTint, color: C.blue }}
               >
                 <Compass className="size-4" aria-hidden="true" />
               </span>
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-                  Website demand map
-                </p>
-                <h2 id="website-demand-map-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
-                  {suggestions.length} optional buyer {suggestions.length === 1 ? "direction" : "directions"}
+                <h2 id="website-demand-map-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+                  Buyer group ideas
                 </h2>
-                <p className="mt-0.5 text-[11px] leading-4" style={{ color: C.navySoft }}>
-                  Website-derived hypotheses, not leads.
+                <p className="mt-0.5 text-xs leading-4" style={{ color: C.navySoft }}>
+                  {suggestionCountLabel} based on your matching brief.
                 </p>
               </div>
             </div>
-            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold" style={{ color: C.blue }}>
-              View
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}>
+              <span className="hidden sm:inline">Explore ideas</span>
+              <span className="sm:hidden">Explore</span>
               <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
             </span>
           </summary>
@@ -135,7 +137,7 @@ export function WebsiteDemandMap({
           <div className="border-t" style={{ borderColor: C.rule }}>
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5">
               <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
-                Test one focused direction against public conversations.
+                Start a focused scan only when you want to test a specific audience and problem.
               </p>
               <Link
                 href="/dashboard/watchlists"

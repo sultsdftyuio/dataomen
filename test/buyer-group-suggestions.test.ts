@@ -106,6 +106,9 @@ test("activation accepts only a suggestion ID and re-derives the tenant-scoped g
 });
 
 test("demand-map UI labels website directions as hypotheses and removes generic SaaS starters", () => {
+  assert.match(demandMapSource, /Buyer group ideas/);
+  assert.match(demandMapSource, /Explore ideas/);
+  assert.doesNotMatch(demandMapSource, /optional buyer direction/);
   assert.match(demandMapSource, /Website-derived hypothesis/);
   assert.match(demandMapSource, /These are hypotheses, not leads/);
   assert.match(demandMapSource, /Start focused scan/);

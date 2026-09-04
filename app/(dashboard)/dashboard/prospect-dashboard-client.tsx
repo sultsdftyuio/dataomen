@@ -46,7 +46,6 @@ import {
   type BuyerDemandReportView,
   type BuyerGroupActivationAction,
   type CrawlJobView,
-  type DiscoveryPoolCandidateView,
   type LeadFeedbackValue,
   type QualifiedLeadView,
   type ServiceProfileView,
@@ -58,7 +57,6 @@ type ProspectDashboardClientProps = {
   crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
-  discoveryPoolCandidates: DiscoveryPoolCandidateView[];
   screenedMatches: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
   buyerGroupSuggestions: BuyerGroupSuggestion[];
@@ -2690,7 +2688,6 @@ export default function ProspectDashboardClient({
   crawlJob,
   leads,
   discoveryCandidates,
-  discoveryPoolCandidates,
   screenedMatches,
   buyerDemandReport,
   buyerGroupSuggestions,
@@ -2744,7 +2741,6 @@ export default function ProspectDashboardClient({
   }, [
     buyerDemandReport?.updatedAt,
     discoveryCandidates,
-    discoveryPoolCandidates,
     leads,
     screenedMatches,
   ]);
@@ -2924,7 +2920,6 @@ export default function ProspectDashboardClient({
         serviceProfile={serviceProfile}
         leads={leads}
         potentialBuyers={discoveryCandidates}
-        discoveryPoolCandidates={discoveryPoolCandidates}
         buyerGroupSuggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
         startWebsiteDemandScan={startWebsiteDemandScan}
