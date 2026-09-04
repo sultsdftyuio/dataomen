@@ -14,7 +14,6 @@ import {
   Radar,
   Search,
   Sparkles,
-  Target,
   UsersRound,
 } from "lucide-react";
 
@@ -235,10 +234,6 @@ export function ProspectLeadDesk({
     <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
       <header className="shrink-0 border-b pb-2.5" style={{ borderColor: C.rule }}>
         <div>
-          <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-            <Target className="size-3.5" aria-hidden="true" />
-            Prospect discovery
-          </div>
           <h1 className="pfd text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
             Leads
           </h1>
@@ -246,7 +241,6 @@ export function ProspectLeadDesk({
             Start with a website-derived direction, then review public buyer signals with the clearest evidence and closest fit first.
           </p>
         </div>
-
       </header>
 
       <section
