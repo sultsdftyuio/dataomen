@@ -114,6 +114,7 @@ const WATCHLIST_SCHEMA = z.object({
 });
 
 const FEEDBACK_VALUES = new Set(FEEDBACK_OPTIONS.map((option) => option.value));
+const WORKER_HANDOFF_TIMEOUT_MS = 10_000;
 
 // Keep older browser tabs from failing after the feedback contract moved from
 // vague lead labels to calibrated matching-brief signals. All persistence is
@@ -329,6 +330,9 @@ function embeddingTriggerEndpoints() {
     process.env.ARCLI_WORKER_API_URL?.trim(),
     process.env.PYTHON_BACKEND_URL?.trim(),
     process.env.INTERNAL_API_URL?.trim(),
+    process.env.BACKEND_API_URL?.trim(),
+    process.env.NEXT_PUBLIC_API_URL?.trim(),
+    "https://arcli-s2mti.ondigitalocean.app",
   ];
 
   return Array.from(
@@ -554,75 +558,67 @@ async function postEmbeddingTrigger(
     return actionError("Embedding worker credentials are missing.");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const deadline = Date.now() + WORKER_HANDOFF_TIMEOUT_MS;
+  let lastFailure: string | null = null;
 
-  try {
-    let lastUnavailableError: unknown = null;
+  for (const endpoint of endpoints) {
+    const timeoutMs = Math.min(5_000, deadline - Date.now());
+    if (timeoutMs <= 0) break;
 
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${workerSecret}`,
-          },
-          cache: "no-store",
-          signal: controller.signal,
-          body: JSON.stringify({
-            tenant_id: context.tenantId,
-            service_profile_id: serviceProfileId,
-            requested_by: context.userId,
-            source: "onboarding_profile_approval",
-          }),
-        });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${workerSecret}`,
+        },
+        cache: "no-store",
+        signal: controller.signal,
+        body: JSON.stringify({
+          tenant_id: context.tenantId,
+          service_profile_id: serviceProfileId,
+          requested_by: context.userId,
+          source: "onboarding_profile_approval",
+        }),
+      });
 
-        if (response.ok) {
-          console.info("[ProspectOnboarding] profile embedding trigger posted", {
-            tenant_id: context.tenantId,
-            service_profile_id: serviceProfileId,
-            endpoint,
-          });
-          return actionOk("Embedding job queued.");
-        }
-
-        const text = await response.text().catch(() => "");
-        console.warn("[ProspectOnboarding] profile embedding trigger failed", {
+      if (response.ok) {
+        console.info("[ProspectOnboarding] profile embedding trigger posted", {
           tenant_id: context.tenantId,
           service_profile_id: serviceProfileId,
           endpoint,
-          status: response.status,
-          body: text.slice(0, 500),
         });
-        if (response.status !== 404) {
-          return actionError(
-            `Embedding queue rejected the request with HTTP ${response.status}.`,
-          );
-        }
-      } catch (error) {
-        lastUnavailableError = error;
-        console.warn("[ProspectOnboarding] profile embedding trigger unavailable", {
-          tenant_id: context.tenantId,
-          service_profile_id: serviceProfileId,
-          endpoint,
-          error,
-        });
+        return actionOk("Embedding job queued.");
       }
-    }
 
-    if (!lastUnavailableError) {
-      return actionError("Embedding worker endpoint returned HTTP 404.");
+      const text = await response.text().catch(() => "");
+      lastFailure = `Embedding queue rejected the request with HTTP ${response.status}.`;
+      console.warn("[ProspectOnboarding] profile embedding trigger failed", {
+        tenant_id: context.tenantId,
+        service_profile_id: serviceProfileId,
+        endpoint,
+        status: response.status,
+        body: text.slice(0, 500),
+      });
+    } catch (error) {
+      lastFailure =
+        error instanceof Error && error.name === "AbortError"
+          ? `Embedding worker did not acknowledge the handoff before the ${timeoutMs / 1_000}-second timeout.`
+          : "Embedding queue is unavailable.";
+      console.warn("[ProspectOnboarding] profile embedding trigger unavailable", {
+        tenant_id: context.tenantId,
+        service_profile_id: serviceProfileId,
+        endpoint,
+        error,
+      });
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return actionError(
-      lastUnavailableError instanceof Error
-        ? `Embedding queue is unavailable: ${lastUnavailableError.message}`
-        : "Embedding queue is unavailable.",
-    );
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return actionError(lastFailure ?? "Embedding queue is unavailable.");
 }
 
 async function postBuyerLanguageResearchTrigger(
@@ -1051,6 +1047,48 @@ export async function retryServiceProfileEmbedding(
   }
 
   return result;
+}
+
+/**
+ * Re-runs public-demand discovery from the workspace's current matching
+ * brief. A demand scan does not need to re-crawl an unchanged website; the
+ * embedding worker enqueues the public-ingestion job after confirming the
+ * current profile embedding.
+ */
+export async function startWebsiteDemandScan(): Promise<ProspectActionResult> {
+  const context = await requireProTenant();
+  if ("ok" in context) return context;
+
+  const websiteUrl = await fetchTenantWebsiteUrl(
+    context.supabase,
+    context.tenantId,
+  );
+  const serviceProfile = await fetchServiceProfile(
+    context.supabase,
+    context.tenantId,
+    websiteUrl,
+  );
+
+  if (!serviceProfile.id || !isServiceProfileApproved(serviceProfile)) {
+    return actionError(
+      "Create and approve a matching brief before scanning website demand.",
+    );
+  }
+
+  const result = await postEmbeddingTrigger(
+    {
+      tenantId: context.tenantId,
+      userId: context.userId,
+    },
+    serviceProfile.id,
+  );
+  if (!result.ok) return result;
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/discovery");
+  return actionOk(
+    "Website demand scan queued. We are checking public conversations against your matching brief.",
+  );
 }
 
 /**

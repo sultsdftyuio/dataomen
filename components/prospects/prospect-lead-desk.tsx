@@ -30,6 +30,7 @@ import type {
   LeadFeedbackValue,
   QualifiedLeadView,
   ServiceProfileView,
+  WebsiteDemandScanAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 
 type QueueFilter = "all" | "leads" | "potential" | "screened";
@@ -44,6 +45,7 @@ type ProspectLeadDeskProps = {
   discoveryPoolCandidates: DiscoveryPoolCandidateView[];
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
+  startWebsiteDemandScan: WebsiteDemandScanAction;
   reviewedConversationCount: number;
   screenedMatches: QualifiedLeadView[];
   filteredQueueItems: QualifiedLeadView[];
@@ -182,6 +184,7 @@ export function ProspectLeadDesk({
   discoveryPoolCandidates,
   buyerGroupSuggestions,
   activateBuyerGroup,
+  startWebsiteDemandScan,
   reviewedConversationCount,
   screenedMatches,
   filteredQueueItems,
@@ -245,35 +248,12 @@ export function ProspectLeadDesk({
     : null;
 
   const checkNewLeads = () => {
-    const websiteUrl = serviceProfile.websiteUrl?.trim();
-    if (!websiteUrl) {
-      setDiscoveryMessage("Add a website URL to the matching brief before starting discovery.");
-      return;
-    }
-
     setDiscoveryMessage(null);
     startDiscoveryTransition(async () => {
       try {
-        const response = await fetch("/api/settings/workspace", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ websiteUrl }),
-        });
-        const payload = (await response.json().catch(() => null)) as {
-          success?: boolean;
-          scanStarted?: boolean;
-          error?: string;
-          message?: string;
-        } | null;
-        const accepted =
-          response.ok && payload?.success === true && payload?.scanStarted !== false;
-
-        if (!accepted) {
-          setDiscoveryMessage(
-            payload?.error ??
-              payload?.message ??
-              "We could not start a new discovery scan. Please try again.",
-          );
+        const result = await startWebsiteDemandScan();
+        if (!result.ok) {
+          setDiscoveryMessage(result.message);
           return;
         }
 
@@ -444,6 +424,7 @@ export function ProspectLeadDesk({
       <WebsiteDemandMap
         suggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
+        collapsible
       />
 
       <CandidatePool candidates={discoveryPoolCandidates} />

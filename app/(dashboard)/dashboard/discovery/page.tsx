@@ -75,6 +75,12 @@ export default async function DashboardDiscoveryPage({ searchParams }: Discovery
       serviceProfile={serviceProfile}
       buyerDemandReport={currentBuyerDemandReport}
       isWarmingUp={isWarmingUp}
+      awaitingDiscoveryStart={
+        scanWasJustRequested &&
+        !crawlIsActive &&
+        !isWarmingUp &&
+        currentBuyerDemandReport === null
+      }
       mode="scan"
     />
   );

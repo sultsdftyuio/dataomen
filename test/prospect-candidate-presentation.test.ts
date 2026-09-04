@@ -54,6 +54,8 @@ test("candidate cards label search provenance without implying buyer intent", ()
   );
 
   assert.match(markup, /Unverified discovery/);
+  assert.match(markup, /<details class="group">/);
+  assert.doesNotMatch(markup, /<details[^>]*\sopen/);
   assert.match(markup, /Collected, not reviewed/);
   assert.match(markup, /Found via search query:/);
   assert.doesNotMatch(markup, /Plausible signal/);

@@ -24,6 +24,7 @@ type DiscoveryLoadingPageProps = {
   serviceProfile: ServiceProfileView;
   buyerDemandReport: BuyerDemandReportView | null;
   isWarmingUp: boolean;
+  awaitingDiscoveryStart?: boolean;
   mode?: "onboarding" | "scan";
 };
 
@@ -87,8 +88,10 @@ function activeStageIndex({
   serviceProfile,
   isWarmingUp,
   buyerDemandReport,
+  awaitingDiscoveryStart = false,
 }: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
   if (buyerDemandReport?.isTerminal) return STAGES.length;
+  if (awaitingDiscoveryStart) return 2;
 
   const crawlPhase = normalizedStatus(crawlJob?.phase);
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
@@ -122,6 +125,7 @@ function statusMessage({
   serviceProfile,
   buyerDemandReport,
   isWarmingUp,
+  awaitingDiscoveryStart = false,
   mode = "onboarding",
 }: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
   const crawlStatus = normalizedStatus(crawlJob?.status);
@@ -173,6 +177,14 @@ function statusMessage({
       detail:
         serviceProfile.embeddingFailureReason ??
         "The website was read, but we could not prepare the matching brief.",
+    };
+  }
+
+  if (awaitingDiscoveryStart) {
+    return {
+      kind: "working" as const,
+      title: "Starting your fresh demand scan.",
+      detail: "We are preparing public conversations for your current matching brief.",
     };
   }
 
@@ -239,11 +251,19 @@ export function DiscoveryLoadingPage({
   serviceProfile,
   buyerDemandReport,
   isWarmingUp,
+  awaitingDiscoveryStart = false,
   mode = "onboarding",
 }: DiscoveryLoadingPageProps) {
   const router = useRouter();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const context = { crawlJob, serviceProfile, buyerDemandReport, isWarmingUp, mode };
+  const context = {
+    crawlJob,
+    serviceProfile,
+    buyerDemandReport,
+    isWarmingUp,
+    awaitingDiscoveryStart,
+    mode,
+  };
   const activeIndex = activeStageIndex(context);
   const status = statusMessage(context);
   const domain = useMemo(() => websiteDomain(websiteUrl), [websiteUrl]);

@@ -16,7 +16,10 @@ import {
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
-import { activateSuggestedBuyerGroup } from "./actions";
+import {
+  activateSuggestedBuyerGroup,
+  startWebsiteDemandScan,
+} from "./actions";
 import FreeProspectPreview from "./free-prospect-preview";
 import ProspectDashboardClient from "./prospect-dashboard-client";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
@@ -160,6 +163,7 @@ export default async function DashboardPage() {
       buyerDemandReport={buyerDemandReport}
       buyerGroupSuggestions={buyerGroupSuggestions}
       activateBuyerGroup={activateSuggestedBuyerGroup}
+      startWebsiteDemandScan={startWebsiteDemandScan}
       isWarmingUp={isDiscoveryWarmingUp}
     />
   );

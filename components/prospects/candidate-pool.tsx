@@ -1,4 +1,4 @@
-import { ExternalLink, Search } from "lucide-react";
+import { ChevronDown, ExternalLink, Search } from "lucide-react";
 
 import type { DiscoveryPoolCandidateView } from "@/app/(dashboard)/dashboard/prospect-types";
 import { C } from "@/lib/tokens";
@@ -70,29 +70,35 @@ export function CandidatePool({ candidates }: CandidatePoolProps) {
       className="shrink-0 overflow-hidden rounded-lg border"
       style={{ borderColor: C.blueLight, backgroundColor: C.white }}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3 sm:px-5" style={{ borderColor: C.rule }}>
-        <div className="flex min-w-0 items-start gap-2.5">
-          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
-            <Search className="size-4" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-              Unverified discovery
-            </p>
-            <h2 id="early-candidate-pool-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
-              {unverifiedCandidates.length} unverified {unverifiedCandidates.length === 1 ? "conversation" : "conversations"} collected
-            </h2>
-            <p className="mt-1 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>
-              These posts were found by a search query. They are not buyer signals or leads until matching and verification finish.
-            </p>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF] sm:px-5 [&::-webkit-details-marker]:hidden">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
+              <Search className="size-4" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+                Unverified discovery
+              </p>
+              <h2 id="early-candidate-pool-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
+                {unverifiedCandidates.length} collected {unverifiedCandidates.length === 1 ? "conversation" : "conversations"}
+              </h2>
+              <p className="mt-0.5 text-[11px] leading-4" style={{ color: C.navySoft }}>
+                Raw search results, not buyer signals or leads.
+              </p>
+            </div>
           </div>
-        </div>
-        <span className="rounded-full px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: C.offWhite, color: C.navySoft }}>
-          Not reviewed
-        </span>
-      </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold" style={{ color: C.blue }}>
+            Review
+            <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
+          </span>
+        </summary>
 
-      <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3" style={{ borderColor: C.rule }}>
+        <div className="border-t" style={{ borderColor: C.rule }}>
+          <p className="px-4 py-2.5 text-xs leading-5 sm:px-5" style={{ color: C.navySoft }}>
+            These posts were found by a search query. They are not buyer signals or leads until matching and verification finish.
+          </p>
+          <div className="grid divide-y border-t sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3" style={{ borderColor: C.rule }}>
         {shownCandidates.map((candidate) => (
           <article key={candidate.id} className="min-w-0 p-3.5 sm:p-4">
             <div className="flex items-start justify-between gap-2">
@@ -138,13 +144,15 @@ export function CandidatePool({ candidates }: CandidatePoolProps) {
             </div>
           </article>
         ))}
-      </div>
+          </div>
 
-      {hiddenCount > 0 ? (
-        <p className="border-t px-4 py-2.5 text-xs" style={{ borderColor: C.rule, color: C.muted }}>
-          {hiddenCount} more unverified {hiddenCount === 1 ? "conversation is" : "conversations are"} retained for this scan.
-        </p>
-      ) : null}
+          {hiddenCount > 0 ? (
+            <p className="border-t px-4 py-2.5 text-xs" style={{ borderColor: C.rule, color: C.muted }}>
+              {hiddenCount} more unverified {hiddenCount === 1 ? "conversation is" : "conversations are"} retained for this scan.
+            </p>
+          ) : null}
+        </div>
+      </details>
       <p className="sr-only">
         {unverifiedCandidates.length} unverified conversations are present before lead verification.
       </p>
