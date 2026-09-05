@@ -4,6 +4,7 @@ import { DodoPayments } from "dodopayments";
 
 import type { Database } from "@/types/supabase";
 import { PRO_MONTHLY_PRICE } from "@/lib/entitlements";
+import { resolvePaidAccessEnd } from "@/lib/billing/cancellation-access";
 
 export const runtime = "nodejs";
 
@@ -235,12 +236,6 @@ function extractCurrentPeriodEnd(data: Record<string, unknown>): string | null {
   );
 }
 
-function hasFutureAccessWindow(value: unknown) {
-  if (typeof value !== "string") return false;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && timestamp > Date.now();
-}
-
 function preserveCancellationAccessUntilEnd(
   update: Record<string, unknown>,
   existingTenant: {
@@ -249,13 +244,15 @@ function preserveCancellationAccessUntilEnd(
     dodo_subscription_id?: string | null;
   },
 ) {
-  const accessEnd =
-    (typeof update.current_period_end === "string" && update.current_period_end) ||
-    existingTenant.current_period_end ||
-    existingTenant.trial_ends_at ||
-    null;
+  const accessEnd = resolvePaidAccessEnd([
+    typeof update.current_period_end === "string"
+      ? update.current_period_end
+      : null,
+    existingTenant.current_period_end,
+    existingTenant.trial_ends_at,
+  ]);
 
-  if (!hasFutureAccessWindow(accessEnd)) return update;
+  if (!accessEnd) return update;
 
   // Dodo may emit a final cancellation event before an already-paid period
   // ends. Keep the workspace in the scheduled-cancellation state until that

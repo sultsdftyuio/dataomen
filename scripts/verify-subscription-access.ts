@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { getWorkspaceEntitlements } from "../lib/entitlements";
+import { resolvePaidAccessEnd } from "../lib/billing/cancellation-access";
 import {
   FREE_PLAN_DOMAIN_LIMIT_MESSAGE,
   freePlanDomainChangeError,
@@ -116,6 +117,23 @@ async function verifyEntitlementStates() {
   );
 }
 
+function verifyCancellationAccessEndResolution() {
+  const now = Date.parse("2026-09-05T00:00:00.000Z");
+  const webhookPeriodEnd = "2026-09-05T00:00:00.000Z";
+  const recordedPeriodEnd = "2026-09-20T00:00:00.000Z";
+
+  assert.equal(
+    resolvePaidAccessEnd([webhookPeriodEnd, recordedPeriodEnd], now),
+    recordedPeriodEnd,
+    "a stale cancellation webhook must not shorten a paid access window",
+  );
+  assert.equal(
+    resolvePaidAccessEnd(["invalid-date", webhookPeriodEnd], now),
+    null,
+    "expired or malformed dates must not grant paid access",
+  );
+}
+
 async function verifyFreeDomainLimit() {
   assert.equal(normalizedWebsiteDomain("https://www.example.com/pricing"), "example.com");
 
@@ -192,6 +210,7 @@ function verifyNoTrialCheckoutOrLeadLeak() {
 
 async function main() {
   await verifyEntitlementStates();
+  verifyCancellationAccessEndResolution();
   await verifyFreeDomainLimit();
   verifyNoTrialCheckoutOrLeadLeak();
   console.log("Subscription access, Free domain limits, and no-trial checkout are verified.");
