@@ -8,13 +8,17 @@ import {
   CircleCheckBig,
   ChevronRight,
   ExternalLink,
+  Github,
   Globe2,
+  MessageSquareText,
   Network,
   RefreshCw,
   Radar,
   Search,
+  ShieldAlert,
   Sparkles,
   UsersRound,
+  type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -107,6 +111,78 @@ function sourceDisplayName(source: string) {
   return names[normalized] ?? source.replace(/[_-]+/g, " ");
 }
 
+type SourcePresentation = {
+  label: string;
+  Icon: LucideIcon;
+  background: string;
+  color: string;
+};
+
+function sourcePresentation(source: string): SourcePresentation {
+  const normalized = source.trim().toLowerCase();
+
+  if (normalized === "github") {
+    return { label: "GitHub", Icon: Github, background: "#EEF2F6", color: "#24292F" };
+  }
+
+  if (["hn", "hackernews", "hacker_news"].includes(normalized)) {
+    return { label: "Hacker News", Icon: MessageSquareText, background: "#FFF3E8", color: "#C2410C" };
+  }
+
+  if (normalized === "reddit") {
+    return { label: "Reddit", Icon: MessageSquareText, background: "#FFF1ED", color: "#D94716" };
+  }
+
+  if (["stackexchange", "stack_exchange", "stackoverflow", "stack_overflow"].includes(normalized)) {
+    return { label: sourceDisplayName(source), Icon: MessageSquareText, background: C.bluePale, color: C.blue };
+  }
+
+  if (normalized === "bluesky") {
+    return { label: "Bluesky", Icon: MessageSquareText, background: "#EAF6FF", color: "#0284C7" };
+  }
+
+  if (normalized === "lemmy") {
+    return { label: "Lemmy", Icon: MessageSquareText, background: "#EDF9F1", color: C.green };
+  }
+
+  return { label: sourceDisplayName(source), Icon: Globe2, background: C.offWhite, color: C.navySoft };
+}
+
+function SourcePlatformMark({
+  source,
+  size = "row",
+}: {
+  source: string;
+  size?: "row" | "detail";
+}) {
+  const { label, Icon, background, color } = sourcePresentation(source);
+  const dimensions = size === "detail" ? "size-10 rounded-lg" : "size-7 rounded-md";
+  const iconSize = size === "detail" ? "size-5" : "size-3.5";
+
+  return (
+    <span
+      className={cn("flex shrink-0 items-center justify-center", dimensions)}
+      title={label}
+      role="img"
+      aria-label={label}
+      style={{ backgroundColor: background, color }}
+    >
+      <Icon className={iconSize} aria-hidden="true" />
+    </span>
+  );
+}
+
+function SourcePlatformBadge({ source }: { source: string }) {
+  const { label, Icon, background, color } = sourcePresentation(source);
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: background, color }}>
+      <Icon className="size-3" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 function formatScore(score: number) {
   return `${Math.round(score * 100)}%`;
 }
@@ -127,10 +203,6 @@ function relativeTime(value: string | null) {
     month: "short",
     day: "numeric",
   }).format(new Date(timestamp));
-}
-
-function sourceInitial(source: string) {
-  return sourceDisplayName(source).trim().charAt(0).toUpperCase() || "P";
 }
 
 function leadStatus(lead: QualifiedLeadView) {
@@ -401,8 +473,8 @@ export function ProspectLeadDesk({
           </div>
 
           <div className="hidden shrink-0 grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
-            <span>Public source</span>
-            <span>Buyer signal</span>
+            <span>Source &amp; post</span>
+            <span>Signal</span>
             <span>Latest evidence</span>
             <span>Confidence</span>
             <span>Age</span>
@@ -438,7 +510,7 @@ export function ProspectLeadDesk({
                   </div>
                   <p className="mt-1 text-xs" style={{ color: C.muted }}>
                     {isScreenedMatch(selectedLead)
-                      ? "This semantic match did not pass verification. It is shown for inspection only."
+                      ? "Kept as an audit record, not as a lead to pursue."
                       : "Public-source evidence, not a verified company record."}
                   </p>
                 </div>
@@ -446,22 +518,34 @@ export function ProspectLeadDesk({
 
               <div className="flex flex-1 flex-col gap-3 p-3 sm:p-3.5">
                 <div className="flex gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-                    {sourceInitial(selectedLead.sourcePost.source)}
-                  </span>
+                  <SourcePlatformMark source={selectedLead.sourcePost.source} size="detail" />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold" style={{ color: C.navy }}>
                       {selectedLead.sourcePost.title || signalLabel(selectedLead)}
                     </p>
-                    <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                      {sourceDisplayName(selectedLead.sourcePost.source)}
-                      {selectedLead.sourcePost.author ? ` · ${selectedLead.sourcePost.author}` : ""}
-                    </p>
+                    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs" style={{ color: C.muted }}>
+                      <SourcePlatformBadge source={selectedLead.sourcePost.source} />
+                      {selectedLead.sourcePost.author ? <span className="truncate">{selectedLead.sourcePost.author}</span> : null}
+                      {selectedLead.sourcePost.community ? <span className="truncate">in {selectedLead.sourcePost.community}</span> : null}
+                    </div>
                   </div>
                 </div>
 
+                {isScreenedMatch(selectedLead) ? (
+                  <section className="flex gap-2.5 rounded-lg border px-3 py-3" aria-label="Verification outcome" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.white, color: C.muted }}>
+                      <ShieldAlert className="size-4" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Verification outcome</p>
+                      <p className="mt-1 text-xs font-semibold" style={{ color: C.navy }}>Screened out of the lead queue</p>
+                      <p className="mt-0.5 text-xs leading-5" style={{ color: C.navySoft }}>The semantic match did not meet the evidence threshold for buyer intent. It remains available for inspection and feedback.</p>
+                    </div>
+                  </section>
+                ) : null}
+
                 <div className="grid grid-cols-2 gap-3">
-                  <DetailStat label="Confidence" value={formatScore(selectedLead.verifierScore)} />
+                  <DetailStat label={isScreenedMatch(selectedLead) ? "Verification score" : "Confidence"} value={formatScore(selectedLead.verifierScore)} />
                   <DetailStat label="Observed" value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)} />
                 </div>
 
@@ -709,14 +793,13 @@ function LeadRow({
       style={{ backgroundColor: selected ? C.blueTint : C.white, outlineColor: C.blueLight }}
     >
       <span className="flex min-w-0 items-center gap-3">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-          {sourceInitial(lead.sourcePost.source)}
-        </span>
+        <SourcePlatformMark source={lead.sourcePost.source} />
         <span className="min-w-0">
           <span className="block truncate text-[13px] font-semibold" style={{ color: C.navy }}>{title}</span>
-          <span className="block truncate text-[11px]" style={{ color: C.muted }}>
-            {sourceDisplayName(lead.sourcePost.source)}
-            {lead.sourcePost.author ? ` · ${lead.sourcePost.author}` : ""}
+          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px]" style={{ color: C.muted }}>
+            <SourcePlatformBadge source={lead.sourcePost.source} />
+            {lead.sourcePost.author ? <span className="truncate">{lead.sourcePost.author}</span> : null}
+            {lead.sourcePost.community ? <span className="truncate">in {lead.sourcePost.community}</span> : null}
           </span>
         </span>
       </span>
