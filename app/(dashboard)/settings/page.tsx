@@ -5,6 +5,7 @@ import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { areBillingTestControlsEnabled } from "@/lib/billing/test-controls";
 import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
 import { fetchTenantSettingsRow } from "@/lib/settings/server";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
@@ -178,6 +179,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       initialSettings={settings}
       serviceProfile={serviceProfile}
       planData={billingPlanData}
+      showBillingTestControls={areBillingTestControlsEnabled()}
     />
   );
 }

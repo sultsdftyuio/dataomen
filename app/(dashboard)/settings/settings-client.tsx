@@ -7,6 +7,7 @@ import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-ty
 import WorkspaceBillingCard, {
   type WorkspaceBillingCardProps,
 } from "@/components/settings/workspace_page/workspace-billing-card";
+import BillingTestSwitcher from "@/components/settings/workspace_page/billing-test-switcher";
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
 import LogoutButton from "@/components/dashboard/logout-button";
 import { C } from "@/lib/tokens";
@@ -16,6 +17,7 @@ type SettingsClientProps = {
   initialSettings: any;
   serviceProfile: ServiceProfileView | null;
   planData: WorkspaceBillingCardProps["planData"];
+  showBillingTestControls: boolean;
 };
 
 function websiteDomain(value: string) {
@@ -31,6 +33,7 @@ export default function SettingsClient({
   initialSettings,
   serviceProfile,
   planData,
+  showBillingTestControls,
 }: SettingsClientProps) {
   const workspaceSettings = initialSettings?.workspace ?? {};
   const workspaceName = workspaceSettings.companyName || "Workspace";
@@ -114,6 +117,9 @@ export default function SettingsClient({
 
         <aside className="min-w-0 space-y-3 xl:sticky xl:top-0 xl:self-start">
           <WorkspaceBillingCard planData={planData} />
+          {showBillingTestControls ? (
+            <BillingTestSwitcher currentStatus={planData?.planStatus} />
+          ) : null}
 
           <section className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5" style={{ borderColor: C.rule }}>
             <MessageCircleMore className="size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />

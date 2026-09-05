@@ -7,6 +7,7 @@ import { createClient as createSupabaseServiceClient } from "@supabase/supabase-
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { areBillingTestControlsEnabled } from "@/lib/billing/test-controls";
 import { DodoPayments } from "dodopayments";
 import type { Database } from "@/types/supabase";
 
@@ -105,14 +106,14 @@ async function requireWorkspaceBillingAdmin(
 
   const role = membership?.role?.trim().toLowerCase();
   if (error || !role || !["owner", "admin"].includes(role)) {
-    console.error("[Billing] Unauthorized subscription resume attempt", {
-      event: "billing_resume_unauthorized",
+    console.error("[Billing] Unauthorized billing management attempt", {
+      event: "billing_management_unauthorized",
       tenant_id: tenantId,
       user_id: userId,
       role: role ?? null,
       error,
     });
-    throw new Error("Only workspace owners and admins can resume billing.");
+    throw new Error("Only workspace owners and admins can manage billing.");
   }
 }
 
@@ -348,21 +349,6 @@ function getSupabaseServiceClient() {
       autoRefreshToken: false,
     },
   });
-}
-
-function isBillingTestControlsEnabled(): boolean {
-  const explicitFlag = sanitizeEnvSecret(process.env.BILLING_TEST_CONTROLS_ENABLED)
-    .toLowerCase();
-
-  if (["true", "1", "yes"].includes(explicitFlag)) {
-    return true;
-  }
-
-  if (["false", "0", "no"].includes(explicitFlag)) {
-    return false;
-  }
-
-  return process.env.NODE_ENV !== "production";
 }
 
 function isDodoTestApiKey(apiKey: string): boolean {
@@ -1222,7 +1208,7 @@ export async function removePaymentMethodAndScheduleDowngrade(
  * This intentionally preserves persisted Dodo customer/subscription IDs.
  */
 export async function setBillingTestState(state: string): Promise<BillingTestStateResult> {
-  if (!isBillingTestControlsEnabled()) {
+  if (!areBillingTestControlsEnabled()) {
     console.warn("[Billing] Blocked billing test state update outside allowed environment", {
       event: "billing_test_state_blocked",
       node_env: process.env.NODE_ENV,
@@ -1242,6 +1228,7 @@ export async function setBillingTestState(state: string): Promise<BillingTestSta
   }
 
   const { tenantId, userId } = tenantContextResult.context;
+  await requireWorkspaceBillingAdmin(tenantId, userId);
   const update = billingTestUpdateFromState(normalizedState);
   const serviceSupabase = getSupabaseServiceClient();
   const { data: updatedTenant, error: updateError } = await serviceSupabase

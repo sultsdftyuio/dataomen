@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { getWorkspaceEntitlements } from "../lib/entitlements";
 import { resolvePaidAccessEnd } from "../lib/billing/cancellation-access";
+import { areBillingTestControlsEnabled } from "../lib/billing/test-controls";
 import {
   FREE_PLAN_DOMAIN_LIMIT_MESSAGE,
   freePlanDomainChangeError,
@@ -134,6 +135,27 @@ function verifyCancellationAccessEndResolution() {
   );
 }
 
+function verifyBillingTestControls() {
+  assert.equal(
+    areBillingTestControlsEnabled({ NODE_ENV: "development" }),
+    true,
+    "billing overrides must be available during local development",
+  );
+  assert.equal(
+    areBillingTestControlsEnabled({ NODE_ENV: "production" }),
+    false,
+    "billing overrides must require an explicit production opt-in",
+  );
+  assert.equal(
+    areBillingTestControlsEnabled({
+      NODE_ENV: "production",
+      BILLING_TEST_CONTROLS_ENABLED: "true",
+    }),
+    true,
+    "the explicit billing override flag must enable controls in production",
+  );
+}
+
 async function verifyFreeDomainLimit() {
   assert.equal(normalizedWebsiteDomain("https://www.example.com/pricing"), "example.com");
 
@@ -211,6 +233,7 @@ function verifyNoTrialCheckoutOrLeadLeak() {
 async function main() {
   await verifyEntitlementStates();
   verifyCancellationAccessEndResolution();
+  verifyBillingTestControls();
   await verifyFreeDomainLimit();
   verifyNoTrialCheckoutOrLeadLeak();
   console.log("Subscription access, Free domain limits, and no-trial checkout are verified.");
