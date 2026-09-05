@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, Compass, Radar } from "lucide-react";
+import { ChevronRight, Compass, Radar } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -34,10 +34,6 @@ export function WebsiteDemandMap({
   const [isPending, startTransition] = useTransition();
 
   if (suggestions.length === 0) return null;
-
-  const suggestionCountLabel = `${suggestions.length} ${
-    suggestions.length === 1 ? "idea" : "ideas"
-  }`;
 
   const activate = (suggestionId: string) => {
     setNotice(null);
@@ -106,51 +102,49 @@ export function WebsiteDemandMap({
     return (
       <section
         aria-labelledby="website-demand-map-heading"
-        className="shrink-0 overflow-hidden rounded-lg border"
-        style={{ borderColor: C.blueLight, backgroundColor: C.white }}
+        className="shrink-0 rounded-lg border px-3 py-2.5 sm:px-4"
+        style={{ borderColor: C.ruleDark, backgroundColor: C.white }}
       >
-        <details className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF] sm:px-5 [&::-webkit-details-marker]:hidden">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span
-                className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                style={{ backgroundColor: C.blueTint, color: C.blue }}
-              >
-                <Compass className="size-4" aria-hidden="true" />
-              </span>
-              <div>
-                <h2 id="website-demand-map-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-                  Buyer group ideas
-                </h2>
-                <p className="mt-0.5 text-xs leading-4" style={{ color: C.navySoft }}>
-                  {suggestionCountLabel} based on your matching brief.
-                </p>
-              </div>
-            </div>
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}>
-              <span className="hidden sm:inline">Explore ideas</span>
-              <span className="sm:hidden">Explore</span>
-              <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-md"
+              style={{ backgroundColor: C.blueTint, color: C.blue }}
+            >
+              <Compass className="size-4" aria-hidden="true" />
             </span>
-          </summary>
-
-          <div className="border-t" style={{ borderColor: C.rule }}>
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5">
-              <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
-                Start a focused scan only when you want to test a specific audience and problem.
+            <div className="min-w-0">
+              <h2 id="website-demand-map-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+                Buyer group ideas
+              </h2>
+              <p className="text-[11px]" style={{ color: C.muted }}>
+                Target customers from your website
               </p>
-              <Link
-                href="/dashboard/watchlists"
-                className="rounded-sm text-[11px] font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                style={{ color: C.blue }}
-              >
-                Manage buyer groups
-              </Link>
             </div>
-            {suggestionCards}
-            {activationNotice}
           </div>
-        </details>
+
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 lg:justify-end">
+            {suggestions.slice(0, 3).map((suggestion) => (
+              <span
+                key={suggestion.id}
+                title={suggestion.targetBuyer}
+                className="max-w-full truncate rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                style={{ borderColor: C.rule, backgroundColor: C.offWhite, color: C.navySoft }}
+              >
+                {suggestion.targetBuyer}
+              </span>
+            ))}
+          </div>
+
+          <Link
+            href="/dashboard/watchlists"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold hover:bg-[#F0F7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+            style={{ color: C.blue }}
+          >
+            Buyer groups
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          </Link>
+        </div>
       </section>
     );
   }

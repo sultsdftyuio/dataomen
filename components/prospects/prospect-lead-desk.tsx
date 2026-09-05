@@ -316,35 +316,35 @@ export function ProspectLeadDesk({
   };
 
   return (
-    <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
-      <header className="flex shrink-0 flex-col gap-3 border-b pb-2.5 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
-        <div>
-          <h1 className="pfd text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
+    <main className="flex w-full flex-col gap-1.5 sm:gap-2 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
+      <header className="flex shrink-0 flex-col gap-2 border-b pb-2 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+          <h1 className="pfd shrink-0 text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
             Leads
           </h1>
-          <p className="mt-1.5 max-w-2xl text-[13px] leading-5" style={{ color: C.navySoft }}>
+          <p className="max-w-4xl text-[12px] leading-5" style={{ color: C.navySoft }}>
             Start with a website-derived direction, then review public buyer signals with the clearest evidence and closest fit first.
           </p>
         </div>
 
         <section
           aria-label="Matching brief"
-          className="flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2 lg:w-[300px]"
+          className="flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 lg:w-[280px]"
           style={{ borderColor: C.rule, backgroundColor: C.white }}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
-            <Globe2 className="size-4" aria-hidden="true" />
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
+            <Globe2 className="size-3.5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Matching brief</p>
-            <p className="truncate text-sm font-semibold" style={{ color: C.navy }}>{profileDomain}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Matching brief</p>
+            <p className="truncate text-[13px] font-semibold" style={{ color: C.navy }}>{profileDomain}</p>
           </div>
         </section>
       </header>
 
       <section
         aria-label="Lead discovery controls"
-        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.4fr)_minmax(115px,.48fr)_minmax(115px,.48fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_auto] xl:items-center"
+        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.35fr)_minmax(140px,.58fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_auto] xl:items-center"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
         <label className="relative block">
@@ -354,68 +354,36 @@ export function ProspectLeadDesk({
             value={queueQuery}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search topic, source, author, or problem"
-            className="h-9 w-full rounded-md border bg-white py-2 pr-3 pl-9 text-[13px] outline-none transition focus:ring-2"
+          className="h-9 w-full rounded-md border bg-white py-2 pr-3 pl-9 text-[12px] outline-none transition focus:ring-2"
             style={{ borderColor: C.ruleDark, color: C.text, outlineColor: C.blueLight }}
           />
         </label>
 
-        <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Buyer intent</span>
-          <select
-            value={queueFilter}
-            onChange={(event) => onFilterChange(event.target.value as QueueFilter)}
-            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
-            style={{ borderColor: C.ruleDark, color: C.navy }}
-          >
-            <option value="all">All signals</option>
-            <option value="leads">Ready to review</option>
-            <option value="potential">Potential buyers</option>
-            <option value="screened">Screened out</option>
-          </select>
-        </label>
+        <LeadControlSelect label="Intent" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
+          <option value="all">All signals</option>
+          <option value="leads">Ready to review</option>
+          <option value="potential">Potential buyers</option>
+          <option value="screened">Screened out</option>
+        </LeadControlSelect>
 
-        <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Confidence</span>
-          <select
-            value={queueConfidence}
-            onChange={(event) => onConfidenceChange(event.target.value as QueueConfidenceFilter)}
-            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
-            style={{ borderColor: C.ruleDark, color: C.navy }}
-          >
-            <option value="all">All levels</option>
-            <option value="high">High (80%+)</option>
-            <option value="sixty_plus">60%+</option>
-          </select>
-        </label>
+        <LeadControlSelect label="Confidence" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
+          <option value="all">All levels</option>
+          <option value="high">High (80%+)</option>
+          <option value="sixty_plus">60%+</option>
+        </LeadControlSelect>
 
-        <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Source</span>
-          <select
-            value={queueSource}
-            onChange={(event) => onSourceChange(event.target.value)}
-            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
-            style={{ borderColor: C.ruleDark, color: C.navy }}
-          >
-            <option value="all">All sources</option>
-            {queueSources.map((source) => (
-              <option key={source} value={source}>{sourceDisplayName(source)}</option>
-            ))}
-          </select>
-        </label>
+        <LeadControlSelect label="Source" value={queueSource} onChange={onSourceChange}>
+          <option value="all">All sources</option>
+          {queueSources.map((source) => (
+            <option key={source} value={source}>{sourceDisplayName(source)}</option>
+          ))}
+        </LeadControlSelect>
 
-        <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Sort by</span>
-          <select
-            value={queueSort}
-            onChange={(event) => onSortChange(event.target.value as QueueSort)}
-            className="h-7 w-full rounded-md border bg-white px-2 text-[11px] font-semibold outline-none"
-            style={{ borderColor: C.ruleDark, color: C.navy }}
-          >
-            <option value="priority">Most relevant</option>
-            <option value="newest">Newest first</option>
-            <option value="confidence">Confidence</option>
-          </select>
-        </label>
+        <LeadControlSelect label="Sort" value={queueSort} onChange={(value) => onSortChange(value as QueueSort)}>
+          <option value="priority">Most relevant</option>
+          <option value="newest">Newest first</option>
+          <option value="confidence">Confidence</option>
+        </LeadControlSelect>
 
         <Button
           type="button"
@@ -457,7 +425,7 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead review workspace"
-        className="grid min-h-[560px] overflow-hidden rounded-lg border bg-white xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
+        className="grid min-h-[600px] overflow-hidden rounded-lg border bg-white xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
         style={{ borderColor: C.rule }}
       >
         <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
@@ -712,20 +680,47 @@ function Metric({
   icon: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[78px] items-center gap-2.5 px-4 py-2.5 sm:px-5">
-      <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full" style={{ color: C.blue }} aria-hidden="true">
-        <span className="absolute inset-0 rounded-full border-2 border-dashed" style={{ borderColor: C.blueLight }} />
-        <span className="absolute inset-1.5 rounded-full" style={{ backgroundColor: C.blueTint }} />
-        <span className="relative flex size-7 items-center justify-center rounded-full" style={{ backgroundColor: C.white }}>
-          {icon}
-        </span>
+    <div className="flex min-h-14 items-center gap-2.5 px-3 py-2 sm:px-4">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }} aria-hidden="true">
+        {icon}
       </span>
-      <div>
-        <p className="text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
-        <p className="mt-0.5 text-xl font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
-        {detail ? <p className="mt-1 text-[11px]" style={{ color: C.muted }}>{detail}</p> : null}
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-2">
+          <p className="text-lg font-semibold leading-none tracking-tight" style={{ color: C.navy }}>{value}</p>
+          <p className="truncate text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
+        </div>
+        {detail ? <p className="mt-0.5 text-[10px]" style={{ color: C.muted }}>{detail}</p> : null}
       </div>
     </div>
+  );
+}
+
+function LeadControlSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex h-9 min-w-0 items-center rounded-md border bg-white" style={{ borderColor: C.ruleDark }}>
+      <span className="shrink-0 border-r px-2 text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ borderColor: C.rule, color: C.muted }}>
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={label}
+        className="h-full min-w-0 flex-1 bg-transparent px-2 text-[11px] font-semibold outline-none"
+        style={{ color: C.navy }}
+      >
+        {children}
+      </select>
+    </label>
   );
 }
 
