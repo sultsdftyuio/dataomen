@@ -62,6 +62,7 @@ type ProspectDashboardClientProps = {
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
   startWebsiteDemandScan: WebsiteDemandScanAction;
+  verificationThreshold: number;
   isWarmingUp: boolean;
 };
 
@@ -2693,6 +2694,7 @@ export default function ProspectDashboardClient({
   buyerGroupSuggestions,
   activateBuyerGroup,
   startWebsiteDemandScan,
+  verificationThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
@@ -2918,6 +2920,7 @@ export default function ProspectDashboardClient({
         buyerGroupSuggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
         startWebsiteDemandScan={startWebsiteDemandScan}
+        verificationThreshold={verificationThreshold}
         reviewedConversationCount={queueItems.length}
         screenedMatches={screenedMatches}
         filteredQueueItems={filteredQueueItems}

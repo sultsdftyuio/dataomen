@@ -46,6 +46,7 @@ type ProspectLeadDeskProps = {
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
   startWebsiteDemandScan: WebsiteDemandScanAction;
+  verificationThreshold: number;
   reviewedConversationCount: number;
   screenedMatches: QualifiedLeadView[];
   filteredQueueItems: QualifiedLeadView[];
@@ -148,6 +149,17 @@ function sourcePresentation(source: string): SourcePresentation {
   return { label: sourceDisplayName(source), Icon: Globe2, background: C.offWhite, color: C.navySoft };
 }
 
+function sourceConversationType(source: string) {
+  const normalized = source.trim().toLowerCase();
+
+  if (normalized === "github") return "Repository discussion";
+  if (["hn", "hackernews", "hacker_news"].includes(normalized)) return "News discussion";
+  if (["stackexchange", "stack_exchange", "stackoverflow", "stack_overflow"].includes(normalized)) return "Technical Q&A";
+  if (["reddit", "lemmy"].includes(normalized)) return "Community discussion";
+  if (["bluesky", "x"].includes(normalized)) return "Public post";
+  return "Public conversation";
+}
+
 function SourcePlatformMark({
   source,
   size = "row",
@@ -245,6 +257,7 @@ export function ProspectLeadDesk({
   buyerGroupSuggestions,
   activateBuyerGroup,
   startWebsiteDemandScan,
+  verificationThreshold,
   reviewedConversationCount,
   screenedMatches,
   filteredQueueItems,
@@ -473,7 +486,7 @@ export function ProspectLeadDesk({
           </div>
 
           <div className="hidden shrink-0 grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
-            <span>Source &amp; post</span>
+            <span>Source &amp; conversation</span>
             <span>Signal</span>
             <span>Latest evidence</span>
             <span>Confidence</span>
@@ -510,7 +523,7 @@ export function ProspectLeadDesk({
                   </div>
                   <p className="mt-1 text-xs" style={{ color: C.muted }}>
                     {isScreenedMatch(selectedLead)
-                      ? "Kept as an audit record, not as a lead to pursue."
+                      ? "Semantically related, but not verified as a buyer opportunity."
                       : "Public-source evidence, not a verified company record."}
                   </p>
                 </div>
@@ -520,33 +533,36 @@ export function ProspectLeadDesk({
                 <div className="flex gap-3">
                   <SourcePlatformMark source={selectedLead.sourcePost.source} size="detail" />
                   <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
+                      {sourceConversationType(selectedLead.sourcePost.source)}
+                    </p>
                     <p className="truncate text-sm font-semibold" style={{ color: C.navy }}>
                       {selectedLead.sourcePost.title || signalLabel(selectedLead)}
                     </p>
                     <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs" style={{ color: C.muted }}>
                       <SourcePlatformBadge source={selectedLead.sourcePost.source} />
-                      {selectedLead.sourcePost.author ? <span className="truncate">{selectedLead.sourcePost.author}</span> : null}
-                      {selectedLead.sourcePost.community ? <span className="truncate">in {selectedLead.sourcePost.community}</span> : null}
+                      {selectedLead.sourcePost.community ? <span className="truncate">{selectedLead.sourcePost.community}</span> : null}
+                      {selectedLead.sourcePost.author ? <span className="truncate">by {selectedLead.sourcePost.author}</span> : null}
                     </div>
                   </div>
                 </div>
 
                 {isScreenedMatch(selectedLead) ? (
-                  <section className="flex gap-2.5 rounded-lg border px-3 py-3" aria-label="Verification outcome" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.white, color: C.muted }}>
-                      <ShieldAlert className="size-4" aria-hidden="true" />
-                    </span>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Verification outcome</p>
-                      <p className="mt-1 text-xs font-semibold" style={{ color: C.navy }}>Screened out of the lead queue</p>
-                      <p className="mt-0.5 text-xs leading-5" style={{ color: C.navySoft }}>The semantic match did not meet the evidence threshold for buyer intent. It remains available for inspection and feedback.</p>
-                    </div>
-                  </section>
+                  <ScreenedMatchOutcome lead={selectedLead} verificationThreshold={verificationThreshold} />
                 ) : null}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <DetailStat label={isScreenedMatch(selectedLead) ? "Verification score" : "Confidence"} value={formatScore(selectedLead.verifierScore)} />
-                  <DetailStat label="Observed" value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)} />
+                  {isScreenedMatch(selectedLead) ? (
+                    <>
+                      <DetailStat label="Source type" value={sourceConversationType(selectedLead.sourcePost.source)} />
+                      <DetailStat label="Observed" value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)} />
+                    </>
+                  ) : (
+                    <>
+                      <DetailStat label="Confidence" value={formatScore(selectedLead.verifierScore)} />
+                      <DetailStat label="Observed" value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)} />
+                    </>
+                  )}
                 </div>
 
                 <div className="flex gap-4 border-b" role="tablist" aria-label="Signal details" style={{ borderColor: C.rule }}>
@@ -621,7 +637,7 @@ export function ProspectLeadDesk({
                       <Button asChild variant="outline" size="sm" className="border-[#C8D9E8]">
                         <a href={selectedLead.sourcePost.url} target="_blank" rel="noreferrer">
                           <ExternalLink aria-hidden="true" />
-                          Open source
+                          Open {sourceDisplayName(selectedLead.sourcePost.source)}
                         </a>
                       </Button>
                     ) : null}
@@ -783,23 +799,29 @@ function LeadRow({
 }) {
   const status = leadStatus(lead);
   const title = lead.sourcePost.title || lead.sourcePost.author || sourceDisplayName(lead.sourcePost.source);
+  const source = sourcePresentation(lead.sourcePost.source);
 
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className="grid w-full gap-1.5 px-4 py-2 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
+      className="grid w-full gap-1.5 px-4 py-2.5 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
       style={{ backgroundColor: selected ? C.blueTint : C.white, outlineColor: C.blueLight }}
     >
       <span className="flex min-w-0 items-center gap-3">
         <SourcePlatformMark source={lead.sourcePost.source} />
         <span className="min-w-0">
-          <span className="block truncate text-[13px] font-semibold" style={{ color: C.navy }}>{title}</span>
-          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px]" style={{ color: C.muted }}>
-            <SourcePlatformBadge source={lead.sourcePost.source} />
-            {lead.sourcePost.author ? <span className="truncate">{lead.sourcePost.author}</span> : null}
-            {lead.sourcePost.community ? <span className="truncate">in {lead.sourcePost.community}</span> : null}
+          <span className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold">
+            <span style={{ color: source.color }}>{source.label}</span>
+            <span aria-hidden="true" style={{ color: C.faint }}>•</span>
+            <span className="truncate uppercase tracking-[0.08em]" style={{ color: C.muted }}>{sourceConversationType(lead.sourcePost.source)}</span>
+          </span>
+          <span className="mt-0.5 block truncate text-[13px] font-semibold" style={{ color: C.navy }}>{title}</span>
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px]" style={{ color: C.muted }}>
+            {lead.sourcePost.community ? <span className="truncate">{lead.sourcePost.community}</span> : null}
+            {lead.sourcePost.author ? <span className="truncate">by {lead.sourcePost.author}</span> : null}
+            {!lead.sourcePost.community && !lead.sourcePost.author ? <span>Public post</span> : null}
           </span>
         </span>
       </span>
@@ -834,6 +856,59 @@ function DetailStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border px-3 py-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
       <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>{label}</p>
       <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>{value}</p>
+    </div>
+  );
+}
+
+function ScreenedMatchOutcome({
+  lead,
+  verificationThreshold,
+}: {
+  lead: QualifiedLeadView;
+  verificationThreshold: number;
+}) {
+  const scoreGap = Math.max(0, verificationThreshold - lead.verifierScore);
+  const isBelowQueueThreshold = scoreGap > 0;
+
+  return (
+    <section className="overflow-hidden rounded-xl border" aria-label="Verification review" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
+      <div className="flex gap-2.5 px-3 py-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.muted }}>
+          <ShieldAlert className="size-4" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Verification review</p>
+          <h3 className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>Screened out of the lead queue</h3>
+          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>The record is available for inspection, but it did not meet the rules to become a lead.</p>
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-3 divide-x border-y" style={{ borderColor: C.ruleDark }}>
+        <VerificationMetric
+          label="Semantic relevance"
+          value={lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
+        />
+        <VerificationMetric label="Buyer evidence" value={formatScore(lead.verifierScore)} />
+        <VerificationMetric
+          label={isBelowQueueThreshold ? "Gap to qualify" : "Review result"}
+          value={isBelowQueueThreshold ? formatScore(scoreGap) : "Screened"}
+        />
+      </dl>
+
+      <p className="px-3 py-2.5 text-[11px] leading-4" style={{ color: C.muted }}>
+        {isBelowQueueThreshold
+          ? `A score of ${formatScore(verificationThreshold)} is required to enter the lead queue. Keep this record for source inspection or feedback.`
+          : "This record did not pass the automated verification review. Keep it for source inspection or feedback."}
+      </p>
+    </section>
+  );
+}
+
+function VerificationMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 px-2.5 py-2.5 first:pl-3 last:pr-3">
+      <dt className="text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
+      <dd className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>{value}</dd>
     </div>
   );
 }

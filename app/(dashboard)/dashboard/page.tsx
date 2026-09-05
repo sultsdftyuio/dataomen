@@ -155,6 +155,7 @@ export default async function DashboardPage() {
       buyerGroupSuggestions={buyerGroupSuggestions}
       activateBuyerGroup={activateSuggestedBuyerGroup}
       startWebsiteDemandScan={startWebsiteDemandScan}
+      verificationThreshold={threshold}
       isWarmingUp={isDiscoveryWarmingUp}
     />
   );
