@@ -293,6 +293,9 @@ export function ProspectLeadDesk({
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
+  const isMatchingBriefApproved =
+    serviceProfile.hasProfile &&
+    serviceProfile.status?.trim().toLowerCase().replace(/\s+/g, "_") === "approved";
   const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
   const evidence = selectedLead
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
@@ -385,15 +388,32 @@ export function ProspectLeadDesk({
           <option value="confidence">Confidence</option>
         </LeadControlSelect>
 
-        <Button
-          type="button"
-          onClick={checkNewLeads}
-          disabled={isDiscoveryPending}
-          className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
-        >
-          <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
-          {isDiscoveryPending ? "Starting scan…" : "Scan website demand"}
-        </Button>
+        {isMatchingBriefApproved ? (
+          <Button
+            type="button"
+            onClick={checkNewLeads}
+            disabled={isDiscoveryPending}
+            className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
+          >
+            <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
+            {isDiscoveryPending ? "Starting scan…" : "Scan website demand"}
+          </Button>
+        ) : (
+          <Button asChild className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]">
+            <Link href="/dashboard/brief">
+              <Sparkles className="size-4" aria-hidden="true" />
+              Review matching brief
+            </Link>
+          </Button>
+        )}
+        {!isMatchingBriefApproved ? (
+          <p className="text-xs leading-5 xl:col-span-full" style={{ color: C.navySoft }}>
+            Approve your matching brief before scanning website demand.{" "}
+            <Link href="/dashboard/brief" className="font-semibold underline underline-offset-2" style={{ color: C.blue }}>
+              Open matching brief
+            </Link>
+          </p>
+        ) : null}
         {discoveryMessage ? (
           <p className="text-xs leading-5 xl:col-span-full" role="alert" style={{ color: C.red }}>
             {discoveryMessage}

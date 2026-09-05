@@ -28,5 +28,8 @@ test("the dashboard demand scan starts discovery from the server-owned matching 
   assert.match(actionsSource, /postEmbeddingTrigger\([\s\S]*serviceProfile\.id/);
   assert.match(dashboardSource, /startWebsiteDemandScan=\{startWebsiteDemandScan\}/);
   assert.match(leadDeskSource, /const result = await startWebsiteDemandScan\(\)/);
+  assert.match(leadDeskSource, /const isMatchingBriefApproved =/);
+  assert.match(leadDeskSource, /href="\/dashboard\/brief"/);
+  assert.match(leadDeskSource, /Approve your matching brief before scanning website demand\./);
   assert.doesNotMatch(leadDeskSource, /body: JSON\.stringify\(\{ websiteUrl \}\)/);
 });
