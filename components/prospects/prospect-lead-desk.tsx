@@ -232,7 +232,7 @@ export function ProspectLeadDesk({
 
   return (
     <main className="flex w-full flex-col gap-2 sm:gap-2.5 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
-      <header className="shrink-0 border-b pb-2.5" style={{ borderColor: C.rule }}>
+      <header className="flex shrink-0 flex-col gap-3 border-b pb-2.5 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
         <div>
           <h1 className="pfd text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
             Leads
@@ -241,14 +241,12 @@ export function ProspectLeadDesk({
             Start with a website-derived direction, then review public buyer signals with the clearest evidence and closest fit first.
           </p>
         </div>
-      </header>
 
-      <section
-        aria-label="Lead discovery controls"
-        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(175px,.7fr)_minmax(220px,1.2fr)_minmax(115px,.48fr)_minmax(115px,.48fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_auto] xl:items-center"
-        style={{ borderColor: C.rule, backgroundColor: C.white }}
-      >
-        <div className="flex min-w-0 items-center gap-2.5 border-b pb-2.5 lg:border-r lg:border-b-0 lg:pb-0 lg:pr-2.5" style={{ borderColor: C.rule }}>
+        <section
+          aria-label="Matching brief"
+          className="flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2 lg:w-[300px]"
+          style={{ borderColor: C.rule, backgroundColor: C.white }}
+        >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
             <Globe2 className="size-4" aria-hidden="true" />
           </span>
@@ -256,8 +254,14 @@ export function ProspectLeadDesk({
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Matching brief</p>
             <p className="truncate text-sm font-semibold" style={{ color: C.navy }}>{profileDomain}</p>
           </div>
-        </div>
+        </section>
+      </header>
 
+      <section
+        aria-label="Lead discovery controls"
+        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.4fr)_minmax(115px,.48fr)_minmax(115px,.48fr)_minmax(125px,.5fr)_minmax(125px,.5fr)_auto] xl:items-center"
+        style={{ borderColor: C.rule, backgroundColor: C.white }}
+      >
         <label className="relative block">
           <span className="sr-only">Search public signals</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.faint }} aria-hidden="true" />
