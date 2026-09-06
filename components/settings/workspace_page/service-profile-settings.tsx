@@ -18,7 +18,6 @@ import {
   Loader2,
   Plus,
   Radar,
-  RefreshCw,
   RotateCcw,
   Save,
   Target,
@@ -34,15 +33,19 @@ import {
 } from "@/components/onboarding/workspace-provisioning-profile";
 import { ResultText } from "@/components/onboarding/workspace-provisioning-states";
 import type {
+  CrawlJobView,
   ProspectActionResult,
   ServiceProfileFields,
   ServiceProfileView,
+  WebsiteDemandScanAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 import {
   DISCOVERY_QUERY_TYPES,
   type DiscoveryQuery,
 } from "@/lib/discovery-queries";
 import { C } from "@/lib/tokens";
+import { WorkspaceRefreshCenter } from "./workspace-refresh-center";
+import { normalizeWebsiteUrl, websiteDomain } from "./website-url";
 
 const MAX_SIGNAL_LENGTH = 100;
 const MAX_TEXT_LENGTH = 1_000;
@@ -61,7 +64,9 @@ type TextFieldKey = "core_problem" | "unique_value_prop";
 
 type ServiceProfileSettingsProps = {
   serviceProfile: ServiceProfileView;
+  crawlJob: CrawlJobView | null;
   websiteUrl: string;
+  startWebsiteDemandScan: WebsiteDemandScanAction;
   onFieldsChange?: (fields: ServiceProfileFields) => void;
   layout?: "standard" | "progressive";
 };
@@ -186,29 +191,6 @@ function signalDraftItems(value: string) {
     .split(/[\n,;]+/)
     .map(normalizeSignal)
     .filter(Boolean);
-}
-
-function normalizeWebsiteUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) throw new Error("Website URL is required.");
-
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  const parsed = new URL(candidate);
-  if (!parsed.hostname || !["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Enter a valid HTTP(S) website URL.");
-  }
-  parsed.hash = "";
-  return parsed.toString();
-}
-
-function websiteDomain(value: string) {
-  try {
-    return new URL(
-      /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`,
-    ).hostname.replace(/^www\./i, "");
-  } catch {
-    return null;
-  }
 }
 
 async function readSettingsProfileResult(
@@ -448,7 +430,9 @@ function BriefEditorSection({
 
 export function ServiceProfileSettings({
   serviceProfile,
+  crawlJob,
   websiteUrl,
+  startWebsiteDemandScan,
   onFieldsChange,
   layout = "standard",
 }: ServiceProfileSettingsProps) {
@@ -465,7 +449,6 @@ export function ServiceProfileSettings({
   const [openBriefSection, setOpenBriefSection] = useState<
     "match" | "signals" | "guardrails" | null
   >("match");
-  const [showWebsiteSource, setShowWebsiteSource] = useState(false);
 
   useEffect(() => {
     setProfileFields(serviceProfile.fields ?? EMPTY_FIELDS);
@@ -524,7 +507,15 @@ export function ServiceProfileSettings({
         });
 
         const result = await readSettingsProfileResult(response);
-        setProfileResult(result);
+        setProfileResult(
+          result.ok
+            ? {
+                ok: true,
+                message:
+                  "Brief refresh queued. Matching will use your saved buyer, problem, and signal updates.",
+              }
+            : result,
+        );
 
         if (result.ok || response.status === 202) {
           router.refresh();
@@ -569,7 +560,7 @@ export function ServiceProfileSettings({
             : result,
         );
         if (result.ok) {
-          router.replace("/dashboard/discovery?scan=1");
+          router.refresh();
           return;
         }
 
@@ -583,8 +574,16 @@ export function ServiceProfileSettings({
     });
   };
 
+  const websiteChanged = (() => {
+    try {
+      return normalizeWebsiteUrl(websiteDraft) !== normalizeWebsiteUrl(resolvedWebsiteUrl);
+    } catch {
+      return false;
+    }
+  })();
+
   if (!serviceProfile.hasProfile) {
-    return (
+    const gettingReady = (
       <section
         className="rounded-md border bg-white p-3 shadow-sm"
         style={{ borderColor: C.rule }}
@@ -608,23 +607,52 @@ export function ServiceProfileSettings({
         </div>
       </section>
     );
+
+    if (layout !== "progressive") return gettingReady;
+
+    return (
+      <div className="space-y-4">
+        <WorkspaceRefreshCenter
+          serviceProfile={serviceProfile}
+          briefFields={profileFields}
+          crawlJob={crawlJob}
+          websiteDraft={websiteDraft}
+          websiteChanged={websiteChanged}
+          isWebsitePending={isWebsitePending}
+          isBriefPending={isPending}
+          result={profileResult}
+          startWebsiteDemandScan={startWebsiteDemandScan}
+          onWebsiteDraftChange={setWebsiteDraft}
+          onRecrawlWebsite={refreshWebsiteContext}
+          onRefreshBrief={() => persistProfile("save")}
+        />
+        {gettingReady}
+      </div>
+    );
   }
 
   const statusLabel =
     serviceProfile.embeddingStatus === "completed" ? "Active" : "Regenerating";
   const activeWebsiteDomain = websiteDomain(resolvedWebsiteUrl);
   const draftedWebsiteDomain = websiteDomain(websiteDraft);
-  const websiteChanged = (() => {
-    try {
-      return normalizeWebsiteUrl(websiteDraft) !== normalizeWebsiteUrl(resolvedWebsiteUrl);
-    } catch {
-      return false;
-    }
-  })();
-
   if (layout === "progressive") {
     return (
       <div className="space-y-4">
+        <WorkspaceRefreshCenter
+          serviceProfile={serviceProfile}
+          briefFields={profileFields}
+          crawlJob={crawlJob}
+          websiteDraft={websiteDraft}
+          websiteChanged={websiteChanged}
+          isWebsitePending={isWebsitePending}
+          isBriefPending={isPending}
+          result={profileResult}
+          startWebsiteDemandScan={startWebsiteDemandScan}
+          onWebsiteDraftChange={setWebsiteDraft}
+          onRecrawlWebsite={refreshWebsiteContext}
+          onRefreshBrief={() => persistProfile("save")}
+        />
+
         {!hasProfileContent ? (
           <div
             className="rounded-lg border px-4 py-3 text-sm leading-6"
@@ -706,78 +734,25 @@ export function ServiceProfileSettings({
         </BriefEditorSection>
 
         <BriefEditorSection
-          title="Guardrails"
-          description="Keep weak matches out, and update the website source only when your source context has changed."
+          title="Matching rules"
+          description="Keep weak matches out without changing the website source."
           open={openBriefSection === "guardrails"}
           onToggle={() => setOpenBriefSection((current) => current === "guardrails" ? null : "guardrails")}
         >
-          <div className="space-y-4">
-            <section className="rounded-lg border bg-white p-3" style={{ borderColor: C.rule }}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="pfd text-lg leading-none" style={{ color: C.navy }}>
-                    Source context
-                  </h3>
-                  <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                    {statusLabel}. Change the website only when it should be crawled again.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="outline"
-                  aria-expanded={showWebsiteSource}
-                  onClick={() => setShowWebsiteSource((current) => !current)}
-                  style={{ borderColor: C.ruleDark, color: C.navySoft }}
-                >
-                  {showWebsiteSource ? "Hide website" : "Update website"}
-                </Button>
-              </div>
-              {showWebsiteSource ? (
-                <div className="mt-3 space-y-3 border-t pt-3" style={{ borderColor: C.rule }}>
-                  <div>
-                    <label htmlFor="matching-website-url-progressive" className="text-xs font-semibold" style={{ color: C.navy }}>
-                      Website source
-                    </label>
-                    <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
-                      <div className="relative min-w-0 flex-1">
-                        <Globe2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.muted }} aria-hidden="true" />
-                        <input
-                          id="matching-website-url-progressive"
-                          type="url"
-                          inputMode="url"
-                          autoComplete="url"
-                          value={websiteDraft}
-                          disabled={isWebsitePending}
-                          className="h-9 w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-                          style={{ borderColor: C.rule, color: C.navy }}
-                          onChange={(event) => setWebsiteDraft(event.target.value)}
-                        />
-                      </div>
-                      <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isWebsitePending} onClick={refreshWebsiteContext}>
-                        {isWebsitePending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
-                        {isWebsitePending
-                          ? "Queueing re-crawl..."
-                          : websiteChanged
-                            ? "Replace & re-crawl"
-                            : "Re-crawl website"}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
-                    <p className="text-xs leading-5" style={{ color: C.muted }}>
-                      Refresh matching from the current brief without re-crawling the website.
-                    </p>
-                    <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isPending} onClick={() => persistProfile("save")}>
-                      {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
-                      {isPending ? "Refreshing brief..." : "Refresh brief"}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-
+          <div className="grid gap-4 md:grid-cols-2">
+            {SIGNAL_FIELDS.filter((field) =>
+              ["negative_keywords", "excluded_audiences"].includes(field.key),
+            ).map((field) => (
+              <SignalField
+                key={field.key}
+                label={field.label}
+                description={field.description}
+                value={profileFields[field.key]}
+                placeholder={field.placeholder}
+                disabled={isPending}
+                onChange={(value) => updateField(field.key, value)}
+              />
+            ))}
           </div>
         </BriefEditorSection>
 
@@ -792,7 +767,7 @@ export function ServiceProfileSettings({
           </div>
           <Button type="button" disabled={isPending} className="h-9 shrink-0" onClick={() => persistProfile("save")}>
             {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
-            {isPending ? "Saving..." : "Save brief"}
+            {isPending ? "Saving..." : "Save brief changes"}
           </Button>
         </div>
       </div>

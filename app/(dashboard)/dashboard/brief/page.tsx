@@ -7,7 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
-import { fetchServiceProfile, fetchTenantWebsiteUrl } from "../data";
+import { startWebsiteDemandScan } from "../actions";
+import {
+  fetchLatestCrawlJob,
+  fetchServiceProfile,
+  fetchTenantWebsiteUrl,
+} from "../data";
 
 export const metadata: Metadata = {
   title: "Matching Brief | Arcli",
@@ -40,7 +45,10 @@ export default async function MatchingBriefPage() {
     redirect("/onboarding/workspace");
   }
 
-  const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
+  const [serviceProfile, crawlJob] = await Promise.all([
+    fetchServiceProfile(supabase, tenantId, websiteUrl),
+    fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+  ]);
   const isActive = serviceProfile.embeddingStatus === "completed";
 
   return (
@@ -88,8 +96,10 @@ export default async function MatchingBriefPage() {
         <CardContent className="p-3 pt-4">
           <ServiceProfileSettings
             serviceProfile={serviceProfile}
+            crawlJob={crawlJob}
             websiteUrl={websiteUrl}
             layout="progressive"
+            startWebsiteDemandScan={startWebsiteDemandScan}
           />
         </CardContent>
       </Card>

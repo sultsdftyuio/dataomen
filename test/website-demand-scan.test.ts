@@ -30,6 +30,15 @@ const workspaceRouteSource = readFileSync(
   fileURLToPath(new URL("../app/api/settings/workspace/route.ts", import.meta.url)),
   "utf8",
 );
+const workspaceRefreshCenterSource = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../components/settings/workspace_page/workspace-refresh-center.tsx",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
 const demandScanStart = actionsSource.slice(
   actionsSource.indexOf("export async function startWebsiteDemandScan"),
   actionsSource.indexOf("export async function requestBuyerLanguageResearch"),
@@ -60,9 +69,15 @@ test("website re-crawls and brief updates each start only their own job", () => 
     profileSettingsSource,
     /body: JSON\.stringify\(\{ websiteUrl: normalizedWebsiteUrl \}\)/,
   );
-  assert.match(profileSettingsSource, /Re-crawl website/);
-  assert.match(profileSettingsSource, /Refresh brief/);
-  assert.match(profileSettingsSource, /without re-crawling the website/);
+  assert.match(profileSettingsSource, /WorkspaceRefreshCenter/);
+  assert.match(workspaceRefreshCenterSource, /Re-crawl website/);
+  assert.match(workspaceRefreshCenterSource, /Refresh brief/);
+  assert.match(workspaceRefreshCenterSource, /Scan website demand/);
+  assert.match(
+    workspaceRefreshCenterSource,
+    /What your next update will improve/,
+  );
+  assert.match(workspaceRefreshCenterSource, /does not re-crawl the website/);
   assert.doesNotMatch(profileSettingsSource, /Replace & analyze|Analyze again/);
   assert.match(
     workspaceRouteSource,
