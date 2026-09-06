@@ -18,6 +18,7 @@ import {
   Loader2,
   Plus,
   Radar,
+  RefreshCw,
   RotateCcw,
   Save,
   Target,
@@ -733,32 +734,44 @@ export function ServiceProfileSettings({
                 </Button>
               </div>
               {showWebsiteSource ? (
-                <div className="mt-3 border-t pt-3" style={{ borderColor: C.rule }}>
-                  <label htmlFor="matching-website-url-progressive" className="text-xs font-semibold" style={{ color: C.navy }}>
-                    Website source
-                  </label>
-                  <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
-                    <div className="relative min-w-0 flex-1">
-                      <Globe2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.muted }} aria-hidden="true" />
-                      <input
-                        id="matching-website-url-progressive"
-                        type="url"
-                        inputMode="url"
-                        autoComplete="url"
-                        value={websiteDraft}
-                        disabled={isWebsitePending}
-                        className="h-9 w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-                        style={{ borderColor: C.rule, color: C.navy }}
-                        onChange={(event) => setWebsiteDraft(event.target.value)}
-                      />
+                <div className="mt-3 space-y-3 border-t pt-3" style={{ borderColor: C.rule }}>
+                  <div>
+                    <label htmlFor="matching-website-url-progressive" className="text-xs font-semibold" style={{ color: C.navy }}>
+                      Website source
+                    </label>
+                    <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
+                      <div className="relative min-w-0 flex-1">
+                        <Globe2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.muted }} aria-hidden="true" />
+                        <input
+                          id="matching-website-url-progressive"
+                          type="url"
+                          inputMode="url"
+                          autoComplete="url"
+                          value={websiteDraft}
+                          disabled={isWebsitePending}
+                          className="h-9 w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                          style={{ borderColor: C.rule, color: C.navy }}
+                          onChange={(event) => setWebsiteDraft(event.target.value)}
+                        />
+                      </div>
+                      <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isWebsitePending} onClick={refreshWebsiteContext}>
+                        {isWebsitePending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
+                        {isWebsitePending
+                          ? "Queueing re-crawl..."
+                          : websiteChanged
+                            ? "Replace & re-crawl"
+                            : "Re-crawl website"}
+                      </Button>
                     </div>
-                    <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isWebsitePending} onClick={refreshWebsiteContext}>
-                      {isWebsitePending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
-                      {isWebsitePending
-                        ? "Queueing re-crawl..."
-                        : websiteChanged
-                          ? "Replace & re-crawl"
-                          : "Re-crawl website"}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
+                    <p className="text-xs leading-5" style={{ color: C.muted }}>
+                      Refresh matching from the current brief without re-crawling the website.
+                    </p>
+                    <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isPending} onClick={() => persistProfile("save")}>
+                      {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
+                      {isPending ? "Refreshing brief..." : "Refresh brief"}
                     </Button>
                   </div>
                 </div>

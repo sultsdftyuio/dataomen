@@ -61,6 +61,7 @@ test("website re-crawls and brief updates each start only their own job", () => 
     /body: JSON\.stringify\(\{ websiteUrl: normalizedWebsiteUrl \}\)/,
   );
   assert.match(profileSettingsSource, /Re-crawl website/);
+  assert.match(profileSettingsSource, /Refresh brief/);
   assert.match(profileSettingsSource, /without re-crawling the website/);
   assert.doesNotMatch(profileSettingsSource, /Replace & analyze|Analyze again/);
   assert.match(
