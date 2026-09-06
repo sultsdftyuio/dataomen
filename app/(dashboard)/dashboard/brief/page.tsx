@@ -4,6 +4,7 @@ import { Target } from "lucide-react";
 
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MatchingBriefGuide } from "@/components/settings/workspace_page/matching-brief-guide";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
@@ -75,14 +76,7 @@ export default async function MatchingBriefPage() {
         }
       />
 
-      <details className="rounded-lg border bg-white px-4 py-3" style={{ borderColor: C.rule }}>
-        <summary className="cursor-pointer text-xs font-semibold" style={{ color: C.navy }}>
-          How the matching brief works
-        </summary>
-        <p className="mt-2 max-w-3xl text-xs leading-5" style={{ color: C.muted }}>
-          Start with the buyer and painful situation. Add the language people use when they need help, then use guardrails to keep weak matches out. Saving refreshes this brief in the background without interrupting the active one.
-        </p>
-      </details>
+      <MatchingBriefGuide />
 
       <Card className="rounded-xl bg-white shadow-sm" style={{ borderColor: C.rule }}>
         <CardHeader className="border-b p-3" style={{ borderColor: C.rule }}>
