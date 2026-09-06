@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 import { websiteDomain } from "./website-url";
 
+type ActionTone = "ready" | "updating" | "attention";
+
 type WorkspaceRefreshCenterProps = {
   serviceProfile: ServiceProfileView;
   briefFields: ServiceProfileFields;
@@ -40,17 +42,17 @@ type WorkspaceRefreshCenterProps = {
   onRefreshBrief: () => void;
 };
 
-type RefreshCardProps = {
-  eyebrow: string;
+type ActionPaneProps = {
+  label: string;
   title: string;
   status: string;
-  statusTone: "ready" | "updating" | "attention";
+  tone: ActionTone;
   icon: LucideIcon;
   children: ReactNode;
 };
 
 function formatTimestamp(value: string | null) {
-  if (!value) return "Not available";
+  if (!value) return "Not yet";
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Not available";
@@ -63,25 +65,21 @@ function formatTimestamp(value: string | null) {
   }).format(date);
 }
 
-function crawlStatus(crawlJob: CrawlJobView | null) {
-  if (!crawlJob) {
-    return { label: "Ready", tone: "ready" as const };
-  }
-
-  if (crawlJob.status === "failed") {
+function crawlState(crawlJob: CrawlJobView | null) {
+  if (crawlJob?.status === "failed") {
     return { label: "Needs attention", tone: "attention" as const };
   }
 
-  if (["pending", "processing", "running"].includes(crawlJob.status ?? "")) {
+  if (["pending", "processing", "running"].includes(crawlJob?.status ?? "")) {
     return { label: "Crawling", tone: "updating" as const };
   }
 
   return { label: "Ready", tone: "ready" as const };
 }
 
-function briefStatus(serviceProfile: ServiceProfileView) {
+function briefState(serviceProfile: ServiceProfileView) {
   if (!serviceProfile.hasProfile) {
-    return { label: "Building brief", tone: "updating" as const };
+    return { label: "Building", tone: "updating" as const };
   }
 
   if (serviceProfile.embeddingStatus === "failed") {
@@ -95,7 +93,7 @@ function briefStatus(serviceProfile: ServiceProfileView) {
   return { label: "Refreshing", tone: "updating" as const };
 }
 
-function statusStyle(tone: RefreshCardProps["statusTone"]) {
+function statusStyle(tone: ActionTone) {
   if (tone === "attention") {
     return { backgroundColor: C.amberPale, color: C.amber };
   }
@@ -107,37 +105,29 @@ function statusStyle(tone: RefreshCardProps["statusTone"]) {
   return { backgroundColor: C.greenPale, color: C.green };
 }
 
-function RefreshCard({
-  eyebrow,
+function ActionPane({
+  label,
   title,
   status,
-  statusTone,
+  tone,
   icon: Icon,
   children,
-}: RefreshCardProps) {
+}: ActionPaneProps) {
   return (
-    <section className="rounded-xl border bg-white p-4" style={{ borderColor: C.rule }}>
+    <section className="min-w-0 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: C.bluePale, color: C.blue }}
-          >
-            <Icon className="size-4" aria-hidden="true" />
-          </div>
+        <div className="flex min-w-0 items-start gap-2">
+          <Icon className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-              {eyebrow}
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+              {label}
             </p>
-            <h2 className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
+            <h3 className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>
               {title}
-            </h2>
+            </h3>
           </div>
         </div>
-        <span
-          className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold"
-          style={statusStyle(statusTone)}
-        >
+        <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold" style={statusStyle(tone)}>
           {status}
         </span>
       </div>
@@ -146,7 +136,7 @@ function RefreshCard({
   );
 }
 
-function TargetingPlan({
+function TargetingSummary({
   briefFields,
   websiteDraft,
   websiteChanged,
@@ -154,72 +144,81 @@ function TargetingPlan({
   WorkspaceRefreshCenterProps,
   "briefFields" | "websiteDraft" | "websiteChanged"
 >) {
-  const fields = briefFields;
-  const audiences = fields.target_audience.slice(0, 2);
-  const queryCount = fields.discovery_queries.length || fields.search_terms.length;
+  const audiences = briefFields.target_audience.slice(0, 2);
+  const buyer = audiences.length > 0 ? audiences.join(" / ") : "Add a target buyer";
+  const problem =
+    briefFields.core_problem ||
+    briefFields.pain_points[0] ||
+    "Add the problem your buyer wants solved";
+  const phraseCount =
+    briefFields.discovery_queries.length || briefFields.search_terms.length;
   const guardrailCount =
-    fields.negative_keywords.length + fields.excluded_audiences.length;
-  const targetAudience =
-    audiences.length > 0 ? audiences.join(" and ") : "your defined buyer";
-  const coreProblem = fields.core_problem || fields.pain_points[0] || "the problem in your matching brief";
+    briefFields.negative_keywords.length + briefFields.excluded_audiences.length;
 
   return (
     <section
-      className="rounded-xl border p-4"
+      className="rounded-xl border px-4 py-3"
       style={{ borderColor: C.blueLight, backgroundColor: C.bluePale }}
-      aria-labelledby="crawl-improvement-title"
+      aria-labelledby="targeting-summary-title"
     >
-      <div className="flex items-start gap-3">
-        <CheckCircle2 className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-        <div className="min-w-0">
-          <h2 id="crawl-improvement-title" className="text-sm font-semibold" style={{ color: C.navy }}>
-            What your next update will improve
-          </h2>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-            Arcli uses this plan to turn your website context into more focused demand matching.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="size-4" style={{ color: C.blue }} aria-hidden="true" />
+          <h3 id="targeting-summary-title" className="text-sm font-semibold" style={{ color: C.navy }}>
+            Next update will target
+          </h3>
         </div>
+        <span className="text-xs" style={{ color: C.navySoft }}>
+          Changes appear here before you run an action.
+        </span>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <div className="rounded-lg bg-white p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-            Website context
-          </p>
-          <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
+      <dl className="mt-3 grid gap-x-5 gap-y-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+        <div className="min-w-0">
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+            Source
+          </dt>
+          <dd className="mt-0.5 truncate font-medium" style={{ color: C.navy }}>
             {websiteDomain(websiteDraft) ?? "Website needed"}
-          </p>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {websiteChanged
-              ? "The new source will replace the current crawl context."
-              : "A re-crawl will refresh the current source context."}
+          </dd>
+          <p className="mt-0.5 text-xs leading-5" style={{ color: C.muted }}>
+            {websiteChanged ? "New source context" : "Refresh current context"}
           </p>
         </div>
-        <div className="rounded-lg bg-white p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-            Buyer to target
-          </p>
-          <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
-            {targetAudience}
-          </p>
-          <p className="mt-1 line-clamp-2 text-xs leading-5" style={{ color: C.muted }}>
-            Focus: {coreProblem}
-          </p>
-        </div>
-        <div className="rounded-lg bg-white p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-            Matching quality
-          </p>
-          <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
-            {queryCount} {queryCount === 1 ? "buyer phrase" : "buyer phrases"}
-          </p>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {guardrailCount > 0
-              ? `${guardrailCount} guardrails will filter weak matches.`
-              : "Add guardrails below to filter weak matches."}
+        <div className="min-w-0">
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+            Buyer and problem
+          </dt>
+          <dd className="mt-0.5 truncate font-medium" style={{ color: C.navy }}>
+            {buyer}
+          </dd>
+          <p className="mt-0.5 line-clamp-1 text-xs leading-5" style={{ color: C.muted }}>
+            {problem}
           </p>
         </div>
-      </div>
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+            Buyer language
+          </dt>
+          <dd className="mt-0.5 font-medium" style={{ color: C.navy }}>
+            {phraseCount} {phraseCount === 1 ? "phrase" : "phrases"}
+          </dd>
+          <p className="mt-0.5 text-xs leading-5" style={{ color: C.muted }}>
+            Used to find relevant conversations
+          </p>
+        </div>
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+            Quality filters
+          </dt>
+          <dd className="mt-0.5 font-medium" style={{ color: C.navy }}>
+            {guardrailCount} {guardrailCount === 1 ? "guardrail" : "guardrails"}
+          </dd>
+          <p className="mt-0.5 text-xs leading-5" style={{ color: C.muted }}>
+            {guardrailCount > 0 ? "Filtering weak matches" : "No filters added yet"}
+          </p>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -241,10 +240,11 @@ export function WorkspaceRefreshCenter({
   const [isDemandScanPending, startDemandScanTransition] = useTransition();
   const [demandScanResult, setDemandScanResult] =
     useState<ProspectActionResult | null>(null);
-  const crawl = crawlStatus(crawlJob);
-  const brief = briefStatus(serviceProfile);
+  const crawl = crawlState(crawlJob);
+  const brief = briefState(serviceProfile);
   const isAnyActionPending =
     isWebsitePending || isBriefPending || isDemandScanPending;
+  const actionResult = demandScanResult ?? result;
 
   const startDemandScan = () => {
     startDemandScanTransition(async () => {
@@ -260,17 +260,17 @@ export function WorkspaceRefreshCenter({
   };
 
   return (
-    <section aria-labelledby="workspace-refresh-title" className="space-y-4">
+    <section aria-labelledby="workspace-refresh-title" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
             Workspace controls
           </p>
-          <h1 id="workspace-refresh-title" className="mt-1 pfd text-2xl leading-none" style={{ color: C.navy }}>
+          <h2 id="workspace-refresh-title" className="mt-1 pfd text-2xl leading-none" style={{ color: C.navy }}>
             Refresh workspace
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.muted }}>
-            Choose one action at a time: refresh your source, update your brief, or scan for demand.
+          </h2>
+          <p className="mt-2 text-sm leading-6" style={{ color: C.muted }}>
+            Update the source, brief, or demand scan - one action at a time.
           </p>
         </div>
         <p className="text-xs" style={{ color: C.muted }}>
@@ -278,86 +278,130 @@ export function WorkspaceRefreshCenter({
         </p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <RefreshCard eyebrow="Website source" title={websiteDomain(websiteDraft) ?? "Website needed"} status={crawl.label} statusTone={crawl.tone} icon={Globe2}>
-          <label htmlFor="workspace-website-url" className="mt-4 block text-xs font-semibold" style={{ color: C.navy }}>
-            Crawl source
-          </label>
-          <input
-            id="workspace-website-url"
-            type="url"
-            inputMode="url"
-            autoComplete="url"
-            value={websiteDraft}
-            disabled={isAnyActionPending}
-            className="mt-2 h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-            style={{ borderColor: C.rule, color: C.navy }}
-            onChange={(event) => onWebsiteDraftChange(event.target.value)}
-          />
+      <div
+        className="grid overflow-hidden rounded-xl border bg-white divide-y divide-[#D9E4ED] xl:grid-cols-3 xl:divide-x xl:divide-y-0"
+        style={{ borderColor: C.rule }}
+      >
+        <ActionPane
+          label="Website source"
+          title={websiteDomain(websiteDraft) ?? "Website needed"}
+          status={crawl.label}
+          tone={crawl.tone}
+          icon={Globe2}
+        >
+          <div className="mt-3 flex gap-2">
+            <input
+              id="workspace-website-url"
+              aria-label="Website crawl source"
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              value={websiteDraft}
+              disabled={isAnyActionPending}
+              className="h-9 min-w-0 flex-1 rounded-md border bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              style={{ borderColor: C.rule, color: C.navy }}
+              onChange={(event) => onWebsiteDraftChange(event.target.value)}
+            />
+            <Button
+              type="button"
+              className="h-9 shrink-0"
+              disabled={isAnyActionPending || !websiteDraft.trim()}
+              onClick={onRecrawlWebsite}
+            >
+              {isWebsitePending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RotateCcw className="size-4" aria-hidden="true" />
+              )}
+              {isWebsitePending ? "Queueing..." : "Re-crawl"}
+            </Button>
+          </div>
           <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-            Crawls this website and rebuilds its derived brief. It does not start a separate brief refresh.
+            Refreshes the website source only.
           </p>
-          <Button type="button" className="mt-4 h-9 w-full" disabled={isAnyActionPending || !websiteDraft.trim()} onClick={onRecrawlWebsite}>
-            {isWebsitePending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
-            {isWebsitePending ? "Queueing re-crawl..." : websiteChanged ? "Replace & re-crawl" : "Re-crawl website"}
-          </Button>
-        </RefreshCard>
+        </ActionPane>
 
-        <RefreshCard
-          eyebrow="Matching brief"
-          title="Buyer, problem & signals"
+        <ActionPane
+          label="Matching brief"
+          title="Buyer, problem and signals"
           status={brief.label}
-          statusTone={brief.tone}
+          tone={brief.tone}
           icon={Target}
         >
-          <p className="mt-4 text-sm font-medium" style={{ color: C.navy }}>
-                {briefFields.target_audience.slice(0, 2).join(" · ") || "Add your target buyer"}
+          <p className="mt-3 truncate text-sm font-medium" style={{ color: C.navy }}>
+            {briefFields.target_audience.slice(0, 2).join(" / ") || "Add your target buyer"}
           </p>
-          <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-            Refreshes matching from the saved brief. It does not re-crawl the website.
+          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+            Applies saved brief changes without a website crawl.
           </p>
-          <Button type="button" variant="outline" className="mt-4 h-9 w-full" disabled={isAnyActionPending || !serviceProfile.hasProfile} onClick={onRefreshBrief}>
-            {isBriefPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
-            {isBriefPending ? "Refreshing brief..." : "Refresh brief"}
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 h-9"
+            disabled={isAnyActionPending || !serviceProfile.hasProfile}
+            onClick={onRefreshBrief}
+          >
+            {isBriefPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-4" aria-hidden="true" />
+            )}
+            {isBriefPending ? "Refreshing..." : "Refresh brief"}
           </Button>
-        </RefreshCard>
+        </ActionPane>
 
-        <RefreshCard eyebrow="Demand scan" title="Public conversations" status="Ready" statusTone="ready" icon={Radar}>
-          <p className="mt-4 text-sm font-medium" style={{ color: C.navy }}>
-            Scan using the active matching brief
+        <ActionPane
+          label="Demand scan"
+          title="Public conversations"
+          status="Ready"
+          tone="ready"
+          icon={Radar}
+        >
+          <p className="mt-3 text-sm font-medium" style={{ color: C.navy }}>
+            Search for buyer-demand signals
           </p>
-          <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-            Checks public conversations for the buyer, problem, and signals defined in your brief.
+          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+            Uses the active matching brief.
           </p>
-          <Button type="button" variant="outline" className="mt-4 h-9 w-full" disabled={isAnyActionPending} onClick={startDemandScan}>
-            {isDemandScanPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <FileSearch className="size-4" aria-hidden="true" />}
-            {isDemandScanPending ? "Starting scan..." : "Scan website demand"}
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 h-9"
+            disabled={isAnyActionPending}
+            onClick={startDemandScan}
+          >
+            {isDemandScanPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileSearch className="size-4" aria-hidden="true" />
+            )}
+            {isDemandScanPending ? "Starting..." : "Scan demand"}
           </Button>
-        </RefreshCard>
+        </ActionPane>
       </div>
 
-      <TargetingPlan
+      <TargetingSummary
         briefFields={briefFields}
         websiteDraft={websiteDraft}
         websiteChanged={websiteChanged}
       />
 
-      {result || demandScanResult ? (
+      {actionResult ? (
         <div
           className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5"
           style={{
-            borderColor: (demandScanResult ?? result)?.ok ? C.blueLight : C.red,
-            backgroundColor: (demandScanResult ?? result)?.ok ? C.bluePale : C.redPale,
-            color: (demandScanResult ?? result)?.ok ? C.navySoft : C.red,
+            borderColor: actionResult.ok ? C.blueLight : C.red,
+            backgroundColor: actionResult.ok ? C.bluePale : C.redPale,
+            color: actionResult.ok ? C.navySoft : C.red,
           }}
           role="status"
         >
-          {(demandScanResult ?? result)?.ok ? (
+          {actionResult.ok ? (
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           ) : (
             <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           )}
-          <span>{(demandScanResult ?? result)?.message}</span>
+          <span>{actionResult.message}</span>
         </div>
       ) : null}
     </section>

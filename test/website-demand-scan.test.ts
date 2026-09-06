@@ -70,14 +70,14 @@ test("website re-crawls and brief updates each start only their own job", () => 
     /body: JSON\.stringify\(\{ websiteUrl: normalizedWebsiteUrl \}\)/,
   );
   assert.match(profileSettingsSource, /WorkspaceRefreshCenter/);
-  assert.match(workspaceRefreshCenterSource, /Re-crawl website/);
+  assert.match(workspaceRefreshCenterSource, /Re-crawl/);
   assert.match(workspaceRefreshCenterSource, /Refresh brief/);
-  assert.match(workspaceRefreshCenterSource, /Scan website demand/);
+  assert.match(workspaceRefreshCenterSource, /Scan demand/);
   assert.match(
     workspaceRefreshCenterSource,
-    /What your next update will improve/,
+    /Next update will target/,
   );
-  assert.match(workspaceRefreshCenterSource, /does not re-crawl the website/);
+  assert.match(workspaceRefreshCenterSource, /without a website crawl/);
   assert.doesNotMatch(profileSettingsSource, /Replace & analyze|Analyze again/);
   assert.match(
     workspaceRouteSource,
