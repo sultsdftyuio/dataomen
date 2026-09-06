@@ -293,9 +293,6 @@ export function ProspectLeadDesk({
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
-  const isMatchingBriefApproved =
-    serviceProfile.hasProfile &&
-    serviceProfile.status?.trim().toLowerCase().replace(/\s+/g, "_") === "approved";
   const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
   const evidence = selectedLead
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
@@ -347,7 +344,7 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead discovery controls"
-        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.35fr)_minmax(140px,.58fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_auto] xl:items-center"
+        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.35fr)_minmax(140px,.58fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_auto_auto] xl:items-center"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
         <label className="relative block">
@@ -388,32 +385,18 @@ export function ProspectLeadDesk({
           <option value="confidence">Confidence</option>
         </LeadControlSelect>
 
-        {isMatchingBriefApproved ? (
-          <Button
-            type="button"
-            onClick={checkNewLeads}
-            disabled={isDiscoveryPending}
-            className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
-          >
-            <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
-            {isDiscoveryPending ? "Starting scan…" : "Scan website demand"}
-          </Button>
-        ) : (
-          <Button asChild className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]">
-            <Link href="/dashboard/brief">
-              <Sparkles className="size-4" aria-hidden="true" />
-              Review matching brief
-            </Link>
-          </Button>
-        )}
-        {!isMatchingBriefApproved ? (
-          <p className="text-xs leading-5 xl:col-span-full" style={{ color: C.navySoft }}>
-            Approve your matching brief before scanning website demand.{" "}
-            <Link href="/dashboard/brief" className="font-semibold underline underline-offset-2" style={{ color: C.blue }}>
-              Open matching brief
-            </Link>
-          </p>
-        ) : null}
+        <Button asChild variant="outline" className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
+          <Link href="/dashboard/brief">Update website</Link>
+        </Button>
+        <Button
+          type="button"
+          onClick={checkNewLeads}
+          disabled={isDiscoveryPending}
+          className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
+        >
+          <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
+          {isDiscoveryPending ? "Starting scan…" : "Scan website demand"}
+        </Button>
         {discoveryMessage ? (
           <p className="text-xs leading-5 xl:col-span-full" role="alert" style={{ color: C.red }}>
             {discoveryMessage}

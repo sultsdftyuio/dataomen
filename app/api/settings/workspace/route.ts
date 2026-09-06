@@ -416,20 +416,18 @@ async function handleWorkspaceUpdateWithCrawler(request: Request) {
 
   if (!triggerResponse) return response;
 
-  const triggerResults = await Promise.all([
-    triggerRequest
-      ? postCrawlTrigger(triggerResponse.tenantId, triggerRequest.websiteUrl)
-      : null,
-    triggerResponse.serviceProfileUpdated
-      ? postEmbeddingTrigger(
+  const triggerResult = triggerRequest
+    ? await postCrawlTrigger(triggerResponse.tenantId, triggerRequest.websiteUrl)
+    : triggerResponse.serviceProfileUpdated
+      ? await postEmbeddingTrigger(
           triggerResponse.tenantId,
           triggerResponse.serviceProfileId,
         )
-      : null,
-  ]);
-  const failures = triggerResults.flatMap((result) =>
-    result && !result.accepted && result.reason ? [result.reason] : [],
-  );
+      : null;
+  const failures =
+    triggerResult && !triggerResult.accepted && triggerResult.reason
+      ? [triggerResult.reason]
+      : [];
 
   if (failures.length > 0) {
     return savedButScanNotStartedResponse(failures);

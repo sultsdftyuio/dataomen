@@ -29,6 +29,8 @@ type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type EmbeddingTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type BuyerLanguageResearchTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
+type CrawlerTriggerSource = "dashboard_onboarding" | "dashboard_demand_scan";
+type EmbeddingTriggerSource = "onboarding_profile_approval" | "dashboard_demand_scan";
 
 type CrawlerTriggerResponse = {
   pass1_status?: "completed" | "skipped" | "failed";
@@ -438,6 +440,7 @@ async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
 async function postCrawlerTrigger(
   context: CrawlerTriggerContext,
   websiteUrl: string,
+  source: CrawlerTriggerSource = "dashboard_onboarding",
 ): Promise<ProspectActionResult> {
   const endpoint = crawlerTriggerEndpoint();
   if (!endpoint) {
@@ -476,7 +479,7 @@ async function postCrawlerTrigger(
         tenant_id: context.tenantId,
         website_url: websiteUrl,
         requested_by: context.userId,
-        source: "dashboard_onboarding",
+        source,
       }),
     });
 
@@ -539,6 +542,7 @@ async function postCrawlerTrigger(
 async function postEmbeddingTrigger(
   context: EmbeddingTriggerContext,
   serviceProfileId: string | null,
+  source: EmbeddingTriggerSource = "onboarding_profile_approval",
 ): Promise<ProspectActionResult> {
   const endpoints = embeddingTriggerEndpoints();
   if (endpoints.length === 0) {
@@ -580,7 +584,7 @@ async function postEmbeddingTrigger(
           tenant_id: context.tenantId,
           service_profile_id: serviceProfileId,
           requested_by: context.userId,
-          source: "onboarding_profile_approval",
+          source,
         }),
       });
 
@@ -1050,10 +1054,9 @@ export async function retryServiceProfileEmbedding(
 }
 
 /**
- * Re-runs public-demand discovery from the workspace's current matching
- * brief. A demand scan does not need to re-crawl an unchanged website; the
- * embedding worker enqueues the public-ingestion job after confirming the
- * current profile embedding.
+ * Starts public-demand discovery from the workspace's current profile. If the
+ * profile does not exist yet, it starts website preparation; the crawl worker
+ * continues with embedding and public ingestion after extraction.
  */
 export async function startWebsiteDemandScan(): Promise<ProspectActionResult> {
   const context = await requireProTenant();
@@ -1069,9 +1072,25 @@ export async function startWebsiteDemandScan(): Promise<ProspectActionResult> {
     websiteUrl,
   );
 
-  if (!serviceProfile.id || !isServiceProfileApproved(serviceProfile)) {
-    return actionError(
-      "Create and approve a matching brief before scanning website demand.",
+  if (!websiteUrl) {
+    return actionError("Add a website before scanning website demand.");
+  }
+
+  if (!serviceProfile.id) {
+    const result = await postCrawlerTrigger(
+      {
+        tenantId: context.tenantId,
+        userId: context.userId,
+      },
+      websiteUrl,
+      "dashboard_demand_scan",
+    );
+    if (!result.ok) return result;
+
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/discovery");
+    return actionOk(
+      "Website scan queued. We are preparing your matching brief, then checking public conversations.",
     );
   }
 
@@ -1081,6 +1100,7 @@ export async function startWebsiteDemandScan(): Promise<ProspectActionResult> {
       userId: context.userId,
     },
     serviceProfile.id,
+    "dashboard_demand_scan",
   );
   if (!result.ok) return result;
 

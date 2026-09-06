@@ -563,7 +563,7 @@ export function ServiceProfileSettings({
             ? {
                 ok: true,
                 message:
-                  "Website saved. A fresh crawl is queued to refresh your matching brief.",
+                  "Website re-crawl queued. It will rebuild your matching brief.",
               }
             : result,
         );
@@ -754,7 +754,11 @@ export function ServiceProfileSettings({
                     </div>
                     <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isWebsitePending} onClick={refreshWebsiteContext}>
                       {isWebsitePending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
-                      {isWebsitePending ? "Queueing..." : "Update & re-crawl"}
+                      {isWebsitePending
+                        ? "Queueing re-crawl..."
+                        : websiteChanged
+                          ? "Replace & re-crawl"
+                          : "Re-crawl website"}
                     </Button>
                   </div>
                 </div>
@@ -769,13 +773,13 @@ export function ServiceProfileSettings({
             <ResultText result={profileResult} />
             <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
               {changedFieldCount > 0
-                ? `${changedFieldCount} ${changedFieldCount === 1 ? "change" : "changes"} ready to refresh.`
-                : "Make changes when you want the next scan to recognise a different signal."}
+                ? `${changedFieldCount} ${changedFieldCount === 1 ? "change" : "changes"} ready to update matching.`
+                : "Save brief changes to update matching without re-crawling the website."}
             </p>
           </div>
           <Button type="button" disabled={isPending} className="h-9 shrink-0" onClick={() => persistProfile("save")}>
             {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
-            {isPending ? "Saving..." : "Save & refresh"}
+            {isPending ? "Saving..." : "Save brief"}
           </Button>
         </div>
       </div>
@@ -856,14 +860,18 @@ export function ServiceProfileSettings({
                 ) : (
                   <RotateCcw className="size-4" aria-hidden="true" />
                 )}
-                {isWebsitePending ? "Starting scan..." : websiteChanged ? "Replace & analyze" : "Analyze again"}
+                {isWebsitePending
+                  ? "Queueing re-crawl..."
+                  : websiteChanged
+                    ? "Replace & re-crawl"
+                    : "Re-crawl website"}
               </Button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" style={{ color: C.muted }}>
               {draftedWebsiteDomain ? (
                 <span className="inline-flex items-center gap-1.5" style={{ color: C.green }}>
                   <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                  Ready to analyze {draftedWebsiteDomain}
+                  Ready to re-crawl {draftedWebsiteDomain}
                 </span>
               ) : (
                 <span>Paste a domain or full URL. We add https automatically.</span>
@@ -878,7 +886,7 @@ export function ServiceProfileSettings({
               style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.amber }}
             >
               <span className="font-semibold">You are replacing the discovery source.</span>{" "}
-              We will create a fresh profile for this website and keep its results separate from the current one.
+              We will re-crawl this website and create a fresh matching brief for it.
             </div>
           ) : null}
 
@@ -974,8 +982,7 @@ export function ServiceProfileSettings({
         <div className="min-w-0" aria-live="polite">
           <ResultText result={profileResult} />
           <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            Saving updates the workspace profile and regenerates matching
-            embeddings in the background.
+            Saving updates the matching brief without re-crawling the website.
           </p>
         </div>
 
@@ -990,7 +997,7 @@ export function ServiceProfileSettings({
           ) : (
             <Save className="size-4" aria-hidden="true" />
           )}
-          {isPending ? "Saving..." : "Save & regenerate"}
+          {isPending ? "Saving..." : "Save brief"}
         </Button>
       </div>
     </div>
