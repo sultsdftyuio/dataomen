@@ -9,6 +9,7 @@ import os
 import re
 import json
 import hashlib
+from collections import Counter
 from uuid import uuid4
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -36,6 +37,12 @@ from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.x_connector import TwitterSourcePost
 from api.services.matching import PostEmbedding, find_candidate_matches
+from api.services.social.comparison import (
+    comparison_tokens,
+    flexible_token_overlap_details,
+    post_comparison_text,
+    truncate_comparison_text,
+)
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
@@ -354,21 +361,32 @@ _BUYER_REQUEST_CONTEXT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _BUYER_FIRST_PERSON_PATTERN = re.compile(r"\b(?:i|we|my|our|us)\b", re.IGNORECASE)
+_INDIRECT_INTENT_PATTERN = re.compile(
+    r"\b(?:how\s+(?:do|should|can)\s+(?:i|we)|what(?:'s|\s+is)\s+(?:the\s+)?best|"
+    r"which\s+(?:tool|approach|architecture|stack)|best\s+practi(?:ce|ces)|"
+    r"architect(?:ure|ural)|design(?:ing)?\s+(?:a|an|our)|scale(?:able|\s+this)?|"
+    r"integrat(?:e|ing|ion)|migrat(?:e|ing|ion))\b",
+    re.IGNORECASE,
+)
+_TOOL_FRICTION_PATTERN = re.compile(
+    r"\b(?:frustrat(?:ed|ing|ion)|workaround|bottleneck|spreadsheet(?:s)?|"
+    r"copy(?:ing)?\s*(?:and|&)\s*past(?:e|ing)|re-?enter(?:ing)?|"
+    r"(?:tool|software|platform|stack)\s+(?:is\s+)?(?:broken|slow|expensive|unreliable))\b",
+    re.IGNORECASE,
+)
 _PUBLISHER_CONTEXT_PATTERN = re.compile(
     r"\b(?:show\s+hn|launch(?:ed|ing)?|release(?:d|s|\s+notes)?|changelog|"
     r"tutorial|guide|case\s+study|blog(?:\s+post)?|content\s+strategy|"
     r"positioning|product\s+critique)\b",
     re.IGNORECASE,
 )
+_DISCOVERY_QUERY_COMPARISON_MAX_CHARS = 1_000
+_DISCOVERY_POST_COMPARISON_MAX_CHARS = 32_000
 
 
 
 def _discovery_query_tokens(value: str) -> set[str]:
-    return {
-        token
-        for token in re.findall(r"[a-z0-9][a-z0-9_-]*", value.casefold())
-        if len(token) > 1 and token not in _DISCOVERY_QUERY_STOP_WORDS
-    }
+    return comparison_tokens(value, stop_words=tuple(_DISCOVERY_QUERY_STOP_WORDS))
 
 
 def _discovery_query_overlap_fraction() -> float:
@@ -380,12 +398,37 @@ def _discovery_query_overlap_fraction() -> float:
     )
 
 
+@dataclass(frozen=True)
+class DiscoveryAdmission:
+    """Explain a recall-stage decision without changing the source contract."""
+
+    accepted: bool
+    reasons: tuple[str, ...] = ()
+    lexical_overlap: int = 0
+    required_overlap: int = 0
+
+
 def _source_post_is_plausible_for_discovery_query(
     post: Any,
     query: str,
     *,
     query_type: str | None = None,
 ) -> bool:
+    """Compatibility boolean projection of the explainable admission result."""
+
+    return _source_post_discovery_admission(
+        post,
+        query,
+        query_type=query_type,
+    ).accepted
+
+
+def _source_post_discovery_admission(
+    post: Any,
+    query: str,
+    *,
+    query_type: str | None = None,
+) -> DiscoveryAdmission:
     """Identify a credible buyer-language signal instead of a loose API hit.
 
     This remains a deliberately cheap guard, never a lead decision: the
@@ -395,48 +438,81 @@ def _source_post_is_plausible_for_discovery_query(
     critique.  That prevents broad search APIs from suppressing the one
     permitted X fallback with unrelated results.
     """
-    phrase = _normalize_space(query).casefold()
-    title_value = str(getattr(post, "title", "") or "")
-    # Connector records expose ``body`` while the global-corpus matching path
-    # deliberately converts database rows to ``SocialPost``, whose equivalent
-    # field is named ``text``. Keep the relevance guard shape-compatible with
-    # both paths so a cached post cannot crash a worker before verification.
-    body_value = str(
-        getattr(post, "body", None)
-        or getattr(post, "text", "")
-        or ""
-    )
-    text_value = _normalize_space(
-        " ".join(part for part in (title_value, body_value) if part)
+    phrase = truncate_comparison_text(
+        _normalize_space(query),
+        _DISCOVERY_QUERY_COMPARISON_MAX_CHARS,
+    ).casefold()
+    # Connector records do not agree on body/thread fields. This helper keeps
+    # the body eligible when optional title, metadata, and author fields are
+    # missing or malformed.
+    text_value = truncate_comparison_text(
+        post_comparison_text(post),
+        _DISCOVERY_POST_COMPARISON_MAX_CHARS,
     ).casefold()
     if not phrase or not text_value:
-        return False
+        return DiscoveryAdmission(False, ("missing_query_or_post_text",))
 
     query_tokens = _discovery_query_tokens(phrase)
     if not query_tokens:
-        return False
+        return DiscoveryAdmission(False, ("empty_query_vocabulary",))
     text_tokens = _discovery_query_tokens(text_value)
-    overlap = len(query_tokens.intersection(text_tokens))
+    overlap_details = flexible_token_overlap_details(query_tokens, text_tokens)
+    overlap = overlap_details.count
+    has_request_context = bool(_BUYER_REQUEST_CONTEXT_PATTERN.search(text_value))
+    has_first_person_context = bool(_BUYER_FIRST_PERSON_PATTERN.search(text_value))
+    has_company_buying_trigger = has_buying_trigger(post)
+    has_indirect_intent = bool(_INDIRECT_INTENT_PATTERN.search(text_value))
+    has_tool_friction = bool(_TOOL_FRICTION_PATTERN.search(text_value))
     # Search providers regularly return buyer-authored paraphrases rather than
-    # a copy of the query.  This is a recall guard, not the qualification
-    # decision, so use a modest, configurable overlap and leave the embedding
-    # similarity plus LLM verifier as the precision gates.
+    # a copy of the query. If lexical bridges cannot connect a clear indirect
+    # signal to the query, still pass it to embeddings: that model is the
+    # semantic comparison, while this is only a bounded recall guard.
     required_overlap = max(
         1,
         math.ceil(len(query_tokens) * _discovery_query_overlap_fraction()),
     )
-    if phrase not in text_value and overlap < required_overlap:
-        return False
+    has_flexible_buyer_signal = (
+        has_company_buying_trigger
+        or has_indirect_intent
+        or has_tool_friction
+    )
+    if (
+        phrase not in text_value
+        and overlap < required_overlap
+        and not has_flexible_buyer_signal
+    ):
+        return DiscoveryAdmission(
+            False,
+            ("insufficient_query_context",),
+            overlap,
+            required_overlap,
+        )
 
-    has_request_context = bool(_BUYER_REQUEST_CONTEXT_PATTERN.search(text_value))
-    has_first_person_context = bool(_BUYER_FIRST_PERSON_PATTERN.search(text_value))
-    has_company_buying_trigger = has_buying_trigger(post)
     if (
         _PUBLISHER_CONTEXT_PATTERN.search(text_value)
         and not has_first_person_context
         and not has_company_buying_trigger
     ):
-        return False
+        return DiscoveryAdmission(
+            False,
+            ("publisher_context_without_buyer_signal",),
+            overlap,
+            required_overlap,
+        )
+
+    reasons = list(overlap_details.reasons)
+    if phrase in text_value:
+        reasons.append("exact_query_phrase")
+    if has_request_context:
+        reasons.append("request_context")
+    if has_first_person_context:
+        reasons.append("first_person_context")
+    if has_company_buying_trigger:
+        reasons.append("company_buying_trigger")
+    if has_indirect_intent:
+        reasons.append("indirect_intent")
+    if has_tool_friction:
+        reasons.append("existing_tool_friction")
 
     # A recommendation or category search should ideally look like someone
     # evaluating a solution.  We keep the old stricter rule as an optional
@@ -450,21 +526,41 @@ def _source_post_is_plausible_for_discovery_query(
             "false",
         ).strip().casefold() in {"1", "true", "yes", "on"}
         if not strict_buyer_context:
-            return (
+            accepted = (
                 has_request_context
                 or has_first_person_context
                 or has_company_buying_trigger
+                or has_indirect_intent
+                or has_tool_friction
             )
-        return (
+        else:
+            accepted = (
+                has_request_context
+                or has_first_person_context
+                or has_company_buying_trigger
+                or has_indirect_intent
+                or has_tool_friction
+            ) and (
+                has_first_person_context
+                or bool(re.search(r"\b(?:what|which|anyone|recommend)\b", text_value))
+                or has_company_buying_trigger
+                or has_indirect_intent
+                or has_tool_friction
+            )
+    else:
+        accepted = (
             has_request_context
             or has_first_person_context
             or has_company_buying_trigger
-        ) and (
-            has_first_person_context
-            or bool(re.search(r"\b(?:what|which|anyone|recommend)\b", text_value))
-            or has_company_buying_trigger
+            or has_indirect_intent
+            or has_tool_friction
         )
-    return has_request_context or has_first_person_context or has_company_buying_trigger
+    return DiscoveryAdmission(
+        accepted,
+        tuple(dict.fromkeys(reasons if accepted else ("missing_buyer_context",))),
+        overlap,
+        required_overlap,
+    )
 
 
 
@@ -547,15 +643,20 @@ def ingest_hn_posts(
         )
         return result
 
-    plausible_posts = [
-        post
-        for post in posts
-        if _source_post_is_plausible_for_discovery_query(
+    admission_reasons_by_ref: dict[tuple[str, str], tuple[str, ...]] = {}
+    plausible_posts: list[SourcePost] = []
+    for post in posts:
+        admission = _source_post_discovery_admission(
             post,
             query,
             query_type=query_type,
         )
-    ]
+        if not admission.accepted:
+            continue
+        plausible_posts.append(post)
+        admission_reasons_by_ref[(post.source.casefold(), post.source_post_id)] = (
+            admission.reasons
+        )
     # Keep the global corpus useful for future tenant-scoped rematches. Raw
     # provider matches that fail this inexpensive buyer-evidence guard would
     # otherwise be re-embedded and re-verified for every newly activated
@@ -576,15 +677,25 @@ def ingest_hn_posts(
         inserted_source_post_ids=inserted_source_post_ids,
         matchable_source_post_ids=_matchable_source_post_ids(plausible_posts),
         plausible_hits=len(plausible_posts),
-        matchable_source_post_refs=prioritized_source_post_refs(plausible_posts),
+        matchable_source_post_refs=prioritized_source_post_refs(
+            plausible_posts,
+            admission_reasons_by_ref=admission_reasons_by_ref,
+        ),
     )
     logger.info(
-        "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",
+        "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s admission_signals=%s",
         result.query,
         query_type,
         result.hits_found,
         result.plausible_hits,
         result.inserted_count,
+        dict(
+            Counter(
+                reason
+                for reasons in admission_reasons_by_ref.values()
+                for reason in reasons
+            )
+        ),
     )
     return result
 

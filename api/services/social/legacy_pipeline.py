@@ -19,7 +19,7 @@ from urllib.parse import quote
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from api.services.cost_controls import TenantQuotaGuard, env_int
+from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
 from api.services.client_lifecycle import managed_network_client
 from api.services.embeddings import (
     EmbeddingService,
@@ -36,13 +36,19 @@ from api.services.embeddings import (
 from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.x_connector import TwitterSourcePost
-from api.services.matching import PostEmbedding, find_candidate_matches
+from api.services.matching import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    PostEmbedding,
+    find_candidate_matches,
+)
+from api.services.social.feedback_calibration import load_feedback_calibration
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
     VERIFIER_POLICY_VERSION,
     VerificationResult,
     VerifierService,
+    verify_candidate_safely,
 )
 
 
@@ -186,6 +192,7 @@ def run_initial_public_ingestion(
                 "source_post_id": source_post_id,
                 "external_key": post.dedupe_key,
                 "external_id": post.external_id,
+                "author": post.author,
                 "tenant_id": tenant_id,
                 "service_profile_id": resolved_profile_id,
             }
@@ -204,11 +211,25 @@ def run_initial_public_ingestion(
 
     embedding_service.close()
 
+    feedback_calibration = load_feedback_calibration(
+        tenant_id,
+        resolved_profile_id,
+        base_threshold=env_float(
+            "ARCLI_MATCHING_SIMILARITY_THRESHOLD",
+            DEFAULT_SIMILARITY_THRESHOLD,
+        ),
+    )
+    candidate_matching_options: dict[str, float] = {}
+    if feedback_calibration is not None:
+        candidate_matching_options["threshold"] = feedback_calibration.threshold
+
     candidates = find_candidate_matches(
         profile_embedding,
         post_embeddings,
+        profile=service_profile,
         tenant_id=tenant_id,
         service_profile_id=resolved_profile_id,
+        **candidate_matching_options,
     )
 
     verifier = VerifierService()
@@ -248,7 +269,8 @@ def run_initial_public_ingestion(
                 verifier_model,
             )
         else:
-            verification = verifier.verify(
+            verification = verify_candidate_safely(
+                verifier,
                 CandidatePost(
                     post_id=candidate.post_id,
                     source=candidate.source,

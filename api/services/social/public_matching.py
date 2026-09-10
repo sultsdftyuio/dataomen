@@ -36,13 +36,19 @@ from api.services.embeddings import (
 from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.x_connector import TwitterSourcePost
-from api.services.matching import PostEmbedding, find_candidate_matches
+from api.services.matching import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    PostEmbedding,
+    find_candidate_matches,
+)
+from api.services.social.feedback_calibration import load_feedback_calibration
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
     VERIFIER_POLICY_VERSION,
     VerificationResult,
     VerifierService,
+    verify_candidate_safely,
 )
 
 _CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION = "website-scoped-v2"
@@ -413,6 +419,7 @@ def rematch_existing_public_source_posts_for_profile(
                             "external_id": post.external_id,
                             "external_key": post.dedupe_key,
                             "source": post.source,
+                            "author": post.author,
                         }
                     ),
                 )
@@ -421,12 +428,26 @@ def rematch_existing_public_source_posts_for_profile(
     finally:
         embedding_service.close()
 
+    feedback_calibration = load_feedback_calibration(
+        normalized_tenant_id,
+        normalized_profile_id,
+        base_threshold=env_float(
+            "ARCLI_MATCHING_SIMILARITY_THRESHOLD",
+            DEFAULT_SIMILARITY_THRESHOLD,
+        ),
+    )
+    candidate_matching_options: dict[str, float] = {}
+    if feedback_calibration is not None:
+        candidate_matching_options["threshold"] = feedback_calibration.threshold
+
     candidates = find_candidate_matches(
         profile_embedding,
         post_embeddings,
+        profile=service_profile,
         tenant_id=normalized_tenant_id,
         service_profile_id=normalized_profile_id,
         max_candidates=_initial_public_global_rematch_max_candidates(),
+        **candidate_matching_options,
     )
     if not candidates:
         result = {
@@ -486,7 +507,8 @@ def rematch_existing_public_source_posts_for_profile(
                     columns=lead_match_columns,
                 )
             if not verification:
-                verification = verifier.verify(
+                verification = verify_candidate_safely(
+                    verifier,
                     CandidatePost(
                         post_id=candidate.post_id,
                         source=candidate.source,
@@ -737,15 +759,30 @@ def process_public_source_post_embedding(
                             "external_id": post.external_id,
                             "external_key": post.dedupe_key,
                             "source": post.source,
+                            "author": post.author,
                         }
                     ),
                 )
+                feedback_calibration = load_feedback_calibration(
+                    tenant_id,
+                    service_profile_id,
+                    base_threshold=env_float(
+                        "ARCLI_MATCHING_SIMILARITY_THRESHOLD",
+                        DEFAULT_SIMILARITY_THRESHOLD,
+                    ),
+                )
+                candidate_matching_options: dict[str, float] = {}
+                if feedback_calibration is not None:
+                    candidate_matching_options["threshold"] = feedback_calibration.threshold
+
                 candidates = find_candidate_matches(
                     profile_embedding,
                     [post_embedding],
+                    profile=service_profile,
                     tenant_id=tenant_id,
                     service_profile_id=service_profile_id,
                     max_candidates=1,
+                    **candidate_matching_options,
                 )
                 if not candidates:
                     continue
@@ -775,7 +812,8 @@ def process_public_source_post_embedding(
                     )
 
                 if not verification:
-                    verification = verifier.verify(
+                    verification = verify_candidate_safely(
+                        verifier,
                         CandidatePost(
                             post_id=candidate.post_id,
                             source=candidate.source,

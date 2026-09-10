@@ -18,7 +18,7 @@ from typing import Any, Iterable
 
 from sqlalchemy import text
 
-from api.services.cost_controls import TenantQuotaGuard, env_int
+from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
 from api.services.embeddings import (
     EmbeddingService,
     _as_dict,
@@ -27,7 +27,12 @@ from api.services.embeddings import (
     _service_profile_columns,
     normalize_embedding_text,
 )
-from api.services.matching import PostEmbedding, find_candidate_matches
+from api.services.matching import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    PostEmbedding,
+    find_candidate_matches,
+)
+from api.services.social.feedback_calibration import load_feedback_calibration
 from api.services.social.legacy_fetch import _primitive_metadata
 from api.services.social.legacy_storage import _lead_match_status
 from api.services.social.models import (
@@ -49,6 +54,7 @@ from api.services.verifier import (
     ServiceProfile,
     VerificationResult,
     VerifierService,
+    verify_candidate_safely,
 )
 
 logger = logging.getLogger(__name__)
@@ -570,6 +576,18 @@ def _match_post_to_contexts(
         for context in contexts:
             if not _source_is_selected(post, context):
                 continue
+            feedback_calibration = load_feedback_calibration(
+                context.tenant_id,
+                context.service_profile_id,
+                base_threshold=env_float(
+                    "ARCLI_MATCHING_SIMILARITY_THRESHOLD",
+                    DEFAULT_SIMILARITY_THRESHOLD,
+                ),
+            )
+            candidate_matching_options: dict[str, float] = {}
+            if feedback_calibration is not None:
+                candidate_matching_options["threshold"] = feedback_calibration.threshold
+
             candidate = find_candidate_matches(
                 context.embedding,
                 [
@@ -585,14 +603,17 @@ def _match_post_to_contexts(
                                 "external_id": post.external_id,
                                 "external_key": post.dedupe_key,
                                 "source": post.source,
+                                "author": post.author,
                                 "watchlist_id": context.id,
                             }
                         ),
                     )
                 ],
+                profile=context.profile,
                 tenant_id=context.tenant_id,
                 service_profile_id=context.service_profile_id,
                 max_candidates=1,
+                **candidate_matching_options,
             )
             if not candidate:
                 continue
@@ -609,7 +630,8 @@ def _match_post_to_contexts(
                 )
             if not verification:
                 match = candidate[0]
-                verification = verifier.verify(
+                verification = verify_candidate_safely(
+                    verifier,
                     CandidatePost(
                         post_id=match.post_id,
                         source=match.source,

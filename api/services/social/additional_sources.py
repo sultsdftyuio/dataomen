@@ -9,6 +9,7 @@ import os
 import re
 import json
 import hashlib
+from collections import Counter
 from uuid import uuid4
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -342,6 +343,7 @@ def ingest_additional_public_source_posts(
             max_pages=_additional_public_source_max_pages(),
         )
     )
+    admission_reasons_by_ref: dict[tuple[str, str], tuple[str, ...]] = {}
     if not posts:
         result = AdditionalPublicSourceIngestionResult(
             source=normalized_source,
@@ -354,15 +356,19 @@ def ingest_additional_public_source_posts(
             plausible_hits=0,
         )
     else:
-        plausible_posts = [
-            post
-            for post in posts
-            if _source_post_is_plausible_for_discovery_query(
+        plausible_posts: list[PublicSourcePost] = []
+        for post in posts:
+            admission = _source_post_discovery_admission(
                 post,
                 normalized_query,
                 query_type=query_type,
             )
-        ]
+            if not admission.accepted:
+                continue
+            plausible_posts.append(post)
+            admission_reasons_by_ref[(post.source.casefold(), post.source_post_id)] = (
+                admission.reasons
+            )
         inserted_source_post_ids = (
             _persist_new_public_source_posts(
                 plausible_posts,
@@ -378,21 +384,31 @@ def ingest_additional_public_source_posts(
             hits_found=len(posts),
             inserted_count=len(inserted_source_post_ids),
             inserted_source_post_ids=inserted_source_post_ids,
-            matchable_source_post_refs=prioritized_source_post_refs(plausible_posts),
+            matchable_source_post_refs=prioritized_source_post_refs(
+                plausible_posts,
+                admission_reasons_by_ref=admission_reasons_by_ref,
+            ),
             plausible_hits=len(plausible_posts),
         )
     logger.info(
-        "additional_public_source_ingestion_completed source=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",
+        "additional_public_source_ingestion_completed source=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s admission_signals=%s",
         result.source,
         query_type,
         result.hits_found,
         result.plausible_hits,
         result.inserted_count,
+        dict(
+            Counter(
+                reason
+                for reasons in admission_reasons_by_ref.values()
+                for reason in reasons
+            )
+        ),
     )
     return result
 
 # Cross-module helper imports for static analysis and direct module use.
-from .activation import _source_post_is_plausible_for_discovery_query
+from .activation import _source_post_discovery_admission
 from .lead_signals import prioritized_source_post_refs
 from .models import (
     ADDITIONAL_PUBLIC_SOURCE_NAMES,

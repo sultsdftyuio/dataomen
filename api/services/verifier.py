@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -23,6 +24,7 @@ from api.services.matching import (
     DEFAULT_SIMILARITY_THRESHOLD,
     REJECTION_INSUFFICIENT_SIMILARITY,
 )
+from api.services.social.comparison import truncate_comparison_text
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,10 @@ VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 # Persist this alongside a verdict. Bump it only when verifier instructions
 # materially change lead eligibility, so cached decisions cannot survive a
 # policy change while preserving normal tenant-scoped cache reuse.
-VERIFIER_POLICY_VERSION = "buyer_outcome_v6_leads_and_potential_buyers"
+VERIFIER_POLICY_VERSION = "buyer_outcome_v7_flexible_indirect_intent"
+DEFAULT_VERIFIER_MAX_POST_CHARS = 12_000
+DEFAULT_VERIFIER_MAX_PROFILE_FIELD_CHARS = 750
+DEFAULT_VERIFIER_MAX_PROFILE_LIST_ITEMS = 12
 # Keep the verifier gate aligned with the candidate prefilter by default. The
 # verifier itself is the precision gate; a higher hidden default would make
 # the recall-oriented matching threshold ineffective.
@@ -181,6 +186,9 @@ class VerifierService(OpenAIClientOwner):
         "manual outreach can be a match even without words such as prospect, lead, "
         "account matching, or buyer intent. Calibrate confidence so 0.30-0.54 represents a plausible "
         "Potential buyer and 0.55+ represents a clear main lead ready for human review. "
+        "Treat a complaint about an existing tool, an architecture or best-practice "
+        "question, and frustration with a manual workflow as potentially commercial "
+        "signals when they describe an outcome this service can plausibly improve. "
         "Reject only no plausible fit, clear conflicting audiences or use cases, spam, "
         "job postings, announcements, generic publisher content, or generic advice "
         "with no buyer situation. Negative keywords and excluded audiences are context "
@@ -503,6 +511,8 @@ class VerifierService(OpenAIClientOwner):
         candidate_post: CandidatePost,
         service_profile: ServiceProfile,
     ) -> str:
+        profile_payload = self._bounded_profile_payload(service_profile)
+        candidate_payload = self._bounded_candidate_payload(candidate_post)
         return (
             "Use a practical lead-quality standard. The similarity score is "
             "only a cheap prefilter and must not be treated as proof of fit.\n\n"
@@ -513,12 +523,105 @@ class VerifierService(OpenAIClientOwner):
             "weighted relevance signals, not a checklist. A candidate may be an adjacent "
             "buyer if it shows one credible problem, investigation, workflow frustration, "
             "or request the service could plausibly address. Prefer a cautious `weak_match` "
-            "when the post has one real, relevant buyer situation. Do not require an exact target "
+            "for a post with one real, relevant buyer situation. "
+            "Treat complaints about current tools, architecture or best-practice questions, "
+            "and manual-workflow frustration as credible indirect intent when they connect to "
+            "an outcome in the matching brief. "
+            "Do not require an exact target "
             "audience, every profile field, company size, budget, or explicit intent to buy; "
             "reserve rejection for no plausible fit, clear bad-fit content, spam, or generic "
             "educational content without a buyer situation.\n\n"
             "Service Profile JSON:\n"
-            f"{service_profile.model_dump_json(indent=2)}\n\n"
+            f"{json.dumps(profile_payload, ensure_ascii=False, indent=2)}\n\n"
             "Candidate Post JSON:\n"
-            f"{candidate_post.model_dump_json(indent=2)}"
+            f"{json.dumps(candidate_payload, ensure_ascii=False, indent=2)}"
+        )
+
+    @staticmethod
+    def _bounded_prompt_limit(name: str, default: int, maximum: int) -> int:
+        return max(1, min(maximum, env_int(name, default)))
+
+    @classmethod
+    def _bounded_profile_payload(cls, service_profile: ServiceProfile) -> dict[str, Any]:
+        field_limit = cls._bounded_prompt_limit(
+            "ARCLI_VERIFIER_MAX_PROFILE_FIELD_CHARS",
+            DEFAULT_VERIFIER_MAX_PROFILE_FIELD_CHARS,
+            4_000,
+        )
+        list_limit = cls._bounded_prompt_limit(
+            "ARCLI_VERIFIER_MAX_PROFILE_LIST_ITEMS",
+            DEFAULT_VERIFIER_MAX_PROFILE_LIST_ITEMS,
+            50,
+        )
+        payload = service_profile.model_dump()
+        for key, value in payload.items():
+            if isinstance(value, str):
+                payload[key] = truncate_comparison_text(value, field_limit)
+            elif isinstance(value, list):
+                payload[key] = [
+                    truncate_comparison_text(item, field_limit)
+                    for item in value[:list_limit]
+                ]
+        return payload
+
+    @classmethod
+    def _bounded_candidate_payload(cls, candidate_post: CandidatePost) -> dict[str, Any]:
+        post_limit = cls._bounded_prompt_limit(
+            "ARCLI_VERIFIER_MAX_POST_CHARS",
+            DEFAULT_VERIFIER_MAX_POST_CHARS,
+            32_000,
+        )
+        payload = candidate_post.model_dump()
+        payload["text"] = truncate_comparison_text(payload["text"], post_limit)
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            metadata_limit = min(500, max(80, post_limit // 20))
+            payload["metadata"] = {
+                key: truncate_comparison_text(value, metadata_limit)
+                if isinstance(value, str)
+                else value
+                for key, value in metadata.items()
+            }
+        return payload
+
+
+def verify_candidate_safely(
+    verifier: VerifierService,
+    candidate_post: CandidatePost,
+    service_profile: ServiceProfile,
+    *,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
+) -> VerificationResult:
+    """Return a normal rejected verdict when one candidate cannot be evaluated.
+
+    Queue workers persist the result and continue with their remaining posts.
+    ``VerifierService.verify`` deliberately keeps its existing raising behavior
+    for direct callers that need provider failures to be observable.
+    """
+
+    try:
+        return verifier.verify(
+            candidate_post,
+            service_profile,
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "candidate_verification_failed tenant_id=%s service_profile_id=%s source_post_id=%s error_type=%s",
+            tenant_id or candidate_post.metadata.get("tenant_id", "unknown"),
+            service_profile_id
+            or candidate_post.metadata.get("service_profile_id", "unknown"),
+            candidate_post.post_id,
+            exc.__class__.__name__,
+        )
+        return VerificationResult(
+            match=False,
+            decision_label="not_a_match",
+            confidence=0.0,
+            pain_detected="",
+            why_this_matches="Candidate could not be evaluated; the batch continued.",
+            rejection_reason="verifier_evaluation_failed",
+            verifier_executed=False,
         )

@@ -42,6 +42,9 @@ out/
 *.csv
 *.parquet
 *.jsonl
+# Keep the compact, hand-labeled comparison regression corpus in version
+# control; larger exported analytical JSONL data remains ignored.
+!tests/fixtures/match_evaluation_cases.jsonl
 
 # --- OS & Config ---
 .env
