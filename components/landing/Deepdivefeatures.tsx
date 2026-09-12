@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, FileCheck2, Radar, SlidersHorizontal } from "lucide-react";
+import { ArrowDown, ArrowRight, CheckCircle2, FileCheck2, Radar, SlidersHorizontal } from "lucide-react";
+import { Fragment } from "react";
 
 import { Reveal, RevealWords } from "@/components/landing/reveal";
 import { C } from "@/lib/tokens";
@@ -77,67 +78,79 @@ export function DeepDiveFeatures() {
           </p>
         </Reveal>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:gap-4">
           {trustSteps.map(({ icon: Icon, label, title, copy }, index) => (
-            <Reveal key={title} delay={index * 100}>
-              <article
-                style={{
-                  background: "#FFFFFF",
-                  border: surfaceBorder,
-                  borderRadius: 10,
-                  boxShadow: "0 4px 14px rgba(10, 22, 40, 0.04)",
-                  height: "100%",
-                  padding: 20,
-                }}
-              >
-                <div
+            <Fragment key={title}>
+              <Reveal delay={index * 100}>
+                <article
                   style={{
-                    alignItems: "center",
-                    background: C.bluePale,
-                    borderRadius: 8,
-                    color: C.blue,
-                    display: "flex",
-                    height: 34,
-                    justifyContent: "center",
-                    marginBottom: 18,
-                    width: 34,
+                    background: "#FFFFFF",
+                    border: surfaceBorder,
+                    borderRadius: 10,
+                    boxShadow: "0 4px 14px rgba(10, 22, 40, 0.04)",
+                    height: "100%",
+                    padding: 20,
                   }}
                 >
-                  <Icon size={17} aria-hidden="true" />
-                </div>
-                <p
-                  style={{
-                    color: C.muted,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    letterSpacing: "0.07em",
-                    margin: "0 0 8px",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {label}
-                </p>
-                <h3
-                  className="pfd"
-                  style={{
-                    color: C.navy,
-                    fontSize: 21,
-                    fontWeight: 600,
-                    letterSpacing: "-0.01em",
-                    lineHeight: 1.15,
-                    margin: "0 0 10px",
-                  }}
-                >
-                  {title}
-                </h3>
-                <p style={{ color: C.navySoft, fontSize: 15, lineHeight: 1.58, margin: 0 }}>
-                  {copy}
-                </p>
-              </article>
-            </Reveal>
+                  <div
+                    style={{
+                      alignItems: "center",
+                      background: C.bluePale,
+                      borderRadius: 8,
+                      color: C.blue,
+                      display: "flex",
+                      height: 34,
+                      justifyContent: "center",
+                      marginBottom: 18,
+                      width: 34,
+                    }}
+                  >
+                    <Icon size={17} aria-hidden="true" />
+                  </div>
+                  <p
+                    style={{
+                      color: C.muted,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.07em",
+                      margin: "0 0 8px",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {label}
+                  </p>
+                  <h3
+                    className="pfd"
+                    style={{
+                      color: C.navy,
+                      fontSize: 21,
+                      fontWeight: 600,
+                      letterSpacing: "-0.01em",
+                      lineHeight: 1.15,
+                      margin: "0 0 10px",
+                    }}
+                  >
+                    {title}
+                  </h3>
+                  <p style={{ color: C.navySoft, fontSize: 15, lineHeight: 1.58, margin: 0 }}>
+                    {copy}
+                  </p>
+                </article>
+              </Reveal>
+              {index < trustSteps.length - 1 ? <TrustArrow /> : null}
+            </Fragment>
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function TrustArrow() {
+  return (
+    <div className="flex items-center justify-center py-1 md:py-0" style={{ color: C.blue }}>
+      <ArrowRight className="hidden md:block" aria-hidden="true" size={19} />
+      <ArrowDown className="md:hidden" aria-hidden="true" size={19} />
+    </div>
   );
 }

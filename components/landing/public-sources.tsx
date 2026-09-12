@@ -1,126 +1,128 @@
 "use client";
 
-import {
-  Blocks,
-  CircleHelp,
-  Github,
-  MessagesSquare,
-  Radio,
-} from "lucide-react";
+import { Blocks, CircleHelp, Github, MessagesSquare, Radio } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-import { C } from "@/lib/tokens";
 import { Reveal, RevealWords } from "@/components/landing/reveal";
+import { C } from "@/lib/tokens";
 
-const sources = [
-  {
-    name: "Hacker News",
-    detail: "Founder and builder discussions",
-    icon: MessagesSquare,
-  },
-  {
-    name: "Bluesky",
-    detail: "Public asks and conversations",
-    icon: Radio,
-  },
-  {
-    name: "Lemmy",
-    detail: "Independent public communities",
-    icon: Blocks,
-  },
-  {
-    name: "Stack Exchange",
-    detail: "Specific how-to problems",
-    icon: CircleHelp,
-  },
-  {
-    name: "GitHub",
-    detail: "Issues and discussions",
-    icon: Github,
-  },
+const surfaceBorder = "1px solid rgba(10, 22, 40, 0.10)";
+
+const coreSources: Array<{ name: string; icon: LucideIcon }> = [
+  { name: "Hacker News", icon: MessagesSquare },
+  { name: "Bluesky", icon: Radio },
+];
+
+const contextualSources: Array<{ name: string; icon: LucideIcon }> = [
+  { name: "Lemmy", icon: Blocks },
+  { name: "Stack Exchange", icon: CircleHelp },
+  { name: "GitHub", icon: Github },
 ];
 
 export function PublicSources() {
-  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
-
   return (
     <section
       id="sources"
       aria-labelledby="sources-heading"
       style={{
-        padding: "84px 24px",
         background: "#FFFFFF",
         borderTop: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",
+        padding: "72px 24px",
       }}
     >
-      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
-        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-          <Reveal>
-            <div>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                color: C.blue,
-                fontWeight: 700,
-                fontSize: 12,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                marginBottom: 14,
-              }}
-            >
-              <Radio size={14} /> PUBLIC SOURCES
-            </div>
-            <h2
-              id="sources-heading"
-              className="pfd"
-              style={{
-                fontSize: 38,
-                color: C.navy,
-                lineHeight: 1.08,
-                letterSpacing: "-0.015em",
-                fontWeight: 600,
-                marginBottom: 18,
-              }}
-            >
-              <RevealWords text="We check the conversations where people ask for help." />
-            </h2>
-            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, maxWidth: 480 }}>
-              Arcli looks across public communities for people describing the
-              problems your product solves. You choose the coverage for each
-              buyer group.
-            </p>
-            </div>
-          </Reveal>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {sources.map(({ name, detail, icon: Icon }, index) => (
-              <Reveal key={name} delay={120 + index * 80}>
-                <article
-                  className="flex items-start gap-3 rounded-lg border bg-white p-3 transition-colors hover:bg-[#F7FBFF]"
-                  style={{ borderColor: C.rule, boxShadow: "0 1px 3px rgba(10,22,40,0.04)" }}
-                >
-                  <div
-                    className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: C.bluePale, color: C.blue }}
-                  >
-                    <Icon className="size-4" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold" style={{ color: C.navy }}>
-                      {name}
-                    </h3>
-                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                      {detail}
-                    </p>
-                  </div>
-                </article>
-              </Reveal>
-            ))}
+      <div style={{ margin: "0 auto", maxWidth: 960 }}>
+        <Reveal style={{ margin: "0 auto 32px", maxWidth: 620, textAlign: "center" }}>
+          <div
+            style={{
+              alignItems: "center",
+              color: C.blue,
+              display: "inline-flex",
+              fontSize: 12,
+              fontWeight: 700,
+              gap: 8,
+              letterSpacing: "0.08em",
+              marginBottom: 14,
+              textTransform: "uppercase",
+            }}
+          >
+            <Radio size={14} /> Public coverage
           </div>
-        </div>
+          <h2
+            className="pfd"
+            id="sources-heading"
+            style={{
+              color: C.navy,
+              fontSize: "clamp(30px, 3.5vw, 38px)",
+              fontWeight: 600,
+              letterSpacing: "-0.015em",
+              lineHeight: 1.08,
+              margin: "0 0 14px",
+            }}
+          >
+            <RevealWords text="Coverage that follows the product context." />
+          </h2>
+          <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
+            Arcli begins with public buyer conversations, then adds technical or community
+            sources only when they fit your product and audience.
+          </p>
+        </Reveal>
+
+        <Reveal delay={120}>
+          <div
+            style={{
+              background: "#F8FAFC",
+              border: surfaceBorder,
+              borderRadius: 12,
+              display: "grid",
+              gap: 14,
+              padding: 16,
+            }}
+          >
+            <SourceGroup label="Core conversations" sources={coreSources} />
+            <div style={{ borderTop: surfaceBorder }} />
+            <SourceGroup label="Contextual coverage" sources={contextualSources} />
+          </div>
+        </Reveal>
       </div>
     </section>
+  );
+}
+
+function SourceGroup({
+  label,
+  sources,
+}: {
+  label: string;
+  sources: Array<{ name: string; icon: LucideIcon }>;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p style={{ color: C.muted, fontSize: 12, fontWeight: 700, letterSpacing: "0.07em", margin: 0, textTransform: "uppercase" }}>
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {sources.map(({ name, icon: Icon }) => (
+          <span
+            key={name}
+            style={{
+              alignItems: "center",
+              background: "#FFFFFF",
+              border: surfaceBorder,
+              borderRadius: 999,
+              color: C.navy,
+              display: "inline-flex",
+              fontSize: 13,
+              fontWeight: 600,
+              gap: 7,
+              padding: "7px 10px",
+            }}
+          >
+            <Icon aria-hidden="true" color={C.blue} size={14} />
+            {name}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

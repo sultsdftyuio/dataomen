@@ -3,6 +3,8 @@
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+
+import { ProductDemo } from "@/components/landing/product-demo";
 import { C } from "@/lib/tokens";
 
 export function Hero() {
@@ -10,7 +12,7 @@ export function Hero() {
     <section
       className="dot-grid"
       style={{
-        paddingTop: 132,
+        paddingTop: 112,
         paddingBottom: 76,
         background: "linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%)",
         position: "relative",
@@ -20,9 +22,9 @@ export function Hero() {
       <div style={{ position: "absolute", top: "10%", left: "5%", width: 360, height: 360, background: "rgba(59,154,232,0.16)", borderRadius: "50%", filter: "blur(80px)", opacity: 0.7, zIndex: 0 }} />
       <div style={{ position: "absolute", top: "30%", right: "-5%", width: 440, height: 440, background: "rgba(99,91,255,0.12)", borderRadius: "50%", filter: "blur(100px)", opacity: 0.7, zIndex: 0 }} />
 
-      <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
+      <div className="grid-2" style={{ alignItems: "center", gap: 48, maxWidth: 1120, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
         <div
-          style={{ textAlign: "center", marginBottom: 36 }}
+          style={{ marginBottom: 0 }}
         >
           <h1
             className="pfd"
@@ -32,8 +34,8 @@ export function Hero() {
               color: C.navy,
               lineHeight: 1.04,
               letterSpacing: "-0.02em",
-              maxWidth: 780,
-              margin: "0 auto 18px",
+              maxWidth: 620,
+              margin: "0 0 18px",
             }}
           >
             Find B2B buyers already talking
@@ -43,11 +45,11 @@ export function Hero() {
             </span>
           </h1>
 
-          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.navySoft, lineHeight: 1.62, maxWidth: 600, margin: "0 auto 30px" }}>
+          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.navySoft, lineHeight: 1.62, maxWidth: 550, margin: "0 0 30px" }}>
             Add your website. Arcli learns what you sell, finds relevant public conversations, checks the context, and gives you evidence to review before you decide what to do next.
           </p>
 
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
             <a
               href="/register"
               style={{
@@ -79,6 +81,9 @@ export function Hero() {
           >
             Learn how buyer-intent signals work
           </Link>
+        </div>
+        <div style={{ maxWidth: 450, width: "100%" }}>
+          <ProductDemo />
         </div>
       </div>
     </section>
