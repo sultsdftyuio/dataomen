@@ -26,6 +26,11 @@ import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
+import {
+  isPotentialBuyer,
+  isScreenedMatch,
+  type LeadQueueFilter,
+} from "@/app/(dashboard)/dashboard/lead-queue-filter";
 import type {
   BuyerGroupActivationAction,
   LeadFeedbackValue,
@@ -34,7 +39,7 @@ import type {
   WebsiteDemandScanAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 
-type QueueFilter = "all" | "leads" | "potential" | "screened";
+type QueueFilter = LeadQueueFilter;
 type QueueSort = "priority" | "newest" | "confidence";
 type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
 type DetailTab = "match" | "evidence" | "context";
@@ -84,14 +89,6 @@ const FEEDBACK_ACTIONS: Array<{
   { value: "wrong_buyer", label: "Wrong buyer" },
   { value: "not_relevant", label: "Not relevant" },
 ];
-
-function isPotentialBuyer(lead: QualifiedLeadView) {
-  return lead.matchStatus === "discovery_candidate";
-}
-
-function isScreenedMatch(lead: QualifiedLeadView) {
-  return lead.matchStatus === "rejected";
-}
 
 function sourceDisplayName(source: string) {
   const names: Record<string, string> = {
@@ -297,6 +294,7 @@ export function ProspectLeadDesk({
   const evidence = selectedLead
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
     : null;
+  const isScreenedAudit = queueFilter === "screened";
 
   const checkNewLeads = () => {
     setDiscoveryMessage(null);
@@ -359,11 +357,11 @@ export function ProspectLeadDesk({
           />
         </label>
 
-        <LeadControlSelect label="Intent" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
-          <option value="all">All signals</option>
+        <LeadControlSelect label="View" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
+          <option value="all">Lead inbox</option>
           <option value="leads">Ready to review</option>
           <option value="potential">Potential buyers</option>
-          <option value="screened">Screened out</option>
+          <option value="screened">Screened-out audit</option>
         </LeadControlSelect>
 
         <LeadControlSelect label="Confidence" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
@@ -434,13 +432,17 @@ export function ProspectLeadDesk({
         <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
           <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: C.rule }}>
             <div className="flex items-baseline gap-2">
-              <h2 className="text-base font-semibold" style={{ color: C.navy }}>Signals</h2>
+              <h2 className="text-base font-semibold" style={{ color: C.navy }}>
+                {isScreenedAudit ? "Screened-out audit" : "Signals"}
+              </h2>
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                 {filteredQueueItems.length}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <p className="text-xs" style={{ color: C.muted }}>{freshnessLabel(lastUpdatedAt)}</p>
+              <p className="text-xs" style={{ color: C.muted }}>
+                {isScreenedAudit ? "Inspection only" : freshnessLabel(lastUpdatedAt)}
+              </p>
               <Button
                 type="button"
                 size="icon-xs"
@@ -477,7 +479,17 @@ export function ProspectLeadDesk({
               ))}
             </div>
           ) : (
-            <EmptyQueue hasProfile={serviceProfile.hasProfile} />
+            <EmptyQueue
+              hasProfile={serviceProfile.hasProfile}
+              screenedMatchCount={screenedMatches.length}
+              showingScreenedAudit={isScreenedAudit}
+              onOpenScreenedAudit={() => {
+                onQueryChange("");
+                onConfidenceChange("all");
+                onSourceChange("all");
+                onFilterChange("screened");
+              }}
+            />
           )}
         </div>
 
@@ -911,23 +923,60 @@ function VerificationMetric({ label, value }: { label: string; value: string }) 
   );
 }
 
-function EmptyQueue({ hasProfile }: { hasProfile: boolean }) {
+function EmptyQueue({
+  hasProfile,
+  screenedMatchCount,
+  showingScreenedAudit,
+  onOpenScreenedAudit,
+}: {
+  hasProfile: boolean;
+  screenedMatchCount: number;
+  showingScreenedAudit: boolean;
+  onOpenScreenedAudit: () => void;
+}) {
+  const hasScreenedMatches = screenedMatchCount > 0;
+  const screenedRecordLabel = screenedMatchCount === 1 ? "record" : "records";
+  const title = showingScreenedAudit
+    ? "No screened-out records match these filters"
+    : hasProfile && hasScreenedMatches
+      ? "No lead-ready signals match these filters"
+      : hasProfile
+        ? "No signals match these filters"
+        : "Your matching brief needs a little more detail";
+  const detail = showingScreenedAudit
+    ? "Try clearing a filter, or refresh after the next public-source scan completes."
+    : hasProfile && hasScreenedMatches
+      ? `${screenedMatchCount} screened-out ${screenedRecordLabel} remain available in the audit, separate from leads and potential buyers.`
+      : hasProfile
+        ? "Try clearing a filter, or refresh after the next public-source scan completes."
+        : "Add the buyer, problem, and value proposition you want discovery to look for.";
+
   return (
     <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
       <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.bluePale, color: C.blue }}>
         <Search className="size-5" aria-hidden="true" />
       </span>
       <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>
-        {hasProfile ? "No signals match these filters" : "Your matching brief needs a little more detail"}
+        {title}
       </h2>
       <p className="mt-2 max-w-sm text-sm leading-6" style={{ color: C.muted }}>
-        {hasProfile
-          ? "Try clearing a filter, or refresh after the next public-source scan completes."
-          : "Add the buyer, problem, and value proposition you want discovery to look for."}
+        {detail}
       </p>
-      <Button asChild variant="outline" size="sm" className="mt-4 border-[#C8D9E8]">
-        <Link href="/dashboard/brief">Edit matching brief</Link>
-      </Button>
+      {!showingScreenedAudit && hasScreenedMatches ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-4 border-[#C8D9E8]"
+          onClick={onOpenScreenedAudit}
+        >
+          Open screened-out audit
+        </Button>
+      ) : (
+        <Button asChild variant="outline" size="sm" className="mt-4 border-[#C8D9E8]">
+          <Link href="/dashboard/brief">Edit matching brief</Link>
+        </Button>
+      )}
     </div>
   );
 }

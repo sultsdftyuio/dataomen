@@ -476,6 +476,10 @@ def _service_profile_from_row(row: dict[str, Any]) -> ServiceProfile:
         urgency_signals=urgency_signals,
         search_terms=[query.phrase for query in discovery_queries]
         or _read_list(sources, ["search_terms", "discovery_terms"]),
+        competitor_terms=_read_list(
+            sources,
+            ["competitor_terms", "competitors", "competitor_names"],
+        ),
         negative_keywords=_read_list(sources, ["negative_keywords", "excluded_audiences"]),
     )
 

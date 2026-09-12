@@ -8,6 +8,15 @@
  * the dashboard, so a browser cannot alter the group that is persisted.
  */
 
+import {
+  deriveCommunitySourcePlan,
+  type CommunitySourcePlan,
+} from "@/lib/community-source-plan";
+
+/**
+ * Retained for callers that imported this original source universe. New
+ * website-derived groups use the narrower, product-aware community plan.
+ */
 export const DEFAULT_BUYER_GROUP_SOURCES = [
   "hackernews",
   "bluesky",
@@ -26,6 +35,8 @@ export type BuyerGroupSuggestion = {
   includeTerms: string[];
   excludeTerms: string[];
   sourcePreferences: BuyerGroupSource[];
+  suggestedPlaces: string[];
+  communityPlan: CommunitySourcePlan;
   rationale: string;
   evidence: string[];
 };
@@ -34,12 +45,15 @@ export type BuyerGroupSuggestionProfile = {
   companyName?: string | null;
   targetAudience?: unknown;
   coreProblem?: unknown;
+  uniqueValueProp?: unknown;
   useCases?: unknown;
   painPoints?: unknown;
   buyingTriggers?: unknown;
   negativeKeywords?: unknown;
   excludedAudiences?: unknown;
   buyerGroups?: unknown;
+  discoveryQueries?: unknown;
+  searchTerms?: unknown;
 };
 
 type GroupSeed = {
@@ -221,6 +235,16 @@ export function deriveBuyerGroupSuggestions(
   );
 
   return uniqueSeeds(profile).map((seed, index) => {
+    const communityPlan = deriveCommunitySourcePlan({
+      valueProposition: profile.uniqueValueProp,
+      targetAudience: [seed.targetBuyer],
+      coreProblem: seed.problemToSolve,
+      painPoints: profile.painPoints,
+      useCases: profile.useCases,
+      buyingTriggers: profile.buyingTriggers,
+      discoveryQueries: profile.discoveryQueries,
+      searchTerms: profile.searchTerms,
+    });
     const evidence = [
       `Website audience: ${seed.targetBuyer}`,
       `Website problem: ${seed.problemToSolve}`,
@@ -241,7 +265,9 @@ export function deriveBuyerGroupSuggestions(
         4,
       ),
       excludeTerms: exclusions,
-      sourcePreferences: [...DEFAULT_BUYER_GROUP_SOURCES],
+      sourcePreferences: communityPlan.sources.map((entry) => entry.source),
+      suggestedPlaces: communityPlan.suggestedPlaces,
+      communityPlan,
       rationale,
       evidence,
     };

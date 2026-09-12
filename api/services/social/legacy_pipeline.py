@@ -41,7 +41,10 @@ from api.services.matching import (
     PostEmbedding,
     find_candidate_matches,
 )
-from api.services.social.feedback_calibration import load_feedback_calibration
+from api.services.social.feedback_calibration import (
+    feedback_ranking_boost,
+    load_feedback_calibration,
+)
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
@@ -219,9 +222,11 @@ def run_initial_public_ingestion(
             DEFAULT_SIMILARITY_THRESHOLD,
         ),
     )
-    candidate_matching_options: dict[str, float] = {}
+    candidate_matching_options: dict[str, Any] = {}
     if feedback_calibration is not None:
-        candidate_matching_options["threshold"] = feedback_calibration.threshold
+        candidate_matching_options["ranking_score_adjustment"] = (
+            lambda score: feedback_ranking_boost(score, feedback_calibration)
+        )
 
     candidates = find_candidate_matches(
         profile_embedding,
@@ -283,6 +288,15 @@ def run_initial_public_ingestion(
                 tenant_id=tenant_id,
                 service_profile_id=resolved_profile_id,
             )
+        if not verification.verifier_executed:
+            logger.info(
+                "social_ingestion_verification_retry_deferred tenant_id=%s service_profile_id=%s source_post_id=%s reason=%s",
+                tenant_id,
+                resolved_profile_id,
+                candidate.post_id,
+                "verifier_not_executed",
+            )
+            continue
         if _lead_match_status(verification) == "ready_for_review":
             qualified_count += 1
 

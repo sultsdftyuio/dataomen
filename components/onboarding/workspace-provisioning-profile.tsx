@@ -69,6 +69,7 @@ export const EMPTY_FIELDS: ServiceProfileFields = {
   urgency_signals: [],
   discovery_queries: [],
   search_terms: [],
+  competitor_terms: [],
   negative_keywords: [],
   excluded_audiences: [],
 };
@@ -674,6 +675,10 @@ export function ProfileReviewState({
     (nextValue: string[]) => updateField("search_terms", normalizeItems(nextValue)),
     [updateField],
   );
+  const updateCompetitorTerms = useCallback(
+    (nextValue: string[]) => updateField("competitor_terms", nextValue),
+    [updateField],
+  );
   const updateDiscoveryQueries = useCallback(
     (nextValue: DiscoveryQuery[]) => {
       updateField("discovery_queries", nextValue);
@@ -932,6 +937,14 @@ export function ProfileReviewState({
                       onChange={updateSearchTerms}
                     />
                   ) : null}
+                  <ListEditor
+                    label="Competitors to monitor"
+                    description="Named alternatives to watch for complaints, comparisons, and switching conversations. A name alone never qualifies a lead."
+                    value={profileFields.competitor_terms}
+                    placeholder="Add a competitor or current approach"
+                    tone={LIST_TONES.blue}
+                    onChange={updateCompetitorTerms}
+                  />
                   <ListEditor
                     label="Negative keywords"
                     description="Terms that usually indicate weak or irrelevant intent."

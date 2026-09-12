@@ -283,6 +283,42 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(queries, canonical)
 
+    def test_non_acquisition_profile_skips_cross_category_growth_queries(self) -> None:
+        profile = ServiceProfile(
+            company_name="Design Co",
+            one_liner="Collaborative product design and prototyping workspace",
+            target_audience=["Product design teams"],
+            core_problem_solved="Fragmented design-to-development handoffs cause rework.",
+            key_value_propositions=["Shared design systems and prototype feedback"],
+            # A noisy adjacent pain must not authorize demand-acquisition
+            # search expansion for this design-collaboration product.
+            ideal_customer_pain_points=["Manual outreach is taking too much time"],
+            search_terms=[],
+        )
+        canonical = [
+            DiscoveryQuery("buyer_pain", "need more paying customers"),
+            DiscoveryQuery("urgent_failure", "free users not converting"),
+            DiscoveryQuery("recommendation_request", "best tool for product prototyping"),
+            DiscoveryQuery("manual_workflow_frustration", "manual updates across design files"),
+            DiscoveryQuery("category_tool_search", "prospecting tools"),
+            DiscoveryQuery("switching_trigger", "moving from disconnected design tools"),
+        ]
+
+        with patch.dict(os.environ, {}, clear=True):
+            queries = public_source_search_queries(
+                profile,
+                discovery_queries=canonical,
+            )
+
+        self.assertEqual(
+            [query.to_payload() for query in queries],
+            [
+                canonical[2].to_payload(),
+                canonical[3].to_payload(),
+                canonical[5].to_payload(),
+            ],
+        )
+
     def test_generic_recall_variants_require_an_explicit_opt_in(self) -> None:
         profile = ServiceProfile(
             company_name="Close Co",
@@ -355,7 +391,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
         self.assertEqual(
             queued_call.kwargs["enabled_sources"],
-            ["hackernews", "bluesky", "stackexchange", "github", "lemmy"],
+            ["hackernews", "bluesky"],
         )
         self.assertTrue(queued_call.kwargs["fallback_to_x"])
         self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
@@ -620,6 +656,51 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.x_skip_reason, "x_not_selected_for_watchlist")
         self.assertFalse(fast_send.call_args.kwargs["fallback_to_x"])
         x_send.assert_not_called()
+
+    def test_website_source_plan_keeps_a_deprioritized_source_in_its_scan(self) -> None:
+        import api.services.social_ingestion as ingestion
+        from api.services.social.source_feedback_ranking import SourceFeedbackRanking
+        from api.workers import actors
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        profile_row = _profile_row()
+        profile_row["profile_json"]["one_liner"] = (
+            "Open-source API observability for platform engineering teams"
+        )
+        with (
+            patch.dict(os.environ, {"X_BEARER_TOKEN": "test-token"}, clear=True),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=profile_row),
+            patch(
+                "api.services.social.activation.load_source_feedback_ranking",
+                return_value=SourceFeedbackRanking(
+                    (
+                        "hackernews",
+                        "bluesky",
+                        "stackexchange",
+                        "lemmy",
+                        "github",
+                        "x",
+                    ),
+                    deprioritized_sources=("github",),
+                    reviewed_leads=6,
+                ),
+            ) as feedback_ranking,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
+        ):
+            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
+
+        feedback_ranking.assert_called_once()
+        self.assertEqual(plan.hn_jobs, 1)
+        self.assertEqual(plan.additional_source_jobs, 1)
+        self.assertEqual(
+            fast_send.call_args.kwargs["enabled_sources"],
+            ["hackernews", "bluesky", "stackexchange", "lemmy", "github"],
+        )
 
 
 if __name__ == "__main__":

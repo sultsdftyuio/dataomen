@@ -36,6 +36,10 @@ from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.x_connector import TwitterSourcePost
 from api.services.matching import PostEmbedding, find_candidate_matches
+from api.services.social.comparison import (
+    comparison_tokens,
+    flexible_token_overlap_details,
+)
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
@@ -154,6 +158,20 @@ def public_source_queries(
         phrase_key = phrase.casefold()
         if phrase_key in seen_phrases:
             continue
+        product_focus_reason = _non_product_specific_query_reason(
+            profile,
+            phrase,
+        )
+        if product_focus_reason:
+            # The profile is not modified: this is a search-time guard against
+            # one noisy extracted phrase expanding a design, finance, or other
+            # product into an unrelated acquisition scan.
+            logger.info(
+                "public_source_query_skipped query_type=%s skip_reason=%s",
+                query_type,
+                product_focus_reason,
+            )
+            continue
         seen_types.add(query_type)
         seen_phrases.add(phrase_key)
         queries.append(DiscoveryQuery(query_type, phrase))
@@ -171,6 +189,149 @@ _DEMAND_ACQUISITION_PROFILE_PATTERN = re.compile(
     r"free\s+users?\s+not\s+converting|conversion\s+rate)\b",
     re.IGNORECASE,
 )
+
+# These patterns describe a commercial-acquisition product category, not a
+# universal buyer pain.  They are useful query alternatives for a prospecting
+# product, but become noisy cross-category searches when an extractor inserts
+# them into (for example) a design-collaboration profile.
+_DEMAND_ACQUISITION_QUERY_PATTERN = re.compile(
+    r"\b(?:need|find|get|attract|acquire)\s+(?:more\s+)?"
+    r"(?:paying\s+)?(?:customers?|users?|leads?|prospects?)\b|"
+    r"\b(?:free\s+users?\s+not\s+converting|signups?\s+(?:are\s+)?"
+    r"(?:dropping|falling)|pipeline\s+(?:is\s+)?(?:drying|stalled)|"
+    r"manual\s+(?:outreach|prospecting)|prospecting\s+tools?|"
+    r"lead\s+generation\s+tools?|outbound\s+(?:is\s+)?not\s+working|"
+    r"better\s+prospecting\s+tool)\b",
+    re.IGNORECASE,
+)
+_PRODUCT_QUERY_FOCUS_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "any",
+        "are",
+        "best",
+        "better",
+        "can",
+        "company",
+        "companies",
+        "customer",
+        "customers",
+        "find",
+        "for",
+        "free",
+        "get",
+        "help",
+        "how",
+        "i",
+        "in",
+        "is",
+        "lead",
+        "leads",
+        "manual",
+        "manually",
+        "more",
+        "my",
+        "need",
+        "new",
+        "not",
+        "of",
+        "our",
+        "outbound",
+        "paying",
+        "prospect",
+        "prospects",
+        "prospecting",
+        "recommend",
+        "recommendation",
+        "recommendations",
+        "sales",
+        "service",
+        "software",
+        "solution",
+        "switch",
+        "switching",
+        "system",
+        "systems",
+        "the",
+        "to",
+        "tool",
+        "tools",
+        "user",
+        "users",
+        "we",
+        "what",
+        "which",
+        "with",
+        "workflow",
+        "workflows",
+    }
+)
+
+
+def _profile_product_focus_tokens(profile: ServiceProfile) -> set[str]:
+    """Return product-owned language without trusting generated search terms.
+
+    Only the product's primary outcome and value proposition are trustworthy
+    enough to anchor a potentially cross-category query.  ``search_terms``,
+    typed discovery phrases, and adjacent pain/use-case lists can be noisy
+    extraction hints, so they cannot validate themselves.
+    """
+
+    product_context = " ".join(
+        (
+            profile.one_liner,
+            profile.core_problem_solved,
+            *profile.key_value_propositions,
+        )
+    )
+    return comparison_tokens(
+        product_context,
+        stop_words=tuple(_PRODUCT_QUERY_FOCUS_STOP_WORDS),
+    )
+
+
+def _query_product_focus_tokens(phrase: str) -> set[str]:
+    """Keep only the topical part of a generated buyer-language phrase."""
+
+    return comparison_tokens(
+        phrase,
+        stop_words=tuple(_PRODUCT_QUERY_FOCUS_STOP_WORDS),
+    )
+
+
+def _query_has_profile_product_anchor(profile: ServiceProfile, phrase: str) -> bool:
+    """Connect a query to the product brief with the normal flexible bridges."""
+
+    query_tokens = _query_product_focus_tokens(phrase)
+    profile_tokens = _profile_product_focus_tokens(profile)
+    if not query_tokens or not profile_tokens:
+        return False
+    return bool(flexible_token_overlap_details(query_tokens, profile_tokens).count)
+
+
+def _non_product_specific_query_reason(
+    profile: ServiceProfile,
+    phrase: str,
+) -> str | None:
+    """Return why a query would widen into an unrelated product category.
+
+    This is intentionally a narrow guard.  It removes generic acquisition
+    language only when the actual product brief does not describe acquisition,
+    while preserving indirect architecture, workflow, and pain phrasing for
+    every other category.  A legacy/incomplete profile keeps its non-demand
+    phrases rather than losing all source coverage.
+    """
+
+    is_demand_query = bool(_DEMAND_ACQUISITION_QUERY_PATTERN.search(phrase))
+    if not is_demand_query:
+        return None
+    if _profile_has_demand_acquisition_intent(profile):
+        return None
+    if _query_has_profile_product_anchor(profile, phrase):
+        return None
+    return "cross_category_demand_without_product_context"
 
 # These are deliberately short, source-neutral alternatives to the canonical
 # matching brief.  The profile's phrase remains first; these aliases only
@@ -280,17 +441,20 @@ def _generic_query_variants(canonical: DiscoveryQuery) -> tuple[str, ...]:
 
 
 def _profile_has_demand_acquisition_intent(profile: ServiceProfile) -> bool:
+    """Recognize a demand-acquisition product from product-owned evidence.
+
+    Only the primary product outcome and value proposition can authorize this
+    category expansion. Target personas, generated search terms, and adjacent
+    pain/urgency lists are intentionally excluded: almost any B2B company can
+    target founders or mention growth, and a noisy extracted phrase must not
+    authorize its own cross-category retrieval expansion.
+    """
+
     context = " ".join(
         [
             profile.one_liner,
             profile.core_problem_solved,
-            *profile.target_audience,
             *profile.key_value_propositions,
-            *profile.ideal_customer_pain_points,
-            *profile.use_cases,
-            *profile.buying_triggers,
-            *profile.urgency_signals,
-            *profile.search_terms,
         ]
     )
     return bool(_DEMAND_ACQUISITION_PROFILE_PATTERN.search(context))
@@ -358,6 +522,35 @@ def _generic_query_variants_are_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _competitor_switching_queries(profile: ServiceProfile) -> list[DiscoveryQuery]:
+    """Return a deliberately small set of explicit switching searches.
+
+    Competitor names are workspace-entered context, not a product taxonomy.
+    We only search for a real switching conversation and leave qualification to
+    the normal embedding and verifier gates. The tight cap prevents a long
+    competitor list from multiplying provider work on every activation.
+    """
+
+    limit = max(0, min(4, env_int("ARCLI_COMPETITOR_SWITCH_QUERY_LIMIT", 2)))
+    if not limit:
+        return []
+
+    queries: list[DiscoveryQuery] = []
+    seen: set[str] = set()
+    for raw_term in profile.competitor_terms:
+        competitor = _compact_public_search_term(raw_term)
+        key = competitor.casefold()
+        if len(competitor) < 2 or key in seen:
+            continue
+        seen.add(key)
+        queries.append(
+            DiscoveryQuery("switching_trigger", f"switching from {competitor}")
+        )
+        if len(queries) >= limit:
+            break
+    return queries
+
+
 def public_source_search_queries(
     profile: ServiceProfile,
     *,
@@ -378,8 +571,9 @@ def public_source_search_queries(
         discovery_queries=discovery_queries,
     )
     variants_per_type = _initial_source_query_variants_per_type()
+    competitor_queries = _competitor_switching_queries(profile)
     if variants_per_type == 1:
-        return canonical_queries
+        return [*canonical_queries, *competitor_queries]
 
     is_demand_acquisition_profile = _profile_has_demand_acquisition_intent(profile)
     queries: list[DiscoveryQuery] = []
@@ -402,7 +596,7 @@ def public_source_search_queries(
             added_for_type += 1
             if added_for_type >= variants_per_type:
                 break
-    return queries
+    return [*queries, *competitor_queries]
 
 
 

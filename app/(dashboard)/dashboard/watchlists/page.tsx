@@ -62,9 +62,12 @@ export default async function WatchlistsPage() {
   const buyerGroupSuggestions = deriveBuyerGroupSuggestions({
     targetAudience: serviceProfile.fields.target_audience,
     coreProblem: serviceProfile.fields.core_problem,
+    uniqueValueProp: serviceProfile.fields.unique_value_prop,
     useCases: serviceProfile.fields.use_cases,
     painPoints: serviceProfile.fields.pain_points,
     buyingTriggers: serviceProfile.fields.buying_triggers,
+    discoveryQueries: serviceProfile.fields.discovery_queries,
+    searchTerms: serviceProfile.fields.search_terms,
     negativeKeywords: serviceProfile.fields.negative_keywords,
     excludedAudiences: serviceProfile.fields.excluded_audiences,
   });

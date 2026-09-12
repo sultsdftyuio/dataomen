@@ -272,6 +272,7 @@ class LemmyConnector:
         creator = view.get("creator")
         creator = creator if isinstance(creator, dict) else {}
         author_handle = normalise_text(creator.get("name")) or None
+        community_name = normalise_text(community.get("name"))
         if (
             not post_id
             or len(body) < 2
@@ -290,6 +291,7 @@ class LemmyConnector:
                 url=canonical_url,
                 posted_at=posted_at,
                 language="en",
+                metadata={"community": community_name} if community_name else {},
             )
         except ValidationError:
             return None

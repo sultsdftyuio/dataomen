@@ -40,6 +40,13 @@ import { StartingDiscoveryScreen } from "@/components/discovery/starting-discove
 import { ProspectLeadDesk } from "@/components/prospects/prospect-lead-desk";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
 import {
+  isPotentialBuyer,
+  isScreenedMatch,
+  isVerifiedLead,
+  matchesLeadQueueFilter,
+  type LeadQueueFilter,
+} from "./lead-queue-filter";
+import {
   FEEDBACK_OPTIONS,
   type BuyerLanguageResearchRequestAction,
   type BuyerLanguageResearchView,
@@ -71,7 +78,7 @@ type FeedbackNotice = {
   ok: boolean;
 };
 
-type QueueFilter = "all" | "leads" | "potential" | "screened";
+type QueueFilter = LeadQueueFilter;
 type QueueSort = "priority" | "newest" | "confidence";
 type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
 type DashboardView = "overview" | "focus" | "queue";
@@ -169,18 +176,6 @@ function leadTimestamp(lead: QualifiedLeadView) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function isPotentialBuyer(lead: QualifiedLeadView) {
-  return lead.matchStatus === "discovery_candidate";
-}
-
-function isScreenedMatch(lead: QualifiedLeadView) {
-  return lead.matchStatus === "rejected";
-}
-
-function isVerifiedLead(lead: QualifiedLeadView) {
-  return lead.matchStatus === "ready_for_review" || lead.matchStatus === "qualified";
-}
-
 function matchesQueueSearch(lead: QualifiedLeadView, query: string) {
   if (!query.trim()) return true;
 
@@ -201,6 +196,23 @@ function matchesQueueSearch(lead: QualifiedLeadView, query: string) {
     .toLocaleLowerCase();
 
   return haystack.includes(query.trim().toLocaleLowerCase());
+}
+
+function denseStatusPresentation(lead: QualifiedLeadView) {
+  if (isScreenedMatch(lead)) {
+    return { label: "Screened out", background: C.offWhite, color: C.muted };
+  }
+
+  if (isPotentialBuyer(lead)) {
+    return { label: "Potential buyer", background: C.amberPale, color: C.amber };
+  }
+
+  return { label: "Lead", background: C.greenPale, color: C.green };
+}
+
+function denseDetailStatusLabel(lead: QualifiedLeadView) {
+  if (isScreenedMatch(lead)) return "Screened out";
+  return isPotentialBuyer(lead) ? "Potential buyer" : "Clear buyer problem";
 }
 
 function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
@@ -434,7 +446,7 @@ function LeadOutreach({
   // Potential and screened matches are useful evidence to inspect, but only a
   // verifier-confirmed lead can be promoted. The server and RLS policy enforce
   // the same boundary; keeping it explicit prevents a misleading CRM action.
-  const isReviewOnly = reviewOnly || !isVerifiedLead(lead);
+  const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate" || !isVerifiedLead(lead);
   const hasSuggestedReply = Boolean(lead.suggestedReply.trim());
   const draftId = `suggested-reply-${lead.id}`;
 
@@ -524,30 +536,32 @@ function LeadOutreach({
     </Button>
   );
 
-  const qualificationAction = showQualification && !isReviewOnly ? (
-    <Button
-      type="button"
-      size="sm"
-      disabled={disabled || isQualified}
-      onClick={() => onQualify(lead.id)}
-      style={{ backgroundColor: C.green, color: C.white }}
-    >
-      {disabled ? (
-        <Radar className="size-4 animate-spin" />
-      ) : isQualified ? (
-        <Check className="size-4" />
-      ) : (
-        <ShieldCheck className="size-4" />
-      )}
-      {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark as Qualified"}
-    </Button>
+  const qualificationAction = !isReviewOnly ? (
+    showQualification ? (
+      <Button
+        type="button"
+        size="sm"
+        disabled={disabled || isQualified}
+        onClick={() => onQualify(lead.id)}
+        style={{ backgroundColor: C.green, color: C.white }}
+      >
+        {disabled ? (
+          <Radar className="size-4 animate-spin" />
+        ) : isQualified ? (
+          <Check className="size-4" />
+        ) : (
+          <ShieldCheck className="size-4" />
+        )}
+        {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark as Qualified"}
+      </Button>
+    ) : null
   ) : null;
 
   const reviewOnlyNotice = isReviewOnly ? (
     <p className="text-xs font-medium" style={{ color: isScreenedMatch(lead) ? C.red : C.amber }}>
       {isScreenedMatch(lead)
         ? "Screened out by verification — inspect the evidence, but do not use it for outreach or CRM export."
-        : "Potential buyer — review the evidence before outreach. It cannot be qualified or exported to your CRM yet."}
+        : "Review only — potential buyer signal. Review the evidence before outreach; it cannot be qualified or exported to your CRM yet."}
     </p>
   ) : null;
 
@@ -916,7 +930,7 @@ function DenseQueueRow({
   selected: boolean;
   onSelect: (leadId: string) => void;
 }) {
-  const isWatch = lead.matchStatus === "discovery_candidate";
+  const status = denseStatusPresentation(lead);
   const source = sourceDisplayName(lead.sourcePost.source);
 
   return (
@@ -939,11 +953,11 @@ function DenseQueueRow({
         <span
           className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold"
           style={{
-            backgroundColor: isWatch ? C.amberPale : C.greenPale,
-            color: isWatch ? C.amber : C.green,
+            backgroundColor: status.background,
+            color: status.color,
           }}
         >
-          {isWatch ? "Potential buyer" : "Lead"}
+          {status.label}
         </span>
       </div>
       <p className="pfd mt-2 truncate text-base leading-5" style={{ color: C.navy }}>
@@ -981,6 +995,9 @@ function DenseLeadDetails({
   onQualify: (leadId: string) => void;
 }) {
   const isWatch = lead.matchStatus === "discovery_candidate";
+  const isScreened = isScreenedMatch(lead);
+  const isReviewOnly = isWatch || isScreened;
+  const status = denseStatusPresentation(lead);
   const postedAt = formatDate(lead.sourcePost.publishedAt);
   const [openDetail, setOpenDetail] = useState<"reply" | "outcome" | null>(null);
   const isQualified = lead.matchStatus === "qualified";
@@ -1005,12 +1022,12 @@ function DenseLeadDetails({
             variant="outline"
             className="h-5 rounded px-1.5 text-[10px]"
             style={{
-              borderColor: isWatch ? C.amber : C.green,
-              backgroundColor: isWatch ? C.amberPale : C.greenPale,
-              color: isWatch ? C.amber : C.green,
+              borderColor: status.color,
+              backgroundColor: status.background,
+              color: status.color,
             }}
           >
-            {isWatch ? "Potential buyer" : "Clear buyer problem"}
+            {denseDetailStatusLabel(lead)}
           </Badge>
         </div>
         <h3 className="pfd mt-2 text-xl leading-7" style={{ color: C.navy }}>
@@ -1030,15 +1047,17 @@ function DenseLeadDetails({
         style={{ backgroundColor: C.offWhite }}
       >
         <section className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: isScreened ? C.muted : C.amber }}>
             <MessageSquareText className="size-3.5" aria-hidden="true" />
-            Why this matters
+            {isScreened ? "Verification outcome" : "Why this matters"}
           </div>
           <p className="mt-2 text-sm leading-6" style={{ color: C.navy }}>
             {lead.painDetected}
           </p>
           <p className="mt-3 border-t pt-3 text-xs leading-5" style={{ borderColor: C.rule, color: C.navySoft }}>
-            <span className="font-semibold" style={{ color: C.navy }}>Why it fits: </span>
+            <span className="font-semibold" style={{ color: C.navy }}>
+              {isScreened ? "Why it was screened out: " : "Why it fits: "}
+            </span>
             {lead.matchReason}
           </p>
         </section>
@@ -1116,26 +1135,30 @@ function DenseLeadDetails({
 
         <section aria-label="Conversation actions" className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <p className="pfd text-base leading-none" style={{ color: C.navy }}>
-            Choose a path
+            {isScreened ? "Audit actions" : "Choose a path"}
           </p>
           <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
-            Open only the detail you need right now.
+            {isScreened
+              ? "Inspect the evidence or record feedback. This record cannot be contacted, qualified, or exported."
+              : "Open only the detail you need right now."}
           </p>
           <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Conversation actions">
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              aria-pressed={openDetail === "reply"}
-              onClick={() => toggleDetail("reply")}
-              style={{
-                borderColor: openDetail === "reply" ? C.blueLight : C.ruleDark,
-                backgroundColor: openDetail === "reply" ? C.blueTint : C.white,
-                color: openDetail === "reply" ? C.blue : C.navySoft,
-              }}
-            >
-              Draft reply
-            </Button>
+            {!isScreened ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                aria-pressed={openDetail === "reply"}
+                onClick={() => toggleDetail("reply")}
+                style={{
+                  borderColor: openDetail === "reply" ? C.blueLight : C.ruleDark,
+                  backgroundColor: openDetail === "reply" ? C.blueTint : C.white,
+                  color: openDetail === "reply" ? C.blue : C.navySoft,
+                }}
+              >
+                Draft reply
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="xs"
@@ -1153,14 +1176,14 @@ function DenseLeadDetails({
           </div>
         </section>
 
-        {openDetail === "reply" ? (
+        {openDetail === "reply" && !isScreened ? (
           <LeadOutreach
             key={`outreach-${lead.id}`}
             lead={lead}
             disabled={qualificationPending}
             qualificationMessage={qualificationMessage}
             onQualify={onQualify}
-            reviewOnly={isWatch}
+            reviewOnly={isReviewOnly}
             compact
             showQualification={false}
           />
@@ -1171,7 +1194,7 @@ function DenseLeadDetails({
           <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
             Record outcome
           </p>
-          {!isWatch ? (
+          {!isReviewOnly ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -1196,8 +1219,10 @@ function DenseLeadDetails({
               ) : null}
             </div>
           ) : (
-            <p className="mt-2 text-xs leading-5" style={{ color: C.amber }}>
-              This item is evidence to review, not a lead to qualify.
+            <p className="mt-2 text-xs leading-5" style={{ color: isScreened ? C.muted : C.amber }}>
+              {isScreened
+                ? "This record is available for audit only, not outreach or qualification."
+                : "This item is evidence to review, not a lead to qualify."}
             </p>
           )}
           <p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
@@ -2808,6 +2833,10 @@ export default function ProspectDashboardClient({
     () => [...leads, ...discoveryCandidates, ...screenedMatches],
     [discoveryCandidates, leads, screenedMatches],
   );
+  const inboxItems = useMemo(
+    () => queueItems.filter((lead) => matchesLeadQueueFilter(lead, "all")),
+    [queueItems],
+  );
   const queueSources = useMemo(
     () => Array.from(new Set(queueItems.map((lead) => lead.sourcePost.source)))
       .filter(Boolean)
@@ -2816,9 +2845,7 @@ export default function ProspectDashboardClient({
   );
   const filteredQueueItems = useMemo(() => {
     const filtered = queueItems.filter((lead) => {
-      if (queueFilter === "leads" && !isVerifiedLead(lead)) return false;
-      if (queueFilter === "potential" && !isPotentialBuyer(lead)) return false;
-      if (queueFilter === "screened" && !isScreenedMatch(lead)) return false;
+      if (!matchesLeadQueueFilter(lead, queueFilter)) return false;
       if (queueConfidence === "high" && lead.verifierScore < 0.8) return false;
       if (queueConfidence === "sixty_plus" && lead.verifierScore < 0.6) return false;
       if (queueSource !== "all" && lead.sourcePost.source !== queueSource) return false;
@@ -2840,7 +2867,7 @@ export default function ProspectDashboardClient({
     [filteredQueueItems],
   );
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(() =>
-    sortQueueItems(queueItems, "priority")[0]?.id ?? null,
+    sortQueueItems(inboxItems, "priority")[0]?.id ?? null,
   );
 
   const selectLead = useCallback((leadId: string) => {
@@ -2965,13 +2992,19 @@ export default function ProspectDashboardClient({
           </span>
           <div className="min-w-0">
             <h1 className="pfd text-xl leading-none sm:text-2xl" style={{ color: C.navy }}>
-              {dashboardView === "focus" ? "Focus" : dashboardView === "queue" ? "All signals" : "Leads"}
+              {dashboardView === "focus"
+                ? "Focus"
+                : dashboardView === "queue"
+                  ? queueFilter === "screened" ? "Screened-out audit" : "Lead inbox"
+                  : "Leads"}
             </h1>
             <p className="mt-1 text-[13px]" style={{ color: C.navySoft }}>
               {dashboardView === "focus"
                 ? "One signal at a time."
                 : dashboardView === "queue"
-                  ? "Choose the signal you want to review."
+                  ? queueFilter === "screened"
+                    ? "Inspection-only records that did not become leads."
+                    : "Choose the signal you want to review."
                   : "Your next move, without the noise."}
             </p>
           </div>
@@ -3013,7 +3046,7 @@ export default function ProspectDashboardClient({
                     Today
                   </p>
                   <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.blueTint, color: C.blue }}>
-                    {queueItems.length} {queueItems.length === 1 ? "signal" : "signals"} to review
+                    {inboxItems.length} {inboxItems.length === 1 ? "signal" : "signals"} to review
                   </span>
                 </div>
                 <h2 id="focus-heading" className="pfd mt-3 max-w-4xl text-xl leading-tight sm:text-[1.75rem]" style={{ color: C.navy }}>
@@ -3028,8 +3061,8 @@ export default function ProspectDashboardClient({
                   <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: C.muted }}>
                     <span>{sourceDisplayName(selectedLead.sourcePost.source)}</span>
                     {selectedLead.sourcePost.community ? <span>{selectedLead.sourcePost.community}</span> : null}
-                    <span style={{ color: isPotentialBuyer(selectedLead) ? C.amber : C.green }}>
-                      {isPotentialBuyer(selectedLead) ? "Potential buyer" : "Clear buyer problem"}
+                    <span style={{ color: denseStatusPresentation(selectedLead).color }}>
+                      {denseDetailStatusLabel(selectedLead)}
                     </span>
                   </div>
                 ) : null}
@@ -3081,7 +3114,7 @@ export default function ProspectDashboardClient({
               <aside className="self-start rounded-xl border bg-white p-3.5 shadow-sm sm:p-4" style={{ borderColor: C.rule }}>
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Signal inbox</h3>
-                  {queueItems.length > 3 ? (
+                  {inboxItems.length > 3 ? (
                     <Button type="button" size="xs" variant="ghost" onClick={() => setDashboardView("queue")} style={{ color: C.blue }}>
                       View all
                     </Button>
@@ -3175,7 +3208,7 @@ export default function ProspectDashboardClient({
                   status={status}
                   leadCount={leads.length}
                   potentialCount={discoveryCandidates.length}
-                  feedCount={queueItems.length}
+                  feedCount={inboxItems.length}
                   discoveryStatus={buyerDemandReport?.status ?? null}
                   lastUpdatedAt={lastUpdatedAt}
                   isRefreshing={isRefreshPending}
@@ -3221,7 +3254,7 @@ export default function ProspectDashboardClient({
         >
           <div className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <h2 id="matches-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              All signals
+              {queueFilter === "screened" ? "Screened-out audit" : "Lead inbox"}
             </h2>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
               {leads.length} clear buyer problems
@@ -3239,8 +3272,8 @@ export default function ProspectDashboardClient({
                   type="search"
                   value={queueQuery}
                   onChange={(event) => setQueueQuery(event.target.value)}
-                  placeholder="Search leads and potential buyers"
-                  aria-label="Search leads and potential buyers"
+                  placeholder={queueFilter === "screened" ? "Search screened-out records" : "Search leads and potential buyers"}
+                  aria-label={queueFilter === "screened" ? "Search screened-out records" : "Search leads and potential buyers"}
                   className="h-8 w-full rounded-full border bg-white pl-8 pr-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
                   style={{ borderColor: C.ruleDark, color: C.navy }}
                 />
@@ -3264,12 +3297,12 @@ export default function ProspectDashboardClient({
                 <div className="flex items-center gap-1" role="group" aria-label="Lead type filter">
                   {(["all", "leads", "potential", "screened"] as const).map((filter) => {
                     const label = filter === "all"
-                      ? "All"
+                      ? "Lead inbox"
                       : filter === "leads"
                         ? "Leads"
                         : filter === "potential"
                           ? "Potential buyers"
-                          : "Screened out";
+                          : "Screened-out audit";
                     const active = queueFilter === filter;
 
                     return (
@@ -3311,6 +3344,8 @@ export default function ProspectDashboardClient({
           <p className="sr-only" role="status">
             {filteredQueueItems.length > 0
               ? `${filteredQueueItems.length} ${filteredQueueItems.length === 1 ? "match" : "matches"} shown`
+              : queueFilter === "all" && screenedMatches.length > 0
+                ? "No lead inbox signals shown. Screened-out audit records are available."
               : queueItems.length > 0
                 ? "No matches shown"
                 : "No matches available yet"}
@@ -3379,12 +3414,45 @@ export default function ProspectDashboardClient({
                     ))}
                   </section>
                 ) : null}
+
+                {visibleScreenedMatches.length > 0 ? (
+                  <section aria-labelledby="screened-matches-heading">
+                    <div
+                      className="sticky top-0 z-10 border-y px-5 py-3"
+                      style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 id="screened-matches-heading" className="text-xs font-bold" style={{ color: C.navySoft }}>
+                            Screened-out audit
+                          </h3>
+                          <p className="mt-0.5 text-[11px]" style={{ color: C.navySoft }}>
+                            The verifier rejected these records; they are for inspection only, not outreach.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold" style={{ color: C.navySoft }}>
+                          {visibleScreenedMatches.length}
+                        </span>
+                      </div>
+                    </div>
+                    {visibleScreenedMatches.map((lead) => (
+                      <DenseQueueRow
+                        key={lead.id}
+                        lead={lead}
+                        selected={lead.id === selectedLeadId}
+                        onSelect={selectLead}
+                      />
+                    ))}
+                  </section>
+                ) : null}
               </>
             ) : queueItems.length > 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-5 text-center">
                 <ListFilter className="size-4" style={{ color: C.blue }} aria-hidden="true" />
                 <p className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
-                  No matches fit these filters
+                  {queueFilter === "all" && screenedMatches.length > 0
+                    ? "No lead-ready signals yet"
+                    : "No matches fit these filters"}
                 </p>
                 <Button
                   type="button"
@@ -3392,12 +3460,18 @@ export default function ProspectDashboardClient({
                   variant="ghost"
                   className="mt-1"
                   onClick={() => {
-                    setQueueFilter("all");
+                    setQueueFilter(
+                      queueFilter === "all" && screenedMatches.length > 0
+                        ? "screened"
+                        : "all",
+                    );
                     setQueueQuery("");
                   }}
                   style={{ color: C.blue }}
                 >
-                  Clear filters
+                  {queueFilter === "all" && screenedMatches.length > 0
+                    ? "Open screened-out audit"
+                    : "Clear filters"}
                 </Button>
               </div>
             ) : (
@@ -3428,17 +3502,17 @@ export default function ProspectDashboardClient({
                 Overview
               </Button>
               <h2 id="details-heading" className="pfd truncate text-xl leading-none" style={{ color: C.navy }}>
-                {selectedLead?.matchStatus === "discovery_candidate"
-                  ? "Potential buyer brief"
-                  : "Lead brief"}
+                {selectedLead && isScreenedMatch(selectedLead)
+                  ? "Screened-out audit"
+                  : selectedLead?.matchStatus === "discovery_candidate"
+                    ? "Potential buyer brief"
+                    : "Lead brief"}
               </h2>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {selectedLead ? (
                 <span className="hidden rounded-full border px-2 py-1 text-[11px] font-semibold sm:inline-flex" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
-                  {selectedLead.matchStatus === "discovery_candidate"
-                    ? "Potential buyer"
-                    : "Clear buyer problem"}
+                  {denseDetailStatusLabel(selectedLead)}
                 </span>
               ) : null}
               {filteredQueueItems.length > 1 ? (
@@ -3528,7 +3602,7 @@ export default function ProspectDashboardClient({
               </div>
               <div className="border-l p-3.5" style={{ borderColor: C.rule }}>
                 <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue }}>In your feed</p>
-                <p className="mt-1 text-xl font-semibold tracking-tight" style={{ color: C.navy }}>{queueItems.length}</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight" style={{ color: C.navy }}>{inboxItems.length}</p>
               </div>
             </div>
             <p className="border-t px-4 py-2 text-[10px]" role="status" aria-live="polite" style={{ borderColor: C.rule, color: C.muted }}>

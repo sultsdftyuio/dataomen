@@ -12,12 +12,13 @@ import { startWebsiteDemandScan } from "../actions";
 import {
   fetchLatestCrawlJob,
   fetchServiceProfile,
+  fetchSourceFeedbackInsights,
   fetchTenantWebsiteUrl,
 } from "../data";
 
 export const metadata: Metadata = {
-  title: "Matching Brief | Arcli",
-  description: "Define the customer, problem, and buying signals Arcli should match.",
+  title: "Product & Buyer Map | Arcli",
+  description: "Review the product, buyer, and public demand signals Arcli should match.",
 };
 
 export const dynamic = "force-dynamic";
@@ -50,14 +51,19 @@ export default async function MatchingBriefPage() {
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
   ]);
+  const sourceFeedbackInsights = await fetchSourceFeedbackInsights(
+    supabase,
+    tenantId,
+    serviceProfile.id,
+  );
   const isActive = serviceProfile.embeddingStatus === "completed";
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col gap-3 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Discovery setup"
-        title="Matching brief"
-        description="Set the buyer, problem, and signals that make a conversation worth your attention."
+        title="Product & buyer map"
+        description="Review what your website says you sell, who buys it, and the conversations worth your attention."
         icon={Target}
         visual={
           <div>
@@ -81,10 +87,10 @@ export default async function MatchingBriefPage() {
       <Card className="rounded-xl bg-white shadow-sm" style={{ borderColor: C.rule }}>
         <CardHeader className="border-b p-3" style={{ borderColor: C.rule }}>
           <CardTitle className="pfd text-xl leading-none" style={{ color: C.navy }}>
-            Your matching brief
+            Your product & buyer map
           </CardTitle>
           <p className="text-xs leading-5" style={{ color: C.muted }}>
-            Shape how Arcli recognises a high-quality prospect.
+            Refine the website-derived hypothesis that guides every prospect match.
           </p>
         </CardHeader>
         <CardContent className="p-3 pt-4">
@@ -94,6 +100,7 @@ export default async function MatchingBriefPage() {
             websiteUrl={websiteUrl}
             layout="progressive"
             startWebsiteDemandScan={startWebsiteDemandScan}
+            sourceFeedbackInsights={sourceFeedbackInsights}
           />
         </CardContent>
       </Card>

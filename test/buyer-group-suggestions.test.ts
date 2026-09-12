@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
-  DEFAULT_BUYER_GROUP_SOURCES,
   deriveBuyerGroupSuggestions,
 } from "../lib/buyer-group-suggestions";
 
@@ -57,7 +56,14 @@ test("derives focused, explainable buyer directions from any website profile", (
   });
 
   assert.equal(suggestions.length, 3);
-  assert.deepEqual(suggestions[0].sourcePreferences, DEFAULT_BUYER_GROUP_SOURCES);
+  assert.deepEqual(suggestions[0].sourcePreferences, [
+    "hackernews",
+    "bluesky",
+    "stackexchange",
+    "lemmy",
+  ]);
+  assert.equal(suggestions[0].communityPlan.sources[0]?.label, "Hacker News");
+  assert.ok(suggestions[0].suggestedPlaces.length > 0);
   assert.match(suggestions[0].targetBuyer, /Design-system leaders/i);
   assert.match(suggestions[0].problemToSolve, /Design handoff/i);
   assert.ok(suggestions[0].includeTerms.length > 0);
@@ -99,6 +105,7 @@ test("activation accepts only a suggestion ID and re-derives the tenant-scoped g
   assert.match(actionsSource, /deriveBuyerGroupSuggestions\(/);
   assert.match(actionsSource, /suggestions\.find\(\(item\) => item\.id === normalizedId\)/);
   assert.match(actionsSource, /postWatchlistDiscoveryTrigger\(/);
+  assert.match(actionsSource, /suggestedPlaces: suggestion\.suggestedPlaces/);
   assert.doesNotMatch(
     actionsSource,
     /activateSuggestedBuyerGroup\(\s*input:\s*WatchlistCreateInput/,

@@ -303,7 +303,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
                 "stackoverflow",
             )
 
-    def test_activation_queues_one_fast_check_for_all_free_sources(self) -> None:
+    def test_activation_queues_only_website_relevant_free_sources(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
 
@@ -326,7 +326,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
         self.assertEqual(plan.x_jobs, 1)
         self.assertEqual(
             fast_send.call_args.kwargs["enabled_sources"],
-            ["hackernews", "bluesky", "stackexchange", "github", "lemmy"],
+            ["hackernews", "bluesky"],
         )
         self.assertTrue(fast_send.call_args.kwargs["fallback_to_x"])
         x_send.assert_not_called()
@@ -618,7 +618,44 @@ class PublicSourceReferenceTests(unittest.TestCase):
         ):
             actors.enqueue_source_post_embedding_job.fn("42", source="twitter")
 
-        process.assert_called_once_with("42", source="twitter")
+        process.assert_called_once_with(
+            "42",
+            source="twitter",
+            retry_on_not_found=True,
+        )
+
+    def test_embedding_batch_actor_enables_visibility_retry(self) -> None:
+        from api.workers import actors
+        import api.services.social_ingestion as ingestion
+        import api.services.watchlist_matching as watchlist_matching
+
+        refs = [{"source": "github", "source_post_id": "github-42"}]
+        with (
+            patch.object(
+                ingestion,
+                "process_public_source_post_embedding_batch",
+                return_value={
+                    "posts": 1,
+                    "embedded": 1,
+                    "candidates": 0,
+                    "ready_for_review": 0,
+                },
+            ) as process,
+            patch.object(
+                watchlist_matching,
+                "process_active_watchlists_for_public_source_post",
+                return_value={"candidates": 0, "ready_for_review": 0},
+            ),
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.enqueue_source_post_embedding_batch_job.fn(refs)
+
+        process.assert_called_once_with(
+            refs,
+            tenant_id=None,
+            service_profile_id=None,
+            retry_on_not_found=True,
+        )
 
 
 if __name__ == "__main__":

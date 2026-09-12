@@ -187,7 +187,7 @@ export function HowItWorks() {
               <RevealWords text="Useful Alerts That Improve" />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              When someone looks like a fit, Arcli shows the post, the problem, and why it matters. Your thumbs-up or thumbs-down helps future alerts improve.
+              When someone looks like a fit, Arcli shows the post, the problem, and why it matters. Your feedback helps it check the most useful places first while keeping discovery broad.
             </p>
           </div>
 
@@ -226,7 +226,7 @@ export function HowItWorks() {
                     <CheckCircle2 size={14} color={C.faint} />
                   </div>
                   <div style={{ fontSize: 12, color: C.faint, lineHeight: 1.5 }}>
-                    Checked by Arcli.<br />Your feedback improves future matches.
+                    Checked by Arcli.<br />Your feedback improves future review order.
                   </div>
                 </div>
               </div>

@@ -183,6 +183,10 @@ export const ServiceProfileSettingsSchema = z
     urgency_signals: serviceProfileListField,
     discovery_queries: discoveryQueryPlanField,
     search_terms: discoveryPhraseListField,
+    competitor_terms: z
+      .array(z.preprocess(trimString, z.string().min(1)))
+      .max(12)
+      .default([]),
     negative_keywords: serviceProfileListField,
     excluded_audiences: serviceProfileListField,
   })

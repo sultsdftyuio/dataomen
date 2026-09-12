@@ -43,7 +43,13 @@ import {
   DISCOVERY_QUERY_TYPES,
   type DiscoveryQuery,
 } from "@/lib/discovery-queries";
+import type { SourceFeedbackInsight } from "@/lib/source-feedback-insights";
 import { C } from "@/lib/tokens";
+import {
+  ProductBuyerMap,
+  type ProductBuyerMapSection,
+} from "./product-buyer-map";
+import { CommunitySourcePlan } from "./community-source-plan";
 import { WorkspaceRefreshCenter } from "./workspace-refresh-center";
 import { normalizeWebsiteUrl, websiteDomain } from "./website-url";
 
@@ -57,6 +63,7 @@ type SignalFieldKey =
   | "buying_triggers"
   | "urgency_signals"
   | "search_terms"
+  | "competitor_terms"
   | "negative_keywords"
   | "excluded_audiences";
 
@@ -67,6 +74,7 @@ type ServiceProfileSettingsProps = {
   crawlJob: CrawlJobView | null;
   websiteUrl: string;
   startWebsiteDemandScan: WebsiteDemandScanAction;
+  sourceFeedbackInsights?: SourceFeedbackInsight[];
   onFieldsChange?: (fields: ServiceProfileFields) => void;
   layout?: "standard" | "progressive";
 };
@@ -128,6 +136,13 @@ const SIGNAL_FIELDS: Array<{
     description:
       "Short phrases a buyer would naturally write while looking for help. Legacy profiles use these until a categorized plan is available.",
     placeholder: "e.g. need a better way to handle failed payments",
+  },
+  {
+    key: "competitor_terms",
+    label: "Competitors to monitor",
+    description:
+      "Named alternatives to watch for complaints, comparisons, and switching conversations. A name alone never qualifies a lead.",
+    placeholder: "ExampleCRM, manual spreadsheets",
   },
   {
     key: "negative_keywords",
@@ -384,12 +399,14 @@ function TextProfileField({
 }
 
 function BriefEditorSection({
+  section,
   title,
   description,
   open,
   onToggle,
   children,
 }: {
+  section: ProductBuyerMapSection;
   title: string;
   description: string;
   open: boolean;
@@ -397,7 +414,11 @@ function BriefEditorSection({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
+    <section
+      id={`matching-brief-${section}`}
+      className="scroll-mt-4 overflow-hidden rounded-xl border bg-white"
+      style={{ borderColor: C.rule }}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
         <div>
           <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>
@@ -433,6 +454,7 @@ export function ServiceProfileSettings({
   crawlJob,
   websiteUrl,
   startWebsiteDemandScan,
+  sourceFeedbackInsights,
   onFieldsChange,
   layout = "standard",
 }: ServiceProfileSettingsProps) {
@@ -492,6 +514,15 @@ export function ServiceProfileSettings({
         normalizeSignals(value.map((query) => query.phrase)),
       );
     }
+  };
+
+  const openMapEditor = (section: ProductBuyerMapSection) => {
+    setOpenBriefSection(section);
+    window.setTimeout(() => {
+      document
+        .getElementById(`matching-brief-${section}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   };
 
   const persistProfile = (_intent: ProfilePersistIntent) => {
@@ -666,7 +697,15 @@ export function ServiceProfileSettings({
           </div>
         ) : null}
 
+        <ProductBuyerMap fields={profileFields} onEdit={openMapEditor} />
+
+        <CommunitySourcePlan
+          fields={profileFields}
+          sourceFeedbackInsights={sourceFeedbackInsights}
+        />
+
         <BriefEditorSection
+          section="match"
           title="The match"
           description="Who should Arcli recognise, what are they trying to solve, and why are you the right fit?"
           open={openBriefSection === "match"}
@@ -698,6 +737,7 @@ export function ServiceProfileSettings({
         </BriefEditorSection>
 
         <BriefEditorSection
+          section="signals"
           title="Signals to look for"
           description="Add the outcomes, frustrations, urgency, and buyer language that make a public conversation relevant."
           open={openBriefSection === "signals"}
@@ -734,6 +774,7 @@ export function ServiceProfileSettings({
         </BriefEditorSection>
 
         <BriefEditorSection
+          section="guardrails"
           title="Matching rules"
           description="Keep weak matches out without changing the website source."
           open={openBriefSection === "guardrails"}

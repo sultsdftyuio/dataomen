@@ -21,6 +21,10 @@ import {
   buildBuyerLanguageResearchEvidence,
   type BuyerLanguageResearchView,
 } from "@/lib/buyer-language-research";
+import {
+  deriveSourceFeedbackInsights,
+  type SourceFeedbackInsight,
+} from "@/lib/source-feedback-insights";
 import type { Database, Json } from "@/types/supabase";
 import type {
   BuyerDemandReportView,
@@ -46,6 +50,7 @@ const EMPTY_FIELDS: ServiceProfileFields = {
   urgency_signals: [],
   discovery_queries: [],
   search_terms: [],
+  competitor_terms: [],
   negative_keywords: [],
   excluded_audiences: [],
 };
@@ -432,6 +437,11 @@ export async function fetchServiceProfile(
         discoveryQueries.length > 0
           ? discoveryQueries.map((query) => query.phrase)
           : searchTerms,
+      competitor_terms: readStringList(sources, [
+        "competitor_terms",
+        "competitors",
+        "competitor_names",
+      ]),
       negative_keywords: readStringList(sources, ["negative_keywords"]),
       excluded_audiences: readStringList(sources, [
         "excluded_audiences",
@@ -607,6 +617,88 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
       null,
     sourcePost,
   };
+}
+
+/**
+ * Load only the source IDs needed to turn existing human feedback into a
+ * product-level source signal. This stays separate from lead queues: a
+ * feedback-schema or source-post join rollout must never make prospects fail
+ * to render.
+ */
+export async function fetchSourceFeedbackInsights(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+): Promise<SourceFeedbackInsight[]> {
+  if (!serviceProfileId) return [];
+
+  type SourceFeedbackMatchLookupResult = {
+    data: unknown[] | null;
+    error: unknown;
+  };
+  let matchesResult: SourceFeedbackMatchLookupResult = await supabase
+    .from("lead_matches")
+    .select("id,source_posts(source)")
+    .eq("tenant_id", tenantId)
+    .eq("service_profile_id", serviceProfileId)
+    .limit(240);
+
+  // Some staged deployments expose the historical JSON snapshot before the
+  // source-post relation. Retain a no-content fallback for that rollout.
+  if (matchesResult.error) {
+    matchesResult = await supabase
+      .from("lead_matches")
+      .select("id,source_post,source_post_data,source_post_json,post")
+      .eq("tenant_id", tenantId)
+      .eq("service_profile_id", serviceProfileId)
+      .limit(240);
+  }
+  if (matchesResult.error) {
+    console.info("[ProspectDashboard] source feedback match lookup unavailable", {
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return [];
+  }
+
+  const sourceByLeadId = new Map<string, string>();
+  for (const rawRow of (matchesResult.data ?? []) as unknown[]) {
+    const row = asRecord(rawRow) ?? {};
+    const leadMatchId = readString([row], ["id"]);
+    const source = sourcePostView(row).source.trim().toLowerCase();
+    if (!leadMatchId || !source || source === "source") continue;
+    sourceByLeadId.set(leadMatchId, source);
+  }
+  if (sourceByLeadId.size === 0) return [];
+
+  const feedbackResult = await supabase
+    .from("lead_feedback")
+    .select("lead_match_id,feedback_type")
+    .eq("tenant_id", tenantId)
+    .in("lead_match_id", Array.from(sourceByLeadId.keys()))
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (feedbackResult.error) {
+    if (!isOptionalAdditiveSchemaUnavailable(feedbackResult.error)) {
+      console.info("[ProspectDashboard] source feedback lookup unavailable", {
+        tenant_id: tenantId,
+        service_profile_id: serviceProfileId,
+      });
+    }
+    return [];
+  }
+
+  return deriveSourceFeedbackInsights(
+    ((feedbackResult.data ?? []) as unknown[]).map((rawRow) => {
+      const row = asRecord(rawRow) ?? {};
+      const leadMatchId = readString([row], ["lead_match_id"]);
+      return {
+        source: leadMatchId ? sourceByLeadId.get(leadMatchId) : null,
+        leadMatchId,
+        feedbackType: row.feedback_type,
+      };
+    }),
+  );
 }
 
 async function runLeadQuery(

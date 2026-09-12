@@ -436,6 +436,7 @@ def find_candidate_matches(
     service_profile_id: str | None = None,
     max_candidates: int | None = None,
     on_rejected: Callable[[MatchRejection], None] | None = None,
+    ranking_score_adjustment: Callable[[float], float] | None = None,
 ) -> list[CandidateMatch]:
     """
     Cheap semantic prefilter. This deliberately favors recall, while the LLM
@@ -498,11 +499,29 @@ def find_candidate_matches(
                 url=post_embedding.url,
                 metadata=metadata,
             )
+            ranking_adjustment = 0.0
+            if ranking_score_adjustment is not None:
+                try:
+                    suggested_adjustment = float(ranking_score_adjustment(score))
+                    if math.isfinite(suggested_adjustment):
+                        # Ordering can learn from feedback, but it cannot
+                        # become a second threshold or outweigh the post's
+                        # actual semantic score.
+                        ranking_adjustment = max(-0.03, min(0.03, suggested_adjustment))
+                except Exception as exc:
+                    logger.debug(
+                        "candidate_ranking_adjustment_skipped tenant_id=%s service_profile_id=%s source_post_id=%s error_type=%s",
+                        resolved_tenant_id,
+                        service_profile_id,
+                        post_embedding.post_id,
+                        exc.__class__.__name__,
+                    )
             ranked_candidates.append(
                 _RankedCandidate(
                     candidate=candidate,
                     ranking_score=score
-                    + (_profile_vocabulary_max_boost() * vocabulary_score),
+                    + (_profile_vocabulary_max_boost() * vocabulary_score)
+                    + ranking_adjustment,
                     theme=theme,
                 )
             )

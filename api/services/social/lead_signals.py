@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any, Sequence
 
 from .comparison import post_comparison_text
+from .content_roles import assess_public_post_content_role
 from .models import PublicSourcePostRef
 
 
@@ -31,7 +32,12 @@ _INDIRECT_INTENT_PATTERN = re.compile(
 _TOOL_FRICTION_PATTERN = re.compile(
     r"\b(?:frustrat(?:ed|ing|ion)|workaround|bottleneck|spreadsheet(?:s)?|"
     r"copy(?:ing)?\s*(?:and|&)\s*past(?:e|ing)|re-?enter(?:ing)?|"
-    r"(?:tool|software|platform|stack)\s+(?:is\s+)?(?:broken|slow|expensive|unreliable))\b",
+    r"(?:tool|software|platform|stack)\s+(?:is\s+)?(?:broken|slow|expensive|unreliable)|"
+    r"(?:fragmented|disconnected|scattered)\s+(?:across|between)\s+"
+    r"(?:tools?|platforms?|systems?)|"
+    r"(?:design|developer|dev)?\s*handoff\s+(?:is\s+)?"
+    r"(?:broken|slow|manual|fragmented|causing\s+rework)|"
+    r"(?:tool\s+sprawl|context\s+switching))\b",
     re.IGNORECASE,
 )
 _COMMERCIAL_CONTEXT_PATTERN = re.compile(
@@ -65,7 +71,13 @@ def _post_text(post: Any) -> str:
 
 
 def lead_signal_score(post: Any) -> LeadSignalScore:
-    """Rank likely buyer evidence without excluding broad, adjacent prospects."""
+    """Rank likely buyer evidence without excluding broad, adjacent prospects.
+
+    Job ads and repository work items can share a product's vocabulary while
+    still being poor use of a verifier call.  They remain in the score rather
+    than being deleted here, so a real buyer complaint can still be recovered
+    by the admission and verifier stages.
+    """
 
     text = _post_text(post)
     normalized = text.casefold()
@@ -103,6 +115,11 @@ def lead_signal_score(post: Any) -> LeadSignalScore:
     if _PUBLISHER_PATTERN.search(normalized):
         score -= 3
         reasons.append("publisher_context")
+
+    role = assess_public_post_content_role(post)
+    if role.priority_penalty:
+        score -= role.priority_penalty
+        reasons.extend(role.reasons)
 
     return LeadSignalScore(max(0, min(100, score)), tuple(reasons))
 

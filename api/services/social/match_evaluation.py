@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +76,8 @@ class DiscoveryAdmissionEvaluationReport:
     false_negative_case_ids: tuple[str, ...]
     evaluation_error_counts: dict[str, int]
     evaluation_error_case_ids: tuple[str, ...]
+    query_type_outcomes: dict[str, dict[str, int]] = field(default_factory=dict)
+    source_outcomes: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-safe report that contains identifiers, never post text."""
@@ -102,6 +104,11 @@ class DiscoveryAdmissionEvaluationReport:
             "false_negative_case_ids": list(self.false_negative_case_ids),
             "evaluation_error_counts": dict(sorted(self.evaluation_error_counts.items())),
             "evaluation_error_case_ids": list(self.evaluation_error_case_ids),
+            # These are aggregate-only dimensions. They make it possible to
+            # spot a weak query class or source without serialising public
+            # post text into CI output or operational logs.
+            "query_type_outcomes": _sorted_outcomes(self.query_type_outcomes),
+            "source_outcomes": _sorted_outcomes(self.source_outcomes),
         }
 
 
@@ -192,6 +199,8 @@ def evaluate_discovery_admission_cases(
     false_negative_case_ids: list[str] = []
     evaluation_error_counts: Counter[str] = Counter()
     evaluation_error_case_ids: list[str] = []
+    query_type_outcomes: dict[str, Counter[str]] = {}
+    source_outcomes: dict[str, Counter[str]] = {}
 
     for case in cases:
         if case.expected_admitted:
@@ -227,6 +236,19 @@ def evaluate_discovery_admission_cases(
         else:
             true_negative_count += 1
 
+        _record_outcome(
+            query_type_outcomes,
+            case.query_type or "untyped",
+            expected_admitted=case.expected_admitted,
+            admitted=admitted,
+        )
+        _record_outcome(
+            source_outcomes,
+            _case_source(case.post),
+            expected_admitted=case.expected_admitted,
+            admitted=admitted,
+        )
+
     precision = _safe_ratio(true_positive_count, true_positive_count + false_positive_count)
     recall = _safe_ratio(true_positive_count, true_positive_count + false_negative_count)
     f1 = _safe_ratio(2 * precision * recall, precision + recall)
@@ -248,6 +270,10 @@ def evaluate_discovery_admission_cases(
         false_negative_case_ids=tuple(false_negative_case_ids),
         evaluation_error_counts=dict(evaluation_error_counts),
         evaluation_error_case_ids=tuple(evaluation_error_case_ids),
+        query_type_outcomes={
+            key: dict(value) for key, value in query_type_outcomes.items()
+        },
+        source_outcomes={key: dict(value) for key, value in source_outcomes.items()},
     )
 
 
@@ -317,6 +343,50 @@ def _expected_admitted(payload: Mapping[str, Any], line_number: int) -> bool:
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator else 0.0
+
+
+def _case_source(post: Mapping[str, Any]) -> str:
+    """Return a stable, content-free source label for an evaluation case."""
+
+    value = post.get("source")
+    if not isinstance(value, str) or not value.strip():
+        return "unknown"
+    return value.strip().casefold()
+
+
+def _record_outcome(
+    outcomes: dict[str, Counter[str]],
+    group: str,
+    *,
+    expected_admitted: bool,
+    admitted: bool,
+) -> None:
+    """Increment an aggregate confusion-matrix slice without retaining text."""
+
+    bucket = outcomes.setdefault(group, Counter())
+    bucket["case_count"] += 1
+    bucket["expected_positive" if expected_admitted else "expected_negative"] += 1
+    bucket["admitted" if admitted else "rejected"] += 1
+    if expected_admitted and admitted:
+        bucket["true_positive"] += 1
+    elif expected_admitted:
+        bucket["false_negative"] += 1
+    elif admitted:
+        bucket["false_positive"] += 1
+    else:
+        bucket["true_negative"] += 1
+
+
+def _sorted_outcomes(
+    outcomes: Mapping[str, Mapping[str, int]],
+) -> dict[str, dict[str, int]]:
+    return {
+        group: {
+            outcome: int(count)
+            for outcome, count in sorted(counts.items())
+        }
+        for group, counts in sorted(outcomes.items())
+    }
 
 
 def _validate_quality_threshold(gate_name: str, value: float) -> None:

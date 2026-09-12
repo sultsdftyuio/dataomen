@@ -1,10 +1,10 @@
 """Conservative, read-only calibration from reviewed lead feedback.
 
 The matcher is intentionally recall-oriented and the verifier remains the
-quality gate.  This module can only make that prefilter a little stricter
-when a sufficiently large, unambiguous set of human reviews supports it.  It
-never lowers the configured similarity threshold, writes to the database, or
-returns reviewer/source content to callers.
+quality gate. This module derives an aggregate feedback tendency that can make
+already-eligible candidates a little more prominent in a review batch. It
+never raises the matcher threshold, rejects a candidate, writes to the
+database, or returns reviewer/source content to callers.
 
 The SQL contract for ``lead_feedback`` is additive and may not be deployed in
 every environment yet.  Loading is therefore deliberately fail-open: a
@@ -36,6 +36,7 @@ DEFAULT_BASE_THRESHOLD = 0.15
 DEFAULT_MIN_SAMPLES = 12
 DEFAULT_MIN_CLASS_SAMPLES = 3
 DEFAULT_MAX_THRESHOLD_INCREASE = 0.03
+DEFAULT_MAX_RANKING_BOOST = 0.015
 DEFAULT_MIN_NEGATIVE_MARGIN = 0.02
 DEFAULT_MIN_CLASS_SEPARATION = 0.05
 DEFAULT_CACHE_SECONDS = 300
@@ -50,11 +51,12 @@ _MISSING_SCHEMA_COOLDOWN_SECONDS = 300.0
 
 @dataclass(frozen=True)
 class FeedbackCalibration:
-    """A bounded prefilter-threshold recommendation from aggregate reviews.
+    """A bounded feedback recommendation from aggregate reviews.
 
-    ``threshold`` is always greater than ``base_threshold``.  The fields are
-    aggregate operational metadata only; no feedback reason, reviewer, or
-    source-post content is retained here.
+    ``threshold`` remains a backwards-compatible diagnostic recommendation;
+    production matching keeps ``base_threshold`` as its eligibility floor.
+    The fields are aggregate operational metadata only; no feedback reason,
+    reviewer, or source-post content is retained here.
     """
 
     threshold: float
@@ -75,6 +77,40 @@ class FeedbackObservation:
     feedback_type: str
     similarity_score: float
     lead_match_id: str | None = None
+
+
+def feedback_ranking_boost(
+    score: float,
+    calibration: FeedbackCalibration | None,
+) -> float:
+    """Return a tiny positive ordering preference without changing eligibility.
+
+    Human feedback is noisy and products evolve, so a negative review never
+    becomes a penalty. Scores that resemble historically successful matches
+    receive only a bounded boost while every candidate that clears the normal
+    similarity floor still proceeds to verification.
+    """
+
+    if calibration is None:
+        return 0.0
+    try:
+        candidate_score = float(score)
+        positive_median = float(calibration.positive_median)
+        negative_median = float(calibration.negative_median)
+    except (TypeError, ValueError):
+        return 0.0
+    if not all(math.isfinite(value) for value in (candidate_score, positive_median, negative_median)):
+        return 0.0
+
+    separation = positive_median - negative_median
+    if separation <= 0.0:
+        return 0.0
+
+    positive_tendency = max(
+        0.0,
+        min(1.0, (candidate_score - negative_median) / separation),
+    )
+    return round(DEFAULT_MAX_RANKING_BOOST * positive_tendency, 6)
 
 
 _cache_lock = threading.Lock()
@@ -214,12 +250,13 @@ def derive_feedback_calibration(
     min_negative_margin: float | None = None,
     min_class_separation: float | None = None,
 ) -> FeedbackCalibration | None:
-    """Derive a threshold increase from aggregate human feedback.
+    """Derive a backward-compatible feedback tendency from aggregate reviews.
 
     A lead with both positive and negative labels is excluded rather than
     arbitrarily resolved.  This deliberately requires clear reviewer
-    agreement.  The returned threshold is capped and non-decreasing so a
-    data-quality issue cannot broaden the matcher or bypass verifier caching.
+    agreement. The retained threshold value is a diagnostic recommendation;
+    caller code uses the aggregate medians only for a bounded ordering boost.
+    It never changes the matcher's eligibility threshold.
     """
 
     resolved_base = _base_threshold(base_threshold)
@@ -498,7 +535,7 @@ def load_feedback_calibration(
     *,
     base_threshold: float | None = None,
 ) -> FeedbackCalibration | None:
-    """Return a safe, cached threshold increase for one tenant/profile.
+    """Return a safe, cached advisory feedback tendency for one profile.
 
     This function is intentionally safe to call at worker boundaries.  It
     returns ``None`` for disabled calibration, incomplete evidence, invalid
@@ -547,7 +584,7 @@ def load_feedback_calibration(
 
     if calibration is not None:
         logger.info(
-            "feedback_calibration_applied tenant_id=%s service_profile_id=%s sample_size=%s positive_samples=%s negative_samples=%s adjustment=%.3f",
+            "feedback_calibration_loaded tenant_id=%s service_profile_id=%s sample_size=%s positive_samples=%s negative_samples=%s adjustment=%.3f mode=ordering_only",
             tenant,
             profile_id,
             calibration.sample_size,

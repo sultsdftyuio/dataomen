@@ -112,6 +112,7 @@ def test_deep_profile_extraction_generates_discovery_phrases_without_temperature
     assert request["messages"][0]["role"] == "developer"
     assert "need more customers" in str(request["messages"][0]["content"])
     assert "sales pipeline" in str(request["messages"][0]["content"])
+    assert "PRODUCT-AND-BUYER MAP" in str(request["messages"][0]["content"])
     assert request["response_format"] is ServiceProfileResponse
 
 

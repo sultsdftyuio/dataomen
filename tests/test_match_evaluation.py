@@ -32,10 +32,26 @@ def test_evaluation_report_measures_actual_admission_logic_without_post_text() -
     assert "indirect_intent" in report.signal_counts
     assert report.false_positive_case_ids == ()
     assert report.false_negative_case_ids == ()
+    assert report.query_type_outcomes["recommendation_request"] == {
+        "admitted": 2,
+        "case_count": 2,
+        "expected_positive": 2,
+        "true_positive": 2,
+    }
+    assert report.source_outcomes["unknown"] == {
+        "admitted": 3,
+        "case_count": 5,
+        "expected_negative": 2,
+        "expected_positive": 3,
+        "rejected": 2,
+        "true_negative": 2,
+        "true_positive": 3,
+    }
 
     serialized = json.dumps(report.to_dict())
     assert "manual reconciliation" not in serialized
     assert "architecture should" not in serialized
+    assert serialized.count('"unknown"') == 1
 
 
 def test_empty_or_one_sided_corpora_have_finite_safe_metrics() -> None:

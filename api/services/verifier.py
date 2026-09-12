@@ -51,7 +51,9 @@ VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 # Persist this alongside a verdict. Bump it only when verifier instructions
 # materially change lead eligibility, so cached decisions cannot survive a
 # policy change while preserving normal tenant-scoped cache reuse.
-VERIFIER_POLICY_VERSION = "buyer_outcome_v7_flexible_indirect_intent"
+# v8 keeps the established eligibility rules, but refreshes cached output so
+# reviewers receive the more context-aware reply draft below.
+VERIFIER_POLICY_VERSION = "buyer_outcome_v8_contextual_reply_and_switching"
 DEFAULT_VERIFIER_MAX_POST_CHARS = 12_000
 DEFAULT_VERIFIER_MAX_PROFILE_FIELD_CHARS = 750
 DEFAULT_VERIFIER_MAX_PROFILE_LIST_ITEMS = 12
@@ -77,6 +79,9 @@ class ServiceProfile(BaseModel):
     # They are deliberately separate from the richer matching fields above so
     # search precision is under the workspace owner's control.
     search_terms: list[str] = Field(default_factory=list)
+    # Workspace-curated alternatives. These are search and context signals;
+    # naming a competitor alone is never enough to qualify a lead.
+    competitor_terms: list[str] = Field(default_factory=list)
     negative_keywords: list[str] = Field(default_factory=list)
 
     @field_validator(
@@ -87,6 +92,7 @@ class ServiceProfile(BaseModel):
         "buying_triggers",
         "urgency_signals",
         "search_terms",
+        "competitor_terms",
         "negative_keywords",
     )
     @classmethod
@@ -167,7 +173,7 @@ class VerifierService(OpenAIClientOwner):
     SYSTEM_PROMPT = (
         "Evaluate the candidate post against the Service Profile. Treat target "
         "audience, problem solved, pain points, buying triggers, urgency signals, "
-        "search_terms, negative keywords, and excluded audiences as weighted "
+        "search_terms, named competitors, negative keywords, and excluded audiences as weighted "
         "relevance signals, not a checklist or hard requirements. Similar words or "
         "a product category alone are not evidence. A main lead must show a clear, "
         "real buyer problem that the service could plausibly solve. Return "
@@ -214,9 +220,14 @@ class VerifierService(OpenAIClientOwner):
         "`rejection_reason` explicit and concise and return an empty "
         "`suggested_reply`, empty `pain_theme`, null `signal_type`, `none` urgency, "
         "empty competitor context, null purchase stage, and empty evidence fields. "
-        "For a match, write a concise, helpful public reply "
-        "that responds directly to the person's pain without pressure, claims, "
-        "or a mass-outreach tone."
+        "For a match, write a concise, genuinely useful public reply. Start by "
+        "reflecting the specific problem or question in the candidate post, offer "
+        "one practical next step or insight, and use the author's language where "
+        "natural. Do not assume they want a demo, ask for a DM, use a generic "
+        "sales opener, make unverified product claims, or write as if you know "
+        "their company. Mention this service only when it directly helps explain "
+        "the next step; otherwise make the reply valuable on its own. Keep it under "
+        "90 words and end with at most one low-pressure question."
     )
 
     def __init__(
@@ -387,6 +398,7 @@ class VerifierService(OpenAIClientOwner):
         if not result.match:
             return result.model_copy(
                 update={
+                    "suggested_reply": "",
                     "pain_theme": "",
                     "signal_type": None,
                     "urgency_level": "none",

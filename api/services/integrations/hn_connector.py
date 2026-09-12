@@ -40,6 +40,7 @@ class SourcePost(BaseModel):
     url: str = Field(min_length=1)
     posted_at: datetime
     language: str | None = "en"
+    metadata: dict[str, str] = Field(default_factory=dict)
     embedding_status: Literal["pending", "completed", "failed"] = "pending"
 
 
@@ -188,6 +189,66 @@ class HackerNewsConnector:
 
         return posts
 
+    async def fetch_story_comments(
+        self,
+        story_id: str,
+        *,
+        limit: int = 40,
+    ) -> list[SourcePost]:
+        """Fetch a verified story's public comments with a strict bound.
+
+        This is deliberately separate from keyword discovery and is called
+        only after the parent story has passed human-review verification.
+        """
+
+        normalized_story_id = story_id.strip()
+        if not normalized_story_id.isdigit() or int(normalized_story_id) <= 0:
+            raise ValueError("story_id must be a positive Hacker News item id")
+        if limit < 1:
+            return []
+
+        target_limit = min(
+            limit,
+            _env_positive_int("ARCLI_HN_VERIFIED_COMMENT_LIMIT", 40),
+        )
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": os.getenv(
+                "ARCLI_HN_USER_AGENT", "arcli-prospect-intelligence/1.0"
+            ),
+        }
+        timeout = httpx.Timeout(self.timeout_seconds)
+        async with httpx.AsyncClient(
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        ) as client:
+            payload = await self._fetch_page(
+                client,
+                query="",
+                since_timestamp=0,
+                page=0,
+                page_size=min(100, target_limit),
+                tags=f"comment,story_{normalized_story_id}",
+            )
+
+        hits = payload.get("hits")
+        if not isinstance(hits, list):
+            return []
+        comments: list[SourcePost] = []
+        seen_ids: set[str] = set()
+        for hit in hits:
+            post = self._to_source_post(hit, since_timestamp=0)
+            if not post or post.metadata.get("content_kind") != "comment":
+                continue
+            if post.source_post_id in seen_ids:
+                continue
+            seen_ids.add(post.source_post_id)
+            comments.append(post)
+            if len(comments) >= target_limit:
+                break
+        return comments
+
     async def _fetch_page(
         self,
         client: httpx.AsyncClient,
@@ -196,14 +257,16 @@ class HackerNewsConnector:
         since_timestamp: int,
         page: int,
         page_size: int,
+        tags: str = "(story,comment)",
     ) -> dict[str, Any]:
         params = {
-            "query": query,
-            "tags": "(story,comment)",
+            "tags": tags,
             "numericFilters": f"created_at_i>={since_timestamp}",
             "page": str(page),
             "hitsPerPage": str(page_size),
         }
+        if query:
+            params["query"] = query
         last_error: httpx.TimeoutException | httpx.HTTPStatusError | None = None
 
         for attempt in range(1, self.max_attempts + 1):
@@ -265,6 +328,7 @@ class HackerNewsConnector:
             return None
 
         source_post_id = str(hit.get("objectID") or "").strip()
+        thread_id = str(hit.get("story_id") or source_post_id).strip()
         author_handle = str(hit.get("author") or "").strip() or None
         raw_title = hit.get("story_title") if is_comment else hit.get("title")
         title = sanitize_hn_html(raw_title) or None
@@ -303,6 +367,10 @@ class HackerNewsConnector:
                 url=url,
                 posted_at=posted_at,
                 language="en",
+                metadata={
+                    "content_kind": "comment" if is_comment else "story",
+                    "thread_id": thread_id,
+                },
             )
         except ValidationError:
             return None

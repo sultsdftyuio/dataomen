@@ -70,7 +70,7 @@ export function Hero() {
                 letterSpacing: "0.02em",
               }}
             >
-              Find Prospects <ArrowRight size={16} />
+              Find Verified Prospects <ArrowRight size={16} />
             </a>
           </div>
           <Link

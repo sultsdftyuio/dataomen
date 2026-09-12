@@ -86,6 +86,21 @@ export function WebsiteDemandMap({
               <span className="font-semibold" style={{ color: C.muted }}>Tests: </span>
               {suggestion.problemToSolve}
             </p>
+            <p className="mt-2 text-[11px] leading-4" style={{ color: C.navySoft }}>
+              <span className="font-semibold" style={{ color: C.muted }}>Starts in: </span>
+              {suggestion.communityPlan.sources.map((source) => source.label).join(" · ")}
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {suggestion.communityPlan.sources.slice(0, 3).flatMap((source) => source.queryTerms.slice(0, 1)).map((term) => (
+                <span
+                  key={term.toLowerCase()}
+                  className="max-w-full truncate rounded border px-1.5 py-0.5 text-[10px]"
+                  style={{ borderColor: C.rule, color: C.muted }}
+                >
+                  {term}
+                </span>
+              ))}
+            </div>
           </article>
         );
       })}

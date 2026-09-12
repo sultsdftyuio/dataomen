@@ -289,7 +289,10 @@ function WatchlistForm({
             </label>
             <label className="block space-y-1 text-xs font-medium md:col-span-2" style={{ color: C.navy }}>
               Public communities or places to prioritise
-              <Textarea value={suggestedPlaces} onChange={(event) => setSuggestedPlaces(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="Indie Hackers growth discussions&#10;a public founder community URL" />
+              <Textarea value={suggestedPlaces} onChange={(event) => setSuggestedPlaces(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="github:owner/repository&#10;stackexchange:stackoverflow&#10;lemmy:saas" />
+              <span className="block text-[10px] font-normal leading-4" style={{ color: C.muted }}>
+                Use a source prefix or public URL to make that source a strict scope. Plain notes remain context and do not hide posts when a source cannot expose community data.
+              </span>
             </label>
           </div>
         ) : null}

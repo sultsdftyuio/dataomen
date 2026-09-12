@@ -116,6 +116,10 @@ class PublicSourcePost(BaseModel):
     url: str = Field(min_length=1, max_length=4_096)
     posted_at: datetime
     language: str | None = Field(default="en", max_length=64)
+    # Provider-local context (such as a repository, site, or community) is
+    # retained in the existing JSON metadata column. It is optional so older
+    # connector payloads and storage schemas remain compatible.
+    metadata: dict[str, str] = Field(default_factory=dict)
     embedding_status: Literal["pending", "completed", "failed"] = "pending"
 
     @field_validator("posted_at")

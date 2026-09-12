@@ -72,6 +72,22 @@ def test_derivation_never_lowers_the_existing_similarity_threshold() -> None:
     assert result is None
 
 
+def test_feedback_only_boosts_ordering_and_never_penalizes_a_candidate() -> None:
+    result = calibration.derive_feedback_calibration(
+        _observations(
+            positive_scores=[0.68, 0.70, 0.72, 0.74, 0.76, 0.78],
+            negative_scores=[0.34, 0.36, 0.38, 0.40, 0.42, 0.44],
+        ),
+        base_threshold=0.15,
+    )
+
+    assert result is not None
+    assert calibration.feedback_ranking_boost(0.15, result) == 0.0
+    assert calibration.feedback_ranking_boost(0.80, result) > 0.0
+    assert calibration.feedback_ranking_boost(0.80, result) <= calibration.DEFAULT_MAX_RANKING_BOOST
+    assert calibration.feedback_ranking_boost(0.80, result) >= 0.0
+
+
 def test_derivation_requires_enough_unambiguous_positive_and_negative_reviews() -> None:
     rows = _observations(
         positive_scores=[0.68, 0.70, 0.72, 0.74, 0.76, 0.78],
@@ -190,4 +206,3 @@ def test_loader_fails_open_when_storage_is_unavailable(
     result = calibration.load_feedback_calibration("tenant-a", "profile-a")
 
     assert result is None
-

@@ -336,7 +336,21 @@ def _cached_lead_verification(
         if not payload:
             continue
         try:
-            return VerificationResult.model_validate(payload)
+            verification = VerificationResult.model_validate(payload)
+            if not verification.verifier_executed:
+                # Quota, transport, and pre-LLM similarity failures are
+                # transient evaluation states, not durable lead decisions.
+                # Ignoring them here allows the next worker run to retry.
+                logger.info(
+                    "lead_verification_cache_ignored tenant_id=%s service_profile_id=%s source_post_id=%s external_key=%s reason=%s",
+                    tenant_id,
+                    service_profile_id,
+                    source_post_id,
+                    external_key,
+                    "verifier_not_executed",
+                )
+                return None
+            return verification
         except Exception as exc:
             logger.info(
                 "lead_verification_cache_ignored tenant_id=%s service_profile_id=%s source_post_id=%s external_key=%s reason=%s error_type=%s error=%s",
@@ -394,6 +408,18 @@ def _persist_lead_match(
     verifier_model: str,
     verifier_policy_version: str,
 ) -> None:
+    if not bool(getattr(verification, "verifier_executed", True)):
+        # Do not turn a provider outage or quota skip into a durable rejected
+        # lead. The next matching run can safely retry this candidate.
+        logger.info(
+            "lead_match_persistence_skipped tenant_id=%s service_profile_id=%s source_post_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            source_post_id,
+            "verifier_not_executed",
+        )
+        return
+
     columns = _table_columns(conn, "lead_matches")
     if not {"tenant_id", "match_status"}.issubset(columns):
         logger.info("lead_match_persistence_skipped skip_reason=%s", "table_missing")

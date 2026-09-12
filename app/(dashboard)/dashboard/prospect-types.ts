@@ -16,6 +16,8 @@ export type ServiceProfileFields = {
   urgency_signals: string[];
   discovery_queries: DiscoveryQuery[];
   search_terms: string[];
+  /** Named alternatives to monitor for complaints and switching intent. */
+  competitor_terms: string[];
   negative_keywords: string[];
   excluded_audiences: string[];
 };

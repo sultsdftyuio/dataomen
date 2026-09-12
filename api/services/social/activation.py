@@ -49,6 +49,8 @@ from api.services.verifier import (
     VerificationResult,
     VerifierService,
 )
+from api.services.social.source_planning import profile_source_preferences
+from api.services.social.source_feedback_ranking import load_source_feedback_ranking
 
 def enqueue_initial_public_source_ingestion(
     tenant_id: str,
@@ -115,25 +117,70 @@ def enqueue_initial_public_source_ingestion(
     hn_jobs = 0
     x_jobs = 0
     additional_source_jobs = 0
-    normalized_allowed_sources = {
-        str(source).strip().casefold()
-        for source in (allowed_sources or ())
-        if str(source).strip()
-    }
-    # ``None`` means the normal product-wide activation. An explicit set is
-    # a customer Watchlist preference; source controls can reduce coverage but
-    # can never enable a connector that deployment policy disabled.
+    feedback_ordered_sources: tuple[str, ...] | None = None
+    if allowed_sources is None:
+        website_sources = profile_source_preferences(profile)
+        feedback_ranking = load_source_feedback_ranking(
+            tenant_id,
+            service_profile_id,
+            website_sources,
+        )
+        feedback_ordered_sources = feedback_ranking.sources
+        normalized_allowed_sources = set(feedback_ranking.sources)
+        source_plan_mode = (
+            "website_derived_feedback_adjusted"
+            if (
+                feedback_ranking.deprioritized_sources
+                or feedback_ranking.prioritized_sources
+            )
+            else "website_derived"
+        )
+        if (
+            feedback_ranking.deprioritized_sources
+            or feedback_ranking.prioritized_sources
+        ):
+            logger.info(
+                "website_source_plan_feedback_adjusted tenant_id=%s service_profile_id=%s deprioritized_sources=%s prioritized_sources=%s reviewed_leads=%s ordering_only=true",
+                tenant_id,
+                service_profile_id,
+                feedback_ranking.deprioritized_sources,
+                feedback_ranking.prioritized_sources,
+                feedback_ranking.reviewed_leads,
+            )
+    else:
+        normalized_allowed_sources = {
+            str(source).strip().casefold()
+            for source in allowed_sources
+            if str(source).strip()
+        }
+        source_plan_mode = "watchlist_selected"
+    # Website-derived activation now starts with the public communities that
+    # fit the product context. An explicit customer Watchlist can narrow that
+    # plan further, but deployment policy remains the final connector gate.
     source_is_allowed = lambda source: (
         not normalized_allowed_sources or source.casefold() in normalized_allowed_sources
     )
     hn_enabled = _is_source_enabled("ARCLI_HN_INGESTION_ENABLED") and source_is_allowed(
         "hackernews"
     )
-    additional_sources = tuple(
-        source
-        for source in enabled_additional_public_sources()
-        if source_is_allowed(source)
-    )
+    enabled_additional_sources = enabled_additional_public_sources()
+    if feedback_ordered_sources is not None:
+        # The feedback layer is advisory: every enabled source remains in the
+        # plan, but proven places are handed to the concurrent worker first.
+        enabled_additional_by_name = {
+            source.casefold(): source for source in enabled_additional_sources
+        }
+        additional_sources = tuple(
+            enabled_additional_by_name[source]
+            for source in feedback_ordered_sources
+            if source in enabled_additional_by_name
+        )
+    else:
+        additional_sources = tuple(
+            source
+            for source in enabled_additional_sources
+            if source_is_allowed(source)
+        )
     x_enabled = x_source_is_configured() and source_is_allowed("x")
     x_skip_reason = (
         None
@@ -283,10 +330,13 @@ def enqueue_initial_public_source_ingestion(
             )
 
     logger.info(
-        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s discovery_run_id=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s fast_check_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s discovery_run_id=%s source_plan_mode=%s selected_sources=%s source_order=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s fast_check_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
         tenant_id,
         service_profile_id,
         discovery_run_id,
+        source_plan_mode,
+        sorted(normalized_allowed_sources),
+        feedback_ordered_sources,
         discovery_query_payloads,
         hn_jobs,
         additional_source_jobs,
@@ -371,7 +421,25 @@ _INDIRECT_INTENT_PATTERN = re.compile(
 _TOOL_FRICTION_PATTERN = re.compile(
     r"\b(?:frustrat(?:ed|ing|ion)|workaround|bottleneck|spreadsheet(?:s)?|"
     r"copy(?:ing)?\s*(?:and|&)\s*past(?:e|ing)|re-?enter(?:ing)?|"
-    r"(?:tool|software|platform|stack)\s+(?:is\s+)?(?:broken|slow|expensive|unreliable))\b",
+    r"(?:tool|software|platform|stack)\s+(?:is\s+)?(?:broken|slow|expensive|unreliable)|"
+    r"(?:fragmented|disconnected|scattered)\s+(?:across|between)\s+"
+    r"(?:tools?|platforms?|systems?)|"
+    r"(?:design|developer|dev)?\s*handoff\s+(?:is\s+)?"
+    r"(?:broken|slow|manual|fragmented|causing\s+rework)|"
+    r"(?:tool\s+sprawl|context\s+switching))\b",
+    re.IGNORECASE,
+)
+_SOLUTION_EVALUATION_PATTERN = re.compile(
+    r"\b(?:looking\s+for|recommend(?:ation|ations)?|evaluat(?:e|ing)|"
+    r"demo|trial|pricing|budget|switch(?:ing)?|replace|alternatives?\s+to|"
+    r"(?:which|what)\s+(?:tool|software|platform|solution))\b",
+    re.IGNORECASE,
+)
+_ROLE_INDIRECT_BUYER_INQUIRY_PATTERN = re.compile(
+    r"\b(?:how\s+(?:do|should|can)\s+(?:i|we)|"
+    r"what(?:'s|\s+is)\s+(?:the\s+)?best|"
+    r"which\s+(?:tool|approach|architecture|stack)|"
+    r"best\s+practi(?:ce|ces)|architect(?:ure|ural))\b",
     re.IGNORECASE,
 )
 _PUBLISHER_CONTEXT_PATTERN = re.compile(
@@ -463,6 +531,11 @@ def _source_post_discovery_admission(
     has_company_buying_trigger = has_buying_trigger(post)
     has_indirect_intent = bool(_INDIRECT_INTENT_PATTERN.search(text_value))
     has_tool_friction = bool(_TOOL_FRICTION_PATTERN.search(text_value))
+    has_solution_evaluation = bool(_SOLUTION_EVALUATION_PATTERN.search(text_value))
+    has_role_indirect_buyer_inquiry = bool(
+        _ROLE_INDIRECT_BUYER_INQUIRY_PATTERN.search(text_value)
+    )
+    content_role = assess_public_post_content_role(post)
     # Search providers regularly return buyer-authored paraphrases rather than
     # a copy of the query. If lexical bridges cannot connect a clear indirect
     # signal to the query, still pass it to embeddings: that model is the
@@ -500,6 +573,30 @@ def _source_post_discovery_admission(
             required_overlap,
         )
 
+    # Jobs and generic GitHub work items often carry exact product wording,
+    # but they are usually recruiting material or internal implementation
+    # plans rather than a buyer conversation.  Keep them only when the author
+    # also supplies concrete tool friction or an active solution evaluation.
+    # A first-person architecture question remains valid for an issue because
+    # it can be an indirect buyer inquiry; a bare "we need" does not qualify.
+    if content_role.is_job_listing:
+        has_role_buyer_evidence = has_tool_friction or has_solution_evaluation
+    elif content_role.is_implementation_ticket:
+        has_role_buyer_evidence = (
+            has_tool_friction
+            or has_solution_evaluation
+            or (has_role_indirect_buyer_inquiry and has_first_person_context)
+        )
+    else:
+        has_role_buyer_evidence = True
+    if content_role.is_low_value_role and not has_role_buyer_evidence:
+        return DiscoveryAdmission(
+            False,
+            tuple((*content_role.reasons, "content_role_without_buyer_need")),
+            overlap,
+            required_overlap,
+        )
+
     reasons = list(overlap_details.reasons)
     if phrase in text_value:
         reasons.append("exact_query_phrase")
@@ -513,6 +610,10 @@ def _source_post_discovery_admission(
         reasons.append("indirect_intent")
     if has_tool_friction:
         reasons.append("existing_tool_friction")
+    if has_solution_evaluation:
+        reasons.append("active_solution_evaluation")
+    if content_role.is_low_value_role:
+        reasons.extend(content_role.reasons)
 
     # A recommendation or category search should ideally look like someone
     # evaluating a solution.  We keep the old stricter rule as an optional
@@ -709,6 +810,7 @@ from .models import (
     _service_profile_from_row,
     logger,
 )
+from .content_roles import assess_public_post_content_role
 from .lead_signals import has_buying_trigger, prioritized_source_post_refs
 from .public_storage import (
     _matchable_source_post_ids,

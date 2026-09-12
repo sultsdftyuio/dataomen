@@ -69,6 +69,98 @@ def test_indirect_intent_and_tool_friction_raise_priority_without_hard_filtering
     assert "existing_tool_or_manual_workflow_friction" in score.reasons
 
 
+def test_discovery_guard_rejects_job_listing_with_generic_product_need() -> None:
+    post = SimpleNamespace(
+        source="bluesky",
+        title="We're hiring a design systems engineer",
+        body="We need someone to implement our design system and maintain components.",
+        metadata=None,
+    )
+
+    assert not _source_post_is_plausible_for_discovery_query(
+        post,
+        "design system collaboration",
+        query_type="buyer_pain",
+    )
+
+
+def test_discovery_guard_rejects_generic_github_implementation_ticket() -> None:
+    post = SimpleNamespace(
+        source="github",
+        title="feat: migrate the design system tokens",
+        body="We need to update Tailwind components and satisfy the acceptance criteria.",
+        metadata=None,
+    )
+
+    assert not _source_post_is_plausible_for_discovery_query(
+        post,
+        "design system handoff",
+        query_type="manual_workflow_frustration",
+    )
+
+
+def test_discovery_guard_keeps_job_post_with_explicit_handoff_tool_friction() -> None:
+    post = SimpleNamespace(
+        source="bluesky",
+        title="We're hiring while our design team grows",
+        body=(
+            "Our design handoff is fragmented across tools and causing rework. "
+            "We are evaluating alternatives before adding more people."
+        ),
+        metadata=None,
+    )
+
+    assert _source_post_is_plausible_for_discovery_query(
+        post,
+        "design handoff collaboration",
+        query_type="switching_trigger",
+    )
+
+
+def test_github_ticket_keeps_first_person_indirect_architecture_inquiry() -> None:
+    post = SimpleNamespace(
+        source="github",
+        title="feat: improve design handoff",
+        body="How should we migrate our design handoff architecture for a growing team?",
+        metadata=None,
+    )
+
+    assert _source_post_is_plausible_for_discovery_query(
+        post,
+        "design handoff collaboration",
+        query_type="recommendation_request",
+    )
+
+
+def test_job_and_ticket_roles_are_downranked_but_remain_explainable() -> None:
+    ordinary = lead_signal_score(
+        SimpleNamespace(
+            source="bluesky",
+            title="Need help with a design system",
+            body="We need a better design workflow for our team.",
+        )
+    )
+    job = lead_signal_score(
+        SimpleNamespace(
+            source="bluesky",
+            title="We're hiring a design systems engineer",
+            body="We need someone to build our component library.",
+        )
+    )
+    ticket = lead_signal_score(
+        SimpleNamespace(
+            source="github",
+            title="fix: migrate design tokens",
+            body="Update Tailwind components and the acceptance criteria.",
+        )
+    )
+
+    assert job.score < ordinary.score
+    assert ticket.score < ordinary.score
+    assert "job_listing_context" in job.reasons
+    assert "generic_implementation_ticket" in ticket.reasons
+
+
 def test_short_buyer_post_reaches_semantic_matching() -> None:
     candidates = find_candidate_matches(
         [1.0, 0.0],
@@ -83,6 +175,25 @@ def test_short_buyer_post_reaches_semantic_matching() -> None:
     )
 
     assert [candidate.post_id for candidate in candidates] == ["short-post"]
+
+
+def test_ranking_feedback_cannot_turn_into_a_candidate_rejection() -> None:
+    candidates = find_candidate_matches(
+        [1.0, 0.0],
+        [
+            PostEmbedding(
+                post_id="borderline-but-valid",
+                source="x",
+                text="We need help with a manual workflow.",
+                embedding=[0.16, (1 - 0.16**2) ** 0.5],
+            )
+        ],
+        ranking_score_adjustment=lambda _score: -1.0,
+    )
+
+    # The hook is clamped and used after the recall-oriented eligibility
+    # check, so even a broken feedback signal cannot hide this candidate.
+    assert [candidate.post_id for candidate in candidates] == ["borderline-but-valid"]
 
 
 def test_malformed_embedding_isolated_and_sparse_scores_remain_finite() -> None:

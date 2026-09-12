@@ -355,6 +355,15 @@ negative_keywords by identifying audiences, industries, buying intents, or use
 cases that would create bad-fit prospect matches, even when those exclusions are
 not stated directly.
 
+PRODUCT-AND-BUYER MAP:
+- `one_liner` must plainly identify the product category or concrete capability
+  and the outcome it delivers; it is not a slogan or feature list.
+- `target_audience` must identify the buyer role, team, or company situation
+  that can recognise the problem and act on it.
+- `core_problem_solved` must state the buyer's costly situation before they
+  choose a product. Keep `key_value_propositions`, pains, triggers, and
+  exclusions consistent with that product-buyer relationship.
+
 DISCOVERY-QUERY CONTRACT:
 - Return exactly six discovery_queries objects, each with exactly query_type and
   phrase. Use every query_type exactly once and only these values: buyer_pain,

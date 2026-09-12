@@ -256,6 +256,7 @@ class BlueskyConnector:
                 url=permalink,
                 posted_at=posted_at,
                 language=clip_text(language, 64),
+                metadata={"community": handle} if handle else {},
             )
         except ValidationError:
             return None

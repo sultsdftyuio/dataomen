@@ -414,15 +414,6 @@ class PublicSourceMatchingTests(unittest.TestCase):
     def test_cached_verdict_requires_the_current_verifier_policy_version(self) -> None:
         from api.services.social.legacy_storage import _cached_lead_verification
 
-        verdict = VerificationResult(
-            match=False,
-            decision_label="not_a_match",
-            confidence=0.1,
-            pain_detected="",
-            why_this_matches="No matching buyer evidence.",
-            rejection_reason="llm_not_a_match",
-        ).model_dump()
-
         class FakeMappings:
             def __init__(self, row: dict[str, object]) -> None:
                 self.row = row
@@ -444,13 +435,26 @@ class PublicSourceMatchingTests(unittest.TestCase):
             def execute(self, *_args: object, **_kwargs: object) -> FakeResult:
                 return FakeResult(self.row)
 
-        def cached_result(policy_version: str | None) -> VerificationResult | None:
+        def cached_result(
+            policy_version: str | None,
+            *,
+            verifier_executed: bool = True,
+        ) -> VerificationResult | None:
             metadata = {
                 "profile_embedding_sha256": "profile-hash",
                 "verifier_model": "test-model",
             }
             if policy_version is not None:
                 metadata["verifier_policy_version"] = policy_version
+            verdict = VerificationResult(
+                match=False,
+                decision_label="not_a_match",
+                confidence=0.1,
+                pain_detected="",
+                why_this_matches="No matching buyer evidence.",
+                rejection_reason="llm_not_a_match",
+                verifier_executed=verifier_executed,
+            ).model_dump()
             return _cached_lead_verification(
                 FakeConnection({"metadata": metadata, "verification": verdict}),
                 tenant_id="tenant-a",
@@ -466,6 +470,43 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertIsNone(cached_result(None))
         self.assertIsNone(cached_result("buyer_outcome_v1"))
         self.assertIsNotNone(cached_result(VERIFIER_POLICY_VERSION))
+        self.assertIsNone(
+            cached_result(VERIFIER_POLICY_VERSION, verifier_executed=False)
+        )
+
+    def test_unexecuted_verifier_result_is_not_persisted_as_a_rejection(self) -> None:
+        from api.services.social.legacy_storage import _persist_lead_match
+        from api.services.social.models import SocialPost
+
+        class UnusedConnection:
+            def execute(self, *_args: object, **_kwargs: object) -> object:
+                raise AssertionError("a retryable verifier skip must not be persisted")
+
+        _persist_lead_match(
+            UnusedConnection(),
+            tenant_id="tenant-a",
+            service_profile_id="profile-a",
+            source_post_id="source-post-a",
+            post=SocialPost(
+                source="hackernews",
+                external_id="source-post-a",
+                title="Need help",
+                text="Our manual workflow is failing.",
+            ),
+            similarity_score=0.7,
+            verification=VerificationResult(
+                match=False,
+                decision_label="not_a_match",
+                confidence=0.0,
+                pain_detected="",
+                why_this_matches="The provider call failed.",
+                rejection_reason="verifier_evaluation_failed",
+                verifier_executed=False,
+            ),
+            profile_embedding_sha256="profile-hash",
+            verifier_model="test-model",
+            verifier_policy_version=VERIFIER_POLICY_VERSION,
+        )
 
     def test_rematch_candidate_limit_is_bounded_before_verification(self) -> None:
         import api.services.social_ingestion as ingestion
@@ -544,6 +585,220 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertEqual(result["embedded"], 2)
         self.assertEqual(result["candidates"], 0)
         self.assertEqual(matcher.call_args.kwargs["max_candidates"], 1)
+
+    def test_source_qualified_handoff_defers_a_missing_global_record_for_retry(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        with (
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_load_public_source_post_rows", return_value=[]) as load_rows,
+            patch.object(ingestion, "_public_matching_profile_rows", return_value=[]),
+            patch.object(ingestion, "_table_columns", return_value={}),
+        ):
+            with self.assertRaises(ingestion.RetryablePublicSourcePostNotFound):
+                ingestion.process_public_source_post_embedding(
+                    "github-42",
+                    source="github",
+                    retry_on_not_found=True,
+                )
+
+        # One normal lookup plus a fresh-transaction visibility check happens
+        # before the actor's existing delayed retry takes over.
+        self.assertEqual(load_rows.call_count, 2)
+
+    def test_source_qualified_batch_defers_only_after_processing_visible_rows(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        class FakeEmbeddingService:
+            def close(self) -> None:
+                return None
+
+        refs = [
+            {"source": "github", "source_post_id": "visible"},
+            {"source": "github", "source_post_id": "not-yet-visible"},
+        ]
+
+        def source_rows(_conn, source_post_id, *, source=None):
+            if source_post_id == "visible":
+                return [{"id": "visible-row"}]
+            return []
+
+        with (
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(
+                ingestion,
+                "_load_public_source_post_rows",
+                side_effect=source_rows,
+            ),
+            patch.object(ingestion, "_public_matching_profile_rows", return_value=[]),
+            patch.object(ingestion, "_table_columns", return_value={}),
+            patch.object(ingestion, "EmbeddingService", FakeEmbeddingService),
+            patch.object(ingestion, "prewarm_public_source_post_embedding_cache"),
+            patch.object(
+                ingestion,
+                "process_public_source_post_embedding",
+                return_value={
+                    "posts": 1,
+                    "embedded": 1,
+                    "candidates": 0,
+                    "ready_for_review": 0,
+                    "discovery_candidates": 0,
+                },
+            ) as process,
+        ):
+            with self.assertRaises(ingestion.RetryablePublicSourcePostNotFound):
+                ingestion.process_public_source_post_embedding_batch(
+                    refs,
+                    retry_on_not_found=True,
+                )
+
+        # The visible row is still handled before the batch asks Dramatiq to
+        # retry the missing reference, so one race cannot discard the batch.
+        process.assert_called_once()
+        self.assertEqual(process.call_args.args[0], "visible")
+
+    def test_rematch_defers_uncached_candidates_when_the_verification_budget_expires(self) -> None:
+        import api.services.social_ingestion as ingestion
+        import api.services.social.public_matching as public_matching
+        from api.services.matching import CandidateMatch
+
+        source_rows = [
+            {
+                "id": "00000000-0000-0000-0000-000000000031",
+                "source": "hackernews",
+                "source_post_id": "hn-31",
+                "body": "We need a recurring billing platform.",
+                "url": "https://news.ycombinator.com/item?id=31",
+                "metadata": {},
+            },
+            {
+                "id": "00000000-0000-0000-0000-000000000032",
+                "source": "hackernews",
+                "source_post_id": "hn-32",
+                "body": "Manual billing is taking too much time.",
+                "url": "https://news.ycombinator.com/item?id=32",
+                "metadata": {},
+            },
+        ]
+        profile_row = {
+            "id": "profile-1",
+            "tenant_id": "tenant-a",
+            "company_name": "Billing Co",
+            "one_liner": "Recurring billing software",
+            "target_audience": ["SaaS founders"],
+            "core_problem_solved": "Recurring billing",
+            "key_value_propositions": ["Automated billing"],
+            "ideal_customer_pain_points": ["Manual invoices"],
+            "profile_embedding": [1.0, 0.0],
+            "website_url": "https://billing.example/",
+            "profile_json": {
+                "service_profile_identity_version": "website-scoped-v2",
+                "website_url": "https://billing.example/",
+            },
+        }
+        candidates = [
+            CandidateMatch(
+                post_id=source_rows[0]["id"],
+                source="hackernews",
+                text=source_rows[0]["body"],
+                score=0.9,
+            ),
+            CandidateMatch(
+                post_id=source_rows[1]["id"],
+                source="hackernews",
+                text=source_rows[1]["body"],
+                score=0.8,
+            ),
+        ]
+        verifier_calls: list[str] = []
+        persisted: list[dict[str, object]] = []
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        class FakeEmbeddingService:
+            model = "test-embedding-model"
+
+            def close(self) -> None:
+                return None
+
+        class FakeVerifier:
+            model = "test-verifier-model"
+
+            def verify(self, candidate, *_args, **_kwargs):
+                verifier_calls.append(candidate.post_id)
+                return VerificationResult(
+                    match=True,
+                    decision_label="strong_match",
+                    confidence=0.8,
+                    pain_detected="Manual billing work",
+                    why_this_matches="The post asks for recurring billing help.",
+                )
+
+            def close(self) -> None:
+                return None
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ARCLI_PUBLIC_SOURCE_REMATCH_JOB_TIME_LIMIT_MS": "180000",
+                    "ARCLI_PUBLIC_SOURCE_REMATCH_VERIFICATION_BUDGET_SECONDS": "1",
+                },
+                clear=False,
+            ),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=profile_row),
+            patch.object(
+                ingestion,
+                "_active_tenant_website_url",
+                return_value="https://billing.example/",
+            ),
+            patch.object(
+                ingestion,
+                "_load_recent_embedded_public_source_post_rows",
+                return_value=source_rows,
+            ),
+            patch.object(ingestion, "_table_columns", return_value={}),
+            patch.object(
+                ingestion,
+                "_cached_public_source_post_embedding",
+                return_value=[1.0, 0.0],
+            ),
+            patch.object(ingestion, "find_candidate_matches", return_value=candidates),
+            patch.object(ingestion, "_cached_lead_verification", return_value=None),
+            patch.object(
+                ingestion,
+                "_persist_lead_match",
+                side_effect=lambda *_args, **kwargs: persisted.append(kwargs),
+            ),
+            patch.object(ingestion, "_advance_public_candidate_pool"),
+            patch.object(ingestion, "EmbeddingService", FakeEmbeddingService),
+            patch.object(ingestion, "VerifierService", FakeVerifier),
+            patch.object(
+                public_matching,
+                "_monotonic",
+                side_effect=[10.0, 10.0, 11.0],
+            ),
+        ):
+            result = ingestion.rematch_existing_public_source_posts_for_profile(
+                "tenant-a",
+                "profile-1",
+            )
+
+        self.assertEqual(result["candidates"], 2)
+        self.assertEqual(verifier_calls, [source_rows[0]["id"]])
+        self.assertEqual(len(persisted), 1)
 
     def test_lowered_review_and_discovery_thresholds_still_require_a_verifier_match(self) -> None:
         import api.services.social_ingestion as ingestion

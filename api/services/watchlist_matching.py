@@ -32,7 +32,16 @@ from api.services.matching import (
     PostEmbedding,
     find_candidate_matches,
 )
-from api.services.social.feedback_calibration import load_feedback_calibration
+from api.services.social.feedback_calibration import (
+    feedback_ranking_boost,
+    load_feedback_calibration,
+)
+from api.services.social.community_monitoring import (
+    CommunityTarget,
+    community_target_payloads,
+    parse_community_targets,
+    post_matches_community_targets,
+)
 from api.services.social.legacy_fetch import _primitive_metadata
 from api.services.social.legacy_storage import _lead_match_status
 from api.services.social.models import (
@@ -87,6 +96,7 @@ class WatchlistContext:
     profile: ServiceProfile
     queries: tuple[DiscoveryQuery, ...]
     source_preferences: frozenset[str]
+    community_targets: tuple[CommunityTarget, ...]
     embedding: list[float]
     embedding_sha256: str
 
@@ -220,11 +230,16 @@ def build_watchlist_profile(base_profile: ServiceProfile, row: dict[str, Any]) -
         ],
         urgency_signals=base_profile.urgency_signals,
         search_terms=[query.phrase for query in queries],
+        competitor_terms=base_profile.competitor_terms,
         negative_keywords=[*base_profile.negative_keywords, *exclude_terms],
     )
 
 
-def watchlist_embedding_text(profile: ServiceProfile) -> str:
+def watchlist_embedding_text(
+    profile: ServiceProfile,
+    *,
+    community_targets: Iterable[CommunityTarget] = (),
+) -> str:
     """A stable, explicit embedding document for one customer-selected group."""
     lines = [
         f"Company: {profile.company_name}",
@@ -237,6 +252,9 @@ def watchlist_embedding_text(profile: ServiceProfile) -> str:
     ]
     if profile.negative_keywords:
         lines.append(f"Exclude: {', '.join(profile.negative_keywords)}")
+    scoped_places = [target.label for target in community_targets]
+    if scoped_places:
+        lines.append(f"Community scope: {', '.join(scoped_places)}")
     return normalize_embedding_text("\n".join(line for line in lines if line.strip())[:32_000])
 
 
@@ -330,7 +348,11 @@ def _build_context(
     if not tenant_id or not watchlist_id or not service_profile_id:
         raise ValueError("watchlist identity is incomplete")
     profile = build_watchlist_profile(_service_profile_from_row(profile_row), row)
-    embedding_text = watchlist_embedding_text(profile)
+    community_targets = parse_community_targets(_json_list(row.get("suggested_places")))
+    embedding_text = watchlist_embedding_text(
+        profile,
+        community_targets=community_targets,
+    )
     stored_embedding = _embedding_values(row.get("embedding"))
     if not stored_embedding or _space(row.get("embedding_text"), max_chars=32_000) != embedding_text:
         response = embedding_service.embed_text(
@@ -369,6 +391,7 @@ def _build_context(
                                 _space(row.get("problem_to_solve")),
                                 _json_list(row.get("include_terms")),
                             )],
+                            "community_targets": community_target_payloads(community_targets),
                         }
                     ),
                     "embedding": json.dumps(stored_embedding),
@@ -389,6 +412,7 @@ def _build_context(
             )
         ),
         source_preferences=normalize_watchlist_sources(row.get("source_preferences")),
+        community_targets=community_targets,
         embedding=stored_embedding,
         embedding_sha256=_embedding_sha256(stored_embedding),
     )
@@ -439,7 +463,10 @@ def _source_is_selected(post: SocialPost, context: WatchlistContext) -> bool:
     source = _space(post.source, max_chars=32).casefold()
     if source == "twitter":
         source = "x"
-    return source in context.source_preferences
+    return (
+        source in context.source_preferences
+        and post_matches_community_targets(post, context.community_targets)
+    )
 
 
 def _cached_watchlist_verification(
@@ -479,7 +506,12 @@ def _cached_watchlist_verification(
     ):
         return None
     try:
-        return VerificationResult.model_validate(_as_dict(row.get("verification")))
+        verification = VerificationResult.model_validate(
+            _as_dict(row.get("verification"))
+        )
+        # A quota/transport/gate skip is retryable rather than a reusable
+        # decision; keep the Watchlist path consistent with lead matches.
+        return verification if verification.verifier_executed else None
     except Exception:
         return None
 
@@ -494,6 +526,16 @@ def _persist_watchlist_match(
     verification: VerificationResult,
     verifier_model: str,
 ) -> None:
+    if not verification.verifier_executed:
+        logger.info(
+            "watchlist_match_persistence_skipped tenant_id=%s watchlist_id=%s source_post_id=%s skip_reason=%s",
+            context.tenant_id,
+            context.id,
+            source_post_id,
+            "verifier_not_executed",
+        )
+        return
+
     now = datetime.now(timezone.utc).isoformat()
     verification_payload = verification.model_dump()
     payload = {
@@ -584,9 +626,11 @@ def _match_post_to_contexts(
                     DEFAULT_SIMILARITY_THRESHOLD,
                 ),
             )
-            candidate_matching_options: dict[str, float] = {}
+            candidate_matching_options: dict[str, Any] = {}
             if feedback_calibration is not None:
-                candidate_matching_options["threshold"] = feedback_calibration.threshold
+                candidate_matching_options["ranking_score_adjustment"] = (
+                    lambda score: feedback_ranking_boost(score, feedback_calibration)
+                )
 
             candidate = find_candidate_matches(
                 context.embedding,
@@ -644,6 +688,15 @@ def _match_post_to_contexts(
                     tenant_id=context.tenant_id,
                     service_profile_id=context.service_profile_id,
                 )
+            if not verification.verifier_executed:
+                logger.info(
+                    "watchlist_source_matching_retry_deferred tenant_id=%s watchlist_id=%s source_post_id=%s reason=%s",
+                    context.tenant_id,
+                    context.id,
+                    source_post_id,
+                    "verifier_not_executed",
+                )
+                continue
             status = _lead_match_status(verification)
             if status == "ready_for_review":
                 result["ready_for_review"] += 1
@@ -659,6 +712,26 @@ def _match_post_to_contexts(
                     verification=verification,
                     verifier_model=verifier.model,
                 )
+            if status == "ready_for_review":
+                try:
+                    from api.services.social.verified_comment_scan import (
+                        enqueue_verified_thread_comment_scan,
+                    )
+
+                    enqueue_verified_thread_comment_scan(
+                        post,
+                        tenant_id=context.tenant_id,
+                        service_profile_id=context.service_profile_id,
+                    )
+                except Exception as comment_scan_exc:
+                    logger.warning(
+                        "watchlist_verified_thread_comment_scan_handoff_skipped source=%s source_post_id=%s tenant_id=%s watchlist_id=%s error_type=%s",
+                        post.source,
+                        post.external_id,
+                        context.tenant_id,
+                        context.id,
+                        comment_scan_exc.__class__.__name__,
+                    )
     finally:
         if verifier is not None:
             verifier.close()

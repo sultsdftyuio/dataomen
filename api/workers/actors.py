@@ -2086,7 +2086,11 @@ def enqueue_source_post_embedding_job(
     try:
         from api.services.social_ingestion import process_public_source_post_embedding
 
-        result = process_public_source_post_embedding(source_post_id, source=source)
+        result = process_public_source_post_embedding(
+            source_post_id,
+            source=source,
+            retry_on_not_found=True,
+        )
         # Watchlists are an additive tenant-scoped view over the same global
         # post cache. A rollout/schema issue here must never retry or duplicate
         # the established profile-wide matching result above.
@@ -2109,6 +2113,17 @@ def enqueue_source_post_embedding_job(
                 watchlist_exc,
             )
     except Exception as exc:
+        if exc.__class__.__name__ == "RetryablePublicSourcePostNotFound":
+            # Source persistence and enqueueing are separate transactions.
+            # Let Dramatiq's existing bounded backoff retry this expected
+            # visibility race instead of recording a terminal failure.
+            logger.info(
+                "source_post_embedding_retry_deferred source=%s source_post_id=%s reason=%s",
+                source,
+                source_post_id,
+                "global_source_post_not_found",
+            )
+            raise
         logger.exception(
             "source_post_embedding_failed job_state=%s source=%s source_post_id=%s error_type=%s error=%s",
             "failed",
@@ -2132,6 +2147,62 @@ def enqueue_source_post_embedding_job(
         ready_for_review=result["ready_for_review"],
         watchlist_candidates=(watchlist_result or {}).get("candidates", 0),
         watchlist_ready_for_review=(watchlist_result or {}).get("ready_for_review", 0),
+    )
+
+
+@dramatiq.actor(
+    actor_name="scan_verified_hn_story_comments_job",
+    queue_name=os.getenv("ARCLI_SOURCE_POST_EMBEDDING_QUEUE_NAME", "embeddings"),
+    max_retries=2,
+    min_backoff=15_000,
+    max_backoff=90_000,
+)
+def scan_verified_hn_story_comments_job(
+    story_id: str,
+    *,
+    tenant_id: str,
+    service_profile_id: str,
+) -> None:
+    """Expand one verifier-confirmed HN story into bounded comment context."""
+
+    _job_started(
+        job_name="verified_hn_thread_comment_scan",
+        source="hackernews",
+        story_id=story_id,
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+    )
+    try:
+        from api.services.social.verified_comment_scan import (
+            scan_verified_hn_story_comments,
+        )
+
+        result = scan_verified_hn_story_comments(
+            story_id,
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "verified_hn_thread_comment_scan_failed story_id=%s tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            story_id,
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="verified_hn_thread_comment_scan",
+        state="completed",
+        source="hackernews",
+        story_id=story_id,
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        **result,
     )
 
 
@@ -2177,6 +2248,7 @@ def enqueue_source_post_embedding_batch_job(
             refs,
             tenant_id=tenant_id,
             service_profile_id=service_profile_id,
+            retry_on_not_found=True,
         )
         # Watchlists remain an independent tenant-scoped view.  Batch the
         # shared embedding work, but never let a watchlist error retry or
@@ -2206,6 +2278,13 @@ def enqueue_source_post_embedding_batch_job(
                     watchlist_exc,
                 )
     except Exception as exc:
+        if exc.__class__.__name__ == "RetryablePublicSourcePostNotFound":
+            logger.info(
+                "source_post_embedding_batch_retry_deferred source_post_count=%s reason=%s",
+                len(refs),
+                "global_source_post_not_found",
+            )
+            raise
         logger.exception(
             "source_post_embedding_batch_failed job_state=%s source_post_count=%s error_type=%s error=%s",
             "failed",

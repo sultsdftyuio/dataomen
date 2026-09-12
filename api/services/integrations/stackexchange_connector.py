@@ -260,6 +260,7 @@ class StackExchangeConnector:
                 url=url,
                 posted_at=posted_at,
                 language=None,
+                metadata={"community": site},
             )
         except ValidationError:
             return None

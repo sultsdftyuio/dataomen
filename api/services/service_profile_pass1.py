@@ -59,6 +59,12 @@ CONSTITUTIONAL MANDATES:
    "saves time", "uses AI", "improves efficiency", or "all teams".
 2. HIGH SPECIFICITY: Target concrete buyer roles, clear operational workflows,
    exact SaaS categories, and explicit pain points.
+2a. PRODUCT-AND-BUYER MAP: Make unique_value_prop name the product category or
+   concrete capability and the buyer outcome it delivers. Make target_audience
+   identify the buyer role, team, or company context that can act. Make
+   core_problem describe the buyer's costly situation before they choose a
+   product. These three fields must form a coherent commercial map, not a
+   feature list or generic positioning.
 3. NEGATIVE SIGNALS: Identify negative keywords and excluded audiences to
    minimize downstream vector-search false positives.
 4. BUYER LANGUAGE ONLY: Discovery phrases must sound like a buyer asking for

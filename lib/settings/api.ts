@@ -139,6 +139,7 @@ function serviceProfilePayloads(
       discoveryQueries.length > 0
         ? discoveryQueries.map((query) => query.phrase)
         : normalizeList(values.search_terms),
+    competitor_terms: normalizeList(values.competitor_terms),
     negative_keywords: normalizeList(values.negative_keywords),
     excluded_audiences: normalizeList(values.excluded_audiences),
   };
@@ -160,7 +161,11 @@ function serviceProfilePayloads(
   } satisfies Record<string, Json>;
 
   const directPayload = {
-    ...normalized,
+    // Older tables may not expose this as a top-level column. It remains in
+    // the profile document, which is the canonical backward-compatible path.
+    ...Object.fromEntries(
+      Object.entries(normalized).filter(([key]) => key !== "competitor_terms"),
+    ),
     profile_json: document,
     profile: document,
     data: document,

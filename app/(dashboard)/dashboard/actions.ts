@@ -89,6 +89,7 @@ const SERVICE_PROFILE_SCHEMA = z.object({
       }
     }),
   search_terms: z.array(z.string().trim().min(1)).max(6).default([]),
+  competitor_terms: z.array(z.string().trim().min(1)).max(12).default([]),
   negative_keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_audiences: z.array(z.string().trim().min(1)).default([]),
 });
@@ -896,9 +897,12 @@ export async function activateSuggestedBuyerGroup(
   const suggestions = deriveBuyerGroupSuggestions({
     targetAudience: serviceProfile.fields.target_audience,
     coreProblem: serviceProfile.fields.core_problem,
+    uniqueValueProp: serviceProfile.fields.unique_value_prop,
     useCases: serviceProfile.fields.use_cases,
     painPoints: serviceProfile.fields.pain_points,
     buyingTriggers: serviceProfile.fields.buying_triggers,
+    discoveryQueries: serviceProfile.fields.discovery_queries,
+    searchTerms: serviceProfile.fields.search_terms,
     negativeKeywords: serviceProfile.fields.negative_keywords,
     excludedAudiences: serviceProfile.fields.excluded_audiences,
   });
@@ -963,7 +967,7 @@ export async function activateSuggestedBuyerGroup(
     includeTerms: suggestion.includeTerms,
     excludeTerms: suggestion.excludeTerms,
     sourcePreferences: suggestion.sourcePreferences,
-    suggestedPlaces: [],
+    suggestedPlaces: suggestion.suggestedPlaces,
   });
   if (!parsed.success) {
     console.error("[BuyerGroups] generated suggestion failed watchlist validation", {
@@ -1313,6 +1317,7 @@ function updatePayloads(
       discoveryQueries.length > 0
         ? discoveryQueries.map((query) => query.phrase)
         : normalizeList(values.search_terms),
+    competitor_terms: normalizeList(values.competitor_terms),
     negative_keywords: normalizeList(values.negative_keywords),
     excluded_audiences: normalizeList(values.excluded_audiences),
   };
@@ -1335,7 +1340,9 @@ function updatePayloads(
   const payloads: DbRecord[] = [];
 
   payloads.push({
-    ...normalized,
+    ...Object.fromEntries(
+      Object.entries(normalized).filter(([key]) => key !== "competitor_terms"),
+    ),
     status,
     ...(status === "approved" ? { embedding_status: "pending" } : {}),
     updated_at: now,

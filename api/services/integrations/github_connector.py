@@ -220,7 +220,8 @@ class GitHubIssuesConnector:
         if not isinstance(item, dict) or "pull_request" in item:
             return None
         repository = item.get("repository")
-        if isinstance(repository, dict) and (
+        repository = repository if isinstance(repository, dict) else {}
+        if (
             repository.get("private") is True
             or normalise_text(repository.get("visibility")).lower() == "private"
         ):
@@ -238,6 +239,7 @@ class GitHubIssuesConnector:
         user = item.get("user")
         user = user if isinstance(user, dict) else {}
         author_handle = normalise_text(user.get("login")) or None
+        repository_name = normalise_text(repository.get("full_name"))
         if (
             not source_post_id
             or len(body) < 2
@@ -256,6 +258,7 @@ class GitHubIssuesConnector:
                 url=url,
                 posted_at=posted_at,
                 language="en",
+                metadata={"community": repository_name} if repository_name else {},
             )
         except ValidationError:
             return None

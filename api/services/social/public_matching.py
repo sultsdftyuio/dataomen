@@ -9,6 +9,7 @@ import os
 import re
 import json
 import hashlib
+from time import monotonic as _monotonic
 from uuid import uuid4
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -41,7 +42,10 @@ from api.services.matching import (
     PostEmbedding,
     find_candidate_matches,
 )
-from api.services.social.feedback_calibration import load_feedback_calibration
+from api.services.social.feedback_calibration import (
+    feedback_ranking_boost,
+    load_feedback_calibration,
+)
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
@@ -52,6 +56,26 @@ from api.services.verifier import (
 )
 
 _CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION = "website-scoped-v2"
+DEFAULT_PUBLIC_SOURCE_REMATCH_VERIFICATION_BUDGET_SECONDS = 120
+
+
+class RetryablePublicSourcePostNotFound(RuntimeError):
+    """Tell a source-qualified worker handoff to retry a visibility race.
+
+    Public-source persistence and broker publication are intentionally
+    decoupled. A worker can therefore receive a source-qualified handoff a
+    moment before the writer's transaction is visible. This exception is used
+    only by the actor path, whose existing bounded retry policy provides the
+    delay; direct callers keep the historic empty-result behavior.
+    """
+
+    def __init__(self, *, source: str, source_post_id: str) -> None:
+        super().__init__(
+            "public source post is not visible yet "
+            f"(source={source}, source_post_id={source_post_id})"
+        )
+        self.source = source
+        self.source_post_id = source_post_id
 
 
 def _normalized_website_identity(value: Any) -> str | None:
@@ -288,6 +312,33 @@ def _initial_public_global_rematch_max_candidates() -> int:
     )
 
 
+def _public_source_rematch_verification_budget_seconds() -> float:
+    """Reserve worker cleanup time while bounding uncached verifier work.
+
+    Candidate matching already returns a deterministic, profile-aware top-K.
+    This separate wall-clock budget prevents slow provider calls or retries
+    from consuming the rematch actor's full time limit. Cached verdicts remain
+    usable after the deadline because they do not make an external request.
+    """
+
+    worker_limit_seconds = max(
+        1.0,
+        env_int("ARCLI_PUBLIC_SOURCE_REMATCH_JOB_TIME_LIMIT_MS", 180_000)
+        / 1_000.0,
+    )
+    # One verifier call can legitimately wait up to its provider timeout.
+    # Reserve a full minute for that call to finish, persistence, and client
+    # cleanup instead of starting a request near the actor's hard limit.
+    maximum_budget_seconds = max(1.0, worker_limit_seconds - 60.0)
+    configured_budget_seconds = float(
+        env_int(
+            "ARCLI_PUBLIC_SOURCE_REMATCH_VERIFICATION_BUDGET_SECONDS",
+            DEFAULT_PUBLIC_SOURCE_REMATCH_VERIFICATION_BUDGET_SECONDS,
+        )
+    )
+    return min(maximum_budget_seconds, configured_budget_seconds)
+
+
 
 def rematch_existing_public_source_posts_for_profile(
     tenant_id: str,
@@ -436,9 +487,11 @@ def rematch_existing_public_source_posts_for_profile(
             DEFAULT_SIMILARITY_THRESHOLD,
         ),
     )
-    candidate_matching_options: dict[str, float] = {}
+    candidate_matching_options: dict[str, Any] = {}
     if feedback_calibration is not None:
-        candidate_matching_options["threshold"] = feedback_calibration.threshold
+        candidate_matching_options["ranking_score_adjustment"] = (
+            lambda score: feedback_ranking_boost(score, feedback_calibration)
+        )
 
     candidates = find_candidate_matches(
         profile_embedding,
@@ -475,8 +528,10 @@ def rematch_existing_public_source_posts_for_profile(
     profile_embedding_sha256 = _embedding_sha256(profile_embedding)
     ready_for_review_count = 0
     discovery_candidate_count = 0
+    verification_budget_seconds = _public_source_rematch_verification_budget_seconds()
+    verification_deadline = _monotonic() + verification_budget_seconds
     try:
-        for candidate in candidates:
+        for candidate_index, candidate in enumerate(candidates):
             post = posts_by_database_id.get(candidate.post_id)
             if not post:
                 continue
@@ -507,6 +562,21 @@ def rematch_existing_public_source_posts_for_profile(
                     columns=lead_match_columns,
                 )
             if not verification:
+                if _monotonic() >= verification_deadline:
+                    # The candidate pool remains at plausible, rather than
+                    # being mislabeled as rejected. A later rematch can retry
+                    # this ranked remainder after the worker has recovered
+                    # capacity.
+                    logger.info(
+                        "existing_public_source_rematch_verification_deferred tenant_id=%s service_profile_id=%s processed_candidates=%s deferred_candidates=%s verification_budget_seconds=%.1f reason=%s",
+                        normalized_tenant_id,
+                        normalized_profile_id,
+                        candidate_index,
+                        len(candidates) - candidate_index,
+                        verification_budget_seconds,
+                        "verification_deadline_reached",
+                    )
+                    break
                 verification = verify_candidate_safely(
                     verifier,
                     CandidatePost(
@@ -521,6 +591,18 @@ def rematch_existing_public_source_posts_for_profile(
                     tenant_id=normalized_tenant_id,
                     service_profile_id=normalized_profile_id,
                 )
+
+            if not verification.verifier_executed:
+                # Preserve the earlier plausible-pool state and let a later
+                # worker retry instead of recording an outage as rejection.
+                logger.info(
+                    "existing_public_source_rematch_retry_deferred tenant_id=%s service_profile_id=%s source_post_id=%s reason=%s",
+                    normalized_tenant_id,
+                    normalized_profile_id,
+                    candidate.post_id,
+                    "verifier_not_executed",
+                )
+                continue
 
             match_status = _lead_match_status(verification)
             if match_status == "ready_for_review":
@@ -598,6 +680,7 @@ def process_public_source_post_embedding(
     source_post_id: str,
     *,
     source: str | None = None,
+    retry_on_not_found: bool = False,
     _source_rows: Sequence[dict[str, Any]] | None = None,
     _profile_rows: Sequence[dict[str, Any]] | None = None,
     _lead_match_columns: dict[str, dict[str, str]] | None = None,
@@ -634,7 +717,36 @@ def process_public_source_post_embedding(
             if needs_lead_match_columns:
                 lead_match_columns = _table_columns(conn, "lead_matches")
 
+    if not source_rows and retry_on_not_found and normalized_source:
+        # The initial read may race the source-post writer's commit. Re-read
+        # in a fresh transaction before asking the actor's bounded retry
+        # policy to defer the handoff.
+        with engine.begin() as conn:
+            source_rows = _load_public_source_post_rows(
+                conn,
+                normalized_source_post_id,
+                source=normalized_source,
+            )
+        if source_rows:
+            logger.info(
+                "public_source_post_embedding_visibility_retry_recovered source=%s source_post_id=%s posts=%s",
+                normalized_source,
+                normalized_source_post_id,
+                len(source_rows),
+            )
+
     if not source_rows:
+        if retry_on_not_found and normalized_source:
+            logger.info(
+                "public_source_post_embedding_retry_deferred source=%s source_post_id=%s reason=%s",
+                normalized_source,
+                normalized_source_post_id,
+                "global_source_post_not_found",
+            )
+            raise RetryablePublicSourcePostNotFound(
+                source=normalized_source,
+                source_post_id=normalized_source_post_id,
+            )
         logger.info(
             "public_source_post_embedding_skipped source=%s source_post_id=%s skip_reason=%s",
             normalized_source,
@@ -771,9 +883,11 @@ def process_public_source_post_embedding(
                         DEFAULT_SIMILARITY_THRESHOLD,
                     ),
                 )
-                candidate_matching_options: dict[str, float] = {}
+                candidate_matching_options: dict[str, Any] = {}
                 if feedback_calibration is not None:
-                    candidate_matching_options["threshold"] = feedback_calibration.threshold
+                    candidate_matching_options["ranking_score_adjustment"] = (
+                        lambda score: feedback_ranking_boost(score, feedback_calibration)
+                    )
 
                 candidates = find_candidate_matches(
                     profile_embedding,
@@ -827,6 +941,16 @@ def process_public_source_post_embedding(
                         service_profile_id=service_profile_id,
                     )
 
+                if not verification.verifier_executed:
+                    logger.info(
+                        "public_source_profile_match_retry_deferred tenant_id=%s service_profile_id=%s source_post_id=%s reason=%s",
+                        tenant_id,
+                        service_profile_id,
+                        database_post_id,
+                        "verifier_not_executed",
+                    )
+                    continue
+
                 match_status = _lead_match_status(verification)
                 if match_status == "ready_for_review":
                     ready_for_review_count += 1
@@ -876,6 +1000,26 @@ def process_public_source_post_embedding(
                         verifier_model=verifier.model,
                         verifier_policy_version=VERIFIER_POLICY_VERSION,
                     )
+                if match_status == "ready_for_review":
+                    try:
+                        from api.services.social.verified_comment_scan import (
+                            enqueue_verified_thread_comment_scan,
+                        )
+
+                        enqueue_verified_thread_comment_scan(
+                            post,
+                            tenant_id=tenant_id,
+                            service_profile_id=service_profile_id,
+                        )
+                    except Exception as comment_scan_exc:
+                        logger.warning(
+                            "verified_thread_comment_scan_handoff_skipped source=%s source_post_id=%s tenant_id=%s service_profile_id=%s error_type=%s",
+                            post.source,
+                            post.external_id,
+                            tenant_id,
+                            service_profile_id,
+                            comment_scan_exc.__class__.__name__,
+                        )
     finally:
         if owns_embedding_service:
             embedding_service.close()
@@ -1039,6 +1183,7 @@ def process_public_source_post_embedding_batch(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    retry_on_not_found: bool = False,
 ) -> dict[str, int]:
     """Batch post embeddings, then apply global or profile-scoped matching.
 
@@ -1071,6 +1216,35 @@ def process_public_source_post_embedding_batch(
         profile_rows = _public_matching_profile_rows(conn)
         lead_match_columns = _table_columns(conn, "lead_matches")
 
+    retryable_missing_refs: list[tuple[str, str]] = []
+    if retry_on_not_found:
+        missing_refs = [
+            (source, source_post_id)
+            for source, source_post_id in normalized_refs
+            if source and not source_rows_by_ref[(source, source_post_id)]
+        ]
+        if missing_refs:
+            # Give just-written source rows one fresh-transaction read before
+            # using the broker's delayed retry. This often resolves a commit
+            # visibility race without a second actor delivery.
+            with engine.begin() as conn:
+                for source, source_post_id in missing_refs:
+                    reloaded_rows = _load_public_source_post_rows(
+                        conn,
+                        source_post_id,
+                        source=source,
+                    )
+                    source_rows_by_ref[(source, source_post_id)] = reloaded_rows
+                    if reloaded_rows:
+                        logger.info(
+                            "public_source_post_embedding_batch_visibility_retry_recovered source=%s source_post_id=%s posts=%s",
+                            source,
+                            source_post_id,
+                            len(reloaded_rows),
+                        )
+                    else:
+                        retryable_missing_refs.append((source, source_post_id))
+
     normalized_tenant_id = _string_value(tenant_id)
     normalized_profile_id = _string_value(service_profile_id)
     if normalized_tenant_id and normalized_profile_id:
@@ -1083,6 +1257,7 @@ def process_public_source_post_embedding_batch(
 
     embedding_service = EmbeddingService()
     embedding_values_by_database_post_id: dict[str, list[float]] = {}
+    retryable_missing_ref_set = set(retryable_missing_refs)
     totals = {
         "posts": 0,
         "embedded": 0,
@@ -1098,6 +1273,8 @@ def process_public_source_post_embedding_batch(
             embedding_values_by_database_post_id=embedding_values_by_database_post_id,
         )
         for source, source_post_id in normalized_refs:
+            if (source, source_post_id) in retryable_missing_ref_set:
+                continue
             result = process_public_source_post_embedding(
                 source_post_id,
                 source=source,
@@ -1113,6 +1290,19 @@ def process_public_source_post_embedding_batch(
                 totals[key] += int(result.get(key, 0))
     finally:
         embedding_service.close()
+
+    if retryable_missing_refs:
+        retry_source, retry_source_post_id = retryable_missing_refs[0]
+        logger.info(
+            "public_source_post_embedding_batch_retry_deferred source_post_count=%s missing_source_post_count=%s reason=%s",
+            len(normalized_refs),
+            len(retryable_missing_refs),
+            "global_source_post_not_found",
+        )
+        raise RetryablePublicSourcePostNotFound(
+            source=retry_source,
+            source_post_id=retry_source_post_id,
+        )
     return totals
 
 # Cross-module helper imports for static analysis and direct module use.
