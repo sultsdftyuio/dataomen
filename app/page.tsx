@@ -99,8 +99,8 @@ export default function Page() {
         <div className="relative z-10 flex flex-col">
           <Hero />
           <LeadReviewPreview />
-          <PublicSources />
           <HowItWorks />
+          <PublicSources />
           <DeepDiveFeatures />
           <Pricing />
           <FAQ />
