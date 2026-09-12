@@ -10,7 +10,7 @@ export default function Footer() {
 
   return (
     <footer
-      className="bg-white text-gray-600 py-16 md:py-24 border-t"
+      className="bg-white text-gray-600 py-14 md:py-16 border-t"
       style={{ 
         borderColor: "rgba(27,110,191,0.16)", 
         fontFamily: "var(--font-geist-sans), sans-serif", 
@@ -20,7 +20,7 @@ export default function Footer() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
         
         {/* Main Footer Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-12 lg:gap-8 mb-16">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-10 lg:gap-8 mb-12">
           
           {/* Brand Column */}
           <div className="lg:col-span-2">

@@ -33,9 +33,9 @@ export function FAQ() {
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section style={{ padding: "112px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
-      <div style={{ maxWidth: 800, margin: "0 auto" }}>
-        <h2 className="pfd" style={{ fontSize: "clamp(36px, 5vw, 48px)", textAlign: "center", marginBottom: 44, color: C.navy, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
+    <section style={{ padding: "84px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+        <h2 className="pfd" style={{ fontSize: "clamp(32px, 4vw, 42px)", textAlign: "center", marginBottom: 34, color: C.navy, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
           <RevealWords text="Frequently Asked Questions" />
         </h2>
 
@@ -54,7 +54,7 @@ export function FAQ() {
               <button
                 onClick={() => setOpen(open === i ? null : i)}
                 style={{
-                  width: "100%", padding: "14px 16px",
+                  width: "100%", padding: "12px 14px",
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   background: open === i ? "#F8FAFC" : "transparent",
                   border: "none", cursor: "pointer", textAlign: "left",
@@ -70,7 +70,7 @@ export function FAQ() {
               </button>
 
               {open === i && (
-                <div style={{ padding: "0 16px 14px", color: C.navySoft, lineHeight: 1.65, fontSize: 15 }}>
+                <div style={{ padding: "0 14px 12px", color: C.navySoft, lineHeight: 1.65, fontSize: 15 }}>
                   {item.a}
                 </div>
               )}

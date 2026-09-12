@@ -41,14 +41,14 @@ export default function ArcliPricingCards() {
     <section
       id="pricing"
       style={{
-        padding: "112px 24px",
+        padding: "84px 24px",
         background: "linear-gradient(180deg, #F7FBFF 0%, #FFFFFF 100%)",
         borderTop: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",
       }}
     >
       <div style={{ maxWidth: 1040, margin: "0 auto" }}>
-        <Reveal style={{ textAlign: "center", maxWidth: 660, margin: "0 auto 56px" }}>
+        <Reveal style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 44px" }}>
           <div
             style={{
               display: "inline-flex",
@@ -67,7 +67,7 @@ export default function ArcliPricingCards() {
           <h2
             className="pfd"
             style={{
-              fontSize: 42,
+              fontSize: 38,
               color: C.navy,
               lineHeight: 1.08,
               letterSpacing: "-0.015em",
@@ -77,7 +77,7 @@ export default function ArcliPricingCards() {
           >
             <RevealWords text="Start free. Upgrade when a prospect is worth acting on." />
           </h2>
-          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
+          <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62 }}>
             One straightforward plan for turning public conversations into a focused prospect queue.
           </p>
         </Reveal>
@@ -85,7 +85,7 @@ export default function ArcliPricingCards() {
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Reveal delay={100}>
             <article
-              className="flex min-h-[460px] flex-col rounded-lg border bg-white p-7"
+              className="flex min-h-[420px] flex-col rounded-lg border bg-white p-6"
               style={{ borderColor: C.rule, boxShadow: surfaceShadow }}
             >
             <span
@@ -94,14 +94,14 @@ export default function ArcliPricingCards() {
             >
               Free
             </span>
-            <h3 className="pfd mt-5 text-3xl leading-none" style={{ color: C.navy }}>
+            <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
               See the signal.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
               Let Arcli learn your offer and show you whether the right conversations are out there.
             </p>
-            <div className="mt-7 border-b pb-6" style={{ borderColor: C.rule }}>
-              <span className="text-5xl font-semibold tracking-tight" style={{ color: C.navy }}>$0</span>
+            <div className="mt-6 border-b pb-5" style={{ borderColor: C.rule }}>
+              <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$0</span>
               <span className="ml-1 text-sm font-semibold" style={{ color: C.muted }}>/ forever</span>
             </div>
             <FeatureList features={freeFeatures} />
@@ -117,7 +117,7 @@ export default function ArcliPricingCards() {
 
           <Reveal delay={200}>
             <article
-              className="relative flex min-h-[460px] flex-col overflow-hidden rounded-lg border bg-white p-7"
+              className="relative flex min-h-[420px] flex-col overflow-hidden rounded-lg border bg-white p-6"
               style={{ borderColor: C.blueLight, boxShadow: "0 12px 32px rgba(27,110,191,0.12)" }}
             >
             <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: C.blue }} aria-hidden="true" />
@@ -127,14 +127,14 @@ export default function ArcliPricingCards() {
             >
               <Sparkles className="size-3" aria-hidden="true" /> Pro
             </span>
-            <h3 className="pfd mt-5 text-3xl leading-none" style={{ color: C.navy }}>
+            <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
               Act on the signal.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
               Review the people, evidence, and matching reasons behind every prospect Arcli finds.
             </p>
-            <div className="mt-7 border-b pb-6" style={{ borderColor: C.blueLight }}>
-              <span className="text-5xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>
+            <div className="mt-6 border-b pb-5" style={{ borderColor: C.blueLight }}>
+              <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>
               <span className="ml-1 text-sm font-semibold" style={{ color: C.muted }}>/ month</span>
               <p className="mt-2 text-xs font-semibold" style={{ color: C.blue }}>Cancel any time.</p>
             </div>

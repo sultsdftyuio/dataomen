@@ -47,10 +47,10 @@ export function Navbar() {
       }}
     >
       <div style={{
-        maxWidth: 1240, 
+        maxWidth: 1120,
         margin: "0 auto", 
         padding: "0 24px",
-        height: 72,
+        height: 64,
         display: "flex", 
         alignItems: "center", 
         justifyContent: "space-between",

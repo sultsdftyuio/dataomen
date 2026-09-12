@@ -8,7 +8,7 @@ export function CTA() {
   return (
     <section
       style={{
-        padding: "112px 24px",
+        padding: "84px 24px",
         background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
         textAlign: "center",
         color: "#FFFFFF",
@@ -22,13 +22,13 @@ export function CTA() {
       <div style={{ position: "absolute", top: "-10%", left: "-8%", width: 380, height: 380, background: "rgba(59,154,232,0.28)", borderRadius: "50%", opacity: 0.9, filter: "blur(90px)" }} />
       <div style={{ position: "absolute", bottom: "-12%", right: "-8%", width: 320, height: 320, background: "rgba(99,91,255,0.22)", borderRadius: "50%", opacity: 0.85, filter: "blur(80px)" }} />
 
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto" }}>
-        <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 54px)", marginBottom: 14, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 640, margin: "0 auto" }}>
+        <h2 className="pfd" style={{ fontSize: "clamp(34px, 4vw, 46px)", marginBottom: 12, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
           <RevealWords text="Skip the noise." />
           <br />
           <RevealWords text="Find real prospects." delay={160} />
         </h2>
-        <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
+        <p style={{ fontSize: 16, marginBottom: 26, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
           Add your website. Arcli finds people already asking for help with the problem you solve.
         </p>
 

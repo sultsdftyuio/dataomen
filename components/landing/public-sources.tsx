@@ -47,14 +47,14 @@ export function PublicSources() {
       id="sources"
       aria-labelledby="sources-heading"
       style={{
-        padding: "112px 24px",
+        padding: "84px 24px",
         background: "#FFFFFF",
         borderTop: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
-        <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
           <Reveal>
             <div>
             <div
@@ -76,7 +76,7 @@ export function PublicSources() {
               id="sources-heading"
               className="pfd"
               style={{
-                fontSize: 42,
+                fontSize: 38,
                 color: C.navy,
                 lineHeight: 1.08,
                 letterSpacing: "-0.015em",
@@ -86,7 +86,7 @@ export function PublicSources() {
             >
               <RevealWords text="We check the conversations where people ask for help." />
             </h2>
-            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, maxWidth: 520 }}>
+            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, maxWidth: 480 }}>
               Arcli looks across public communities for people describing the
               problems your product solves. You choose the coverage for each
               buyer group.
@@ -98,7 +98,7 @@ export function PublicSources() {
             {sources.map(({ name, detail, icon: Icon }, index) => (
               <Reveal key={name} delay={120 + index * 80}>
                 <article
-                  className="flex items-start gap-3 rounded-lg border bg-white p-4 transition-colors hover:bg-[#F7FBFF]"
+                  className="flex items-start gap-3 rounded-lg border bg-white p-3 transition-colors hover:bg-[#F7FBFF]"
                   style={{ borderColor: C.rule, boxShadow: "0 1px 3px rgba(10,22,40,0.04)" }}
                 >
                   <div

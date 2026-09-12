@@ -10,8 +10,8 @@ export function Hero() {
     <section
       className="dot-grid"
       style={{
-        paddingTop: 152,
-        paddingBottom: 96,
+        paddingTop: 132,
+        paddingBottom: 76,
         background: "linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%)",
         position: "relative",
         overflow: "hidden",
@@ -20,20 +20,20 @@ export function Hero() {
       <div style={{ position: "absolute", top: "10%", left: "5%", width: 360, height: 360, background: "rgba(59,154,232,0.16)", borderRadius: "50%", filter: "blur(80px)", opacity: 0.7, zIndex: 0 }} />
       <div style={{ position: "absolute", top: "30%", right: "-5%", width: 440, height: 440, background: "rgba(99,91,255,0.12)", borderRadius: "50%", filter: "blur(100px)", opacity: 0.7, zIndex: 0 }} />
 
-      <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
+      <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
         <div
           style={{ textAlign: "center", marginBottom: 36 }}
         >
           <h1
             className="pfd"
             style={{
-              fontSize: "clamp(40px, 6vw, 54px)",
+              fontSize: "clamp(38px, 5vw, 48px)",
               fontWeight: 600,
               color: C.navy,
               lineHeight: 1.04,
               letterSpacing: "-0.02em",
-              maxWidth: 860,
-              margin: "0 auto 20px",
+              maxWidth: 780,
+              margin: "0 auto 18px",
             }}
           >
             Find B2B buyers already talking
@@ -43,7 +43,7 @@ export function Hero() {
             </span>
           </h1>
 
-          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
+          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.navySoft, lineHeight: 1.62, maxWidth: 600, margin: "0 auto 30px" }}>
             Add your website. Arcli learns what you sell, finds relevant public conversations, checks the context, and gives you evidence to review before you decide what to do next.
           </p>
 

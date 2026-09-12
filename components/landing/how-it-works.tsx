@@ -16,36 +16,36 @@ export function HowItWorks() {
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section id="pipeline" style={{ padding: "112px 24px", background: "#FFFFFF", borderTop: surfaceBorder, fontFamily: sans }}>
-      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+    <section id="pipeline" style={{ padding: "84px 24px", background: "#FFFFFF", borderTop: surfaceBorder, fontFamily: sans }}>
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
 
         {/* ── Section Header ── */}
         <div 
           className={`fu ${vis0 ? "vis" : ""}`} 
           ref={ref0 as React.RefObject<HTMLDivElement>}
-          style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 80px" }}
+          style={{ textAlign: "center", maxWidth: 600, margin: "0 auto 60px" }}
         >
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", marginBottom: 14, textTransform: "uppercase" }}>
             <Database size={14} /> THE PIPELINE
           </div>
-          <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
+          <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 18, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
             <RevealWords text="How Arcli finds prospects for you." />
           </h2>
-          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
+          <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62 }}>
             Add your website. Arcli learns what you do, finds people asking for help online, checks the fit, sends the best matches, and learns from your feedback.
           </p>
         </div>
 
         {/* ── Step 1: Detect (Ingest & Score) ── */}
-        <div className="grid-2" style={{ marginBottom: 112 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
+        <div className="grid-2" style={{ marginBottom: 80 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 01
             </div>
-            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            <h2 className="pfd" style={{ fontSize: 34, color: C.navy, marginBottom: 18, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
               <RevealWords text="Learn What You Sell" />
             </h2>
-            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
+            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, marginBottom: 24 }}>
               Give Arcli your website. It reads your public pages and learns who you help, what problem you solve, and what to ignore.
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -58,7 +58,7 @@ export function HowItWorks() {
           </div>
 
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 2, position: "relative" }}>
-            <div style={{ background: "#FFFFFF", padding: 28, borderRadius: 8, border: surfaceBorder, position: "relative", zIndex: 2, boxShadow: surfaceShadow }}>
+            <div style={{ background: "#FFFFFF", padding: 22, borderRadius: 8, border: surfaceBorder, position: "relative", zIndex: 2, boxShadow: surfaceShadow }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22, borderBottom: surfaceBorder, paddingBottom: 12 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.faint, letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
                   <Key size={14} /> WEBSITE REVIEW
@@ -108,15 +108,15 @@ export function HowItWorks() {
         </div>
 
         {/* ── Step 2: Recover (Idempotent Queues) ── */}
-        <div className="grid-2" style={{ marginBottom: 112 }} ref={ref2 as React.RefObject<HTMLDivElement>}>
+        <div className="grid-2" style={{ marginBottom: 80 }} ref={ref2 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 2 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 02
             </div>
-            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            <h2 className="pfd" style={{ fontSize: 34, color: C.navy, marginBottom: 18, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
               <RevealWords text="Checks Each Match" />
             </h2>
-            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
+            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, marginBottom: 24 }}>
               Arcli does not send every post that happens to use the right words. It reads the context, checks whether the person has a real problem, and removes bad fits before alerting you.
             </p>
             <a
@@ -141,7 +141,7 @@ export function HowItWorks() {
             </a>
           </div>
 
-          <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 1, background: "#FAFAFA", padding: 28, borderRadius: 8, border: surfaceBorder, position: "relative", boxShadow: surfaceShadow }}>
+          <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 1, background: "#FAFAFA", padding: 22, borderRadius: 8, border: surfaceBorder, position: "relative", boxShadow: surfaceShadow }}>
             {/* UI Mockup for Queue Safeties */}
             <div style={{ background: "#fff", border: surfaceBorder, borderRadius: 8, padding: "16px", marginBottom: 12, boxShadow: surfaceShadow, position: "relative", zIndex: 3 }}>
               
@@ -183,16 +183,16 @@ export function HowItWorks() {
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#10B981", fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 03
             </div>
-            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            <h2 className="pfd" style={{ fontSize: 34, color: C.navy, marginBottom: 18, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
               <RevealWords text="Useful Alerts That Improve" />
             </h2>
-            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
+            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, marginBottom: 24 }}>
               When someone looks like a fit, Arcli shows the post, the problem, and why it matters. Your feedback helps it check the most useful places first while keeping discovery broad.
             </p>
           </div>
 
           <div className={`fu ${vis3 ? "vis" : ""}`} style={{ order: 2, position: "relative" }}>
-            <div style={{ background: C.navy, borderRadius: 8, padding: 28, position: "relative", zIndex: 2, color: "#fff", boxShadow: surfaceShadow, border: "1px solid rgba(255,255,255,0.12)" }}>
+            <div style={{ background: C.navy, borderRadius: 8, padding: 22, position: "relative", zIndex: 2, color: "#fff", boxShadow: surfaceShadow, border: "1px solid rgba(255,255,255,0.12)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
                 <div className="pulse-indicator pulse-green" style={{ background: "#10B981", boxShadow: "0 0 8px rgba(16,185,129,0.6)" }} />
                 <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em" }}>PROSPECT ALERT LIVE</span>

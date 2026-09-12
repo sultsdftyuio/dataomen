@@ -14,16 +14,16 @@ export function LeadReviewPreview() {
         borderTop: surfaceBorder,
         borderBottom: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",
-        padding: "84px 24px",
+        padding: "68px 24px",
       }}
     >
       <div
         className="grid-2"
         style={{
           alignItems: "center",
-          gap: 48,
+          gap: 36,
           margin: "0 auto",
-          maxWidth: 1120,
+          maxWidth: 1040,
         }}
       >
         <div>
@@ -47,7 +47,7 @@ export function LeadReviewPreview() {
             id="lead-review-heading"
             style={{
               color: C.navy,
-              fontSize: "clamp(32px, 4vw, 42px)",
+              fontSize: "clamp(30px, 3.5vw, 38px)",
               fontWeight: 600,
               letterSpacing: "-0.02em",
               lineHeight: 1.08,
@@ -56,7 +56,7 @@ export function LeadReviewPreview() {
           >
             See the reason before you reach out.
           </h2>
-          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, margin: 0 }}>
+          <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
             Each lead keeps the original conversation, the buyer signal Arcli found, and a
             suggested first reply. You decide whether it deserves action.
           </p>
@@ -69,7 +69,7 @@ export function LeadReviewPreview() {
               fontSize: 14,
               fontWeight: 700,
               gap: 8,
-              marginTop: 26,
+              marginTop: 22,
               textDecoration: "underline",
               textDecorationColor: "rgba(37, 99, 235, 0.45)",
               textUnderlineOffset: 5,
@@ -95,7 +95,7 @@ export function LeadReviewPreview() {
               borderBottom: surfaceBorder,
               display: "flex",
               justifyContent: "space-between",
-              padding: "15px 18px",
+            padding: "13px 16px",
             }}
           >
             <span style={{ color: C.navy, fontSize: 13, fontWeight: 700 }}>Lead review</span>
@@ -114,12 +114,12 @@ export function LeadReviewPreview() {
             </span>
           </div>
 
-          <div style={{ display: "grid", gap: 14, padding: 18 }}>
-            <div style={{ background: "#F8FAFC", border: surfaceBorder, borderRadius: 10, padding: 15 }}>
+          <div style={{ display: "grid", gap: 12, padding: 16 }}>
+            <div style={{ background: "#F8FAFC", border: surfaceBorder, borderRadius: 10, padding: 13 }}>
               <div style={{ alignItems: "center", color: C.navySoft, display: "flex", fontSize: 12, fontWeight: 700, gap: 7, marginBottom: 8 }}>
                 <MessageSquareText color={C.blue} size={15} /> PUBLIC CONVERSATION · EXAMPLE
               </div>
-              <p style={{ color: C.navy, fontSize: 15, lineHeight: 1.55, margin: 0 }}>
+              <p style={{ color: C.navy, fontSize: 14, lineHeight: 1.55, margin: 0 }}>
                 “We are still reviewing customer requests by hand. What is a better way to
                 prioritize the work without losing important context?”
               </p>
@@ -130,11 +130,11 @@ export function LeadReviewPreview() {
               <Signal label="Why it fits" value="Matches your product’s core problem" />
             </div>
 
-            <div style={{ borderTop: surfaceBorder, paddingTop: 14 }}>
+            <div style={{ borderTop: surfaceBorder, paddingTop: 12 }}>
               <div style={{ alignItems: "center", color: C.navySoft, display: "flex", fontSize: 12, fontWeight: 700, gap: 7, marginBottom: 8 }}>
                 <CheckCircle2 color="#059669" size={15} /> SUGGESTED FIRST REPLY
               </div>
-              <p style={{ color: C.navy, fontSize: 14, lineHeight: 1.55, margin: 0 }}>
+              <p style={{ color: C.navy, fontSize: 13, lineHeight: 1.55, margin: 0 }}>
                 It sounds like preserving context is the hard part. What have you tried for
                 deciding which requests should be handled first?
               </p>
@@ -148,7 +148,7 @@ export function LeadReviewPreview() {
 
 function Signal({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: "#F8FAFC", border: surfaceBorder, borderRadius: 10, padding: 12 }}>
+    <div style={{ background: "#F8FAFC", border: surfaceBorder, borderRadius: 10, padding: 10 }}>
       <div style={{ color: C.navySoft, fontSize: 11, fontWeight: 700, marginBottom: 5, textTransform: "uppercase" }}>
         {label}
       </div>

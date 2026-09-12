@@ -13,22 +13,22 @@ export function DeepDiveFeatures() {
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section id="quality" style={{ padding: "112px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
-      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+    <section id="quality" style={{ padding: "84px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
 
         {/* ── Segment A: Quality Checks ── */}
-        <div className="grid-2" style={{ marginBottom: 112 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
+        <div className="grid-2" style={{ marginBottom: 80 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
 
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               <ShieldAlert size={14} /> WHY THIS MATCH MATTERS
             </div>
-            <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 18, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
               <RevealWords text="What a verified prospect" />
               <br />
               <RevealWords text="looks like." delay={180} />
             </h2>
-            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
+            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, marginBottom: 22 }}>
               Arcli reads for real need, not just matching words. It checks each post against what you sell, then shows why the person may be worth your time.
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -44,7 +44,7 @@ export function DeepDiveFeatures() {
             </ul>
           </div>
 
-          <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 2, background: "#FAFAFA", padding: 24, borderRadius: 8, border: surfaceBorder, position: "relative", boxShadow: surfaceShadow }}>
+          <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 2, background: "#FAFAFA", padding: 20, borderRadius: 8, border: surfaceBorder, position: "relative", boxShadow: surfaceShadow }}>
             
             {/* Human-Readable Scoring UI Mockup */}
             <div style={{ background: "#fff", padding: "18px", borderRadius: 8, border: surfaceBorder, position: "relative", zIndex: 2, boxShadow: surfaceShadow }}>
@@ -114,18 +114,18 @@ export function DeepDiveFeatures() {
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               <Workflow size={14} /> BETTER ALERTS OVER TIME
             </div>
-            <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 18, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
               <RevealWords text="Know who to look at," />
               <br />
               <RevealWords text="and why now." delay={180} />
             </h2>
-            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
+            <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, marginBottom: 22 }}>
               Arcli sends short alerts with the original post, the problem, and why it looks useful. Mark what is right or wrong, and the next alerts get sharper.
             </p>
           </div>
 
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 1, position: "relative" }}>
-            <div style={{ background: C.navy, borderRadius: 8, padding: 24, position: "relative", zIndex: 2, color: "#FFFFFF", boxShadow: surfaceShadow, border: "1px solid rgba(255,255,255,0.12)" }}>
+            <div style={{ background: C.navy, borderRadius: 8, padding: 20, position: "relative", zIndex: 2, color: "#FFFFFF", boxShadow: surfaceShadow, border: "1px solid rgba(255,255,255,0.12)" }}>
               
               {/* Report Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
