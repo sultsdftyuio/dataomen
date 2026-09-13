@@ -98,8 +98,8 @@ export default function Page() {
         {/* Page Content Flow */}
         <div className="relative z-10 flex flex-col">
           <Hero />
-          <LeadReviewPreview />
           <HowItWorks />
+          <LeadReviewPreview />
           <PublicSources />
           <DeepDiveFeatures />
           <Pricing />
