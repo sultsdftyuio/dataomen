@@ -82,16 +82,7 @@ export function DeepDiveFeatures() {
           {trustSteps.map(({ icon: Icon, label, title, copy }, index) => (
             <Fragment key={title}>
               <Reveal delay={index * 100}>
-                <article
-                  style={{
-                    background: "#FFFFFF",
-                    border: surfaceBorder,
-                    borderRadius: 10,
-                    boxShadow: "0 4px 14px rgba(10, 22, 40, 0.04)",
-                    height: "100%",
-                    padding: 20,
-                  }}
-                >
+                <article style={{ height: "100%", padding: "4px 10px" }}>
                   <div
                     style={{
                       alignItems: "center",
@@ -101,7 +92,7 @@ export function DeepDiveFeatures() {
                       display: "flex",
                       height: 34,
                       justifyContent: "center",
-                      marginBottom: 18,
+                      marginBottom: 16,
                       width: 34,
                     }}
                   >

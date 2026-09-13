@@ -69,16 +69,7 @@ export function PublicSources() {
         </Reveal>
 
         <Reveal delay={120}>
-          <div
-            style={{
-              background: "#F8FAFC",
-              border: surfaceBorder,
-              borderRadius: 12,
-              display: "grid",
-              gap: 14,
-              padding: 16,
-            }}
-          >
+          <div style={{ display: "grid", gap: 18 }}>
             <SourceGroup label="Core conversations" sources={coreSources} />
             <div style={{ borderTop: surfaceBorder }} />
             <SourceGroup label="Contextual coverage" sources={contextualSources} />
@@ -101,21 +92,21 @@ function SourceGroup({
       <p style={{ color: C.muted, fontSize: 12, fontWeight: 700, letterSpacing: "0.07em", margin: 0, textTransform: "uppercase" }}>
         {label}
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-x-5 gap-y-3">
         {sources.map(({ name, icon: Icon }) => (
           <span
             key={name}
             style={{
               alignItems: "center",
-              background: "#FFFFFF",
-              border: surfaceBorder,
-              borderRadius: 999,
+              background: "transparent",
+              border: "none",
+              borderRadius: 0,
               color: C.navy,
               display: "inline-flex",
               fontSize: 13,
               fontWeight: 600,
               gap: 7,
-              padding: "7px 10px",
+              padding: 0,
             }}
           >
             <Icon aria-hidden="true" color={C.blue} size={14} />

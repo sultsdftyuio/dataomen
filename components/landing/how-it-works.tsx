@@ -121,15 +121,11 @@ function WorkflowStep({
   return (
     <article
       style={{
-        background: "#FFFFFF",
-        border: "1px solid rgba(10, 22, 40, 0.10)",
-        borderRadius: 10,
-        boxShadow: "0 4px 14px rgba(10, 22, 40, 0.04)",
         height: "100%",
-        padding: 20,
+        padding: "4px 10px",
       }}
     >
-      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 18 }}>
+      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
         <span
           style={{
             alignItems: "center",
@@ -153,14 +149,7 @@ function WorkflowStep({
         {title}
       </h3>
       <p style={{ color: C.navySoft, fontSize: 15, lineHeight: 1.58, margin: "0 0 18px" }}>{copy}</p>
-      <div
-        style={{
-          background: isReady ? "rgba(16, 185, 129, 0.08)" : "#F8FAFC",
-          border: isReady ? "1px solid rgba(16, 185, 129, 0.20)" : "1px solid rgba(10, 22, 40, 0.08)",
-          borderRadius: 8,
-          padding: 10,
-        }}
-      >
+      <div style={{ borderTop: isReady ? "1px solid rgba(16, 185, 129, 0.28)" : "1px solid rgba(10, 22, 40, 0.10)", paddingTop: 10 }}>
         <p style={{ color: isReady ? C.green : C.navy, fontSize: 12, fontWeight: 700, margin: "0 0 4px" }}>{signal}</p>
         <p style={{ color: C.muted, fontSize: 11, lineHeight: 1.45, margin: 0 }}>{detail}</p>
       </div>

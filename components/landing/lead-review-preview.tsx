@@ -148,7 +148,7 @@ export function LeadReviewPreview() {
 
 function SourceView() {
   return (
-    <div style={{ background: "#F8FAFC", border: surfaceBorder, borderRadius: 10, padding: 14 }}>
+    <div style={{ borderLeft: `2px solid ${C.blue}`, padding: "2px 0 2px 12px" }}>
       <p style={{ alignItems: "center", color: C.navySoft, display: "flex", fontSize: 12, fontWeight: 700, gap: 7, margin: "0 0 9px" }}>
         <MessageSquareText color={C.blue} size={15} /> PUBLIC CONVERSATION · EXAMPLE
       </p>
@@ -171,7 +171,7 @@ function FitView() {
 
 function ReplyView() {
   return (
-    <div style={{ background: "rgba(16, 185, 129, 0.06)", border: "1px solid rgba(16, 185, 129, 0.18)", borderRadius: 10, padding: 14 }}>
+    <div style={{ borderLeft: `2px solid ${C.green}`, padding: "2px 0 2px 12px" }}>
       <p style={{ alignItems: "center", color: C.green, display: "flex", fontSize: 12, fontWeight: 700, gap: 7, margin: "0 0 9px" }}>
         <CheckCircle2 size={15} /> SUGGESTED FIRST REPLY
       </p>
@@ -185,7 +185,7 @@ function ReplyView() {
 
 function ReviewSignal({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: "#F8FAFC", border: surfaceBorder, borderRadius: 10, padding: 12 }}>
+    <div style={{ borderBottom: surfaceBorder, paddingBottom: 10 }}>
       <p style={{ color: C.navySoft, fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", margin: "0 0 5px", textTransform: "uppercase" }}>
         {label}
       </p>
