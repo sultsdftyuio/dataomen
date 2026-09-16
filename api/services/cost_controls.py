@@ -511,6 +511,30 @@ class ProviderConcurrencyLimiter:
             # queued crawl promptly, while keeping Redis traffic bounded.
             await asyncio.sleep(min(1.0, max(0.2, retry_after_seconds)))
 
+    def try_acquire(
+        self,
+        *,
+        provider: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> ProviderConcurrencyLease | None:
+        """Reserve a slot immediately without tying up a worker thread.
+
+        Queue actors can defer themselves when a bounded provider or
+        memory-heavy workload is saturated.  This keeps scheduler and
+        ingestion queues responsive instead of making every worker thread
+        sleep behind the same concurrency ceiling.
+        """
+
+        safe_provider = TenantQuotaGuard._safe_counter_name(provider)
+        lease, _retry_after_seconds = self._try_acquire(
+            provider=safe_provider,
+            limit=max(1, int(limit)),
+            lease_seconds=max(1, int(lease_seconds)),
+            token=uuid.uuid4().hex,
+        )
+        return lease
+
     def release(self, lease: ProviderConcurrencyLease) -> None:
         """Release a slot immediately; expiry protects against worker crashes."""
 

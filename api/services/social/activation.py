@@ -49,7 +49,7 @@ from api.services.verifier import (
     VerificationResult,
     VerifierService,
 )
-from api.services.social.source_planning import profile_source_preferences
+from api.services.social.source_planning import profile_community_plan
 from api.services.social.source_feedback_ranking import load_source_feedback_ranking
 
 def enqueue_initial_public_source_ingestion(
@@ -119,7 +119,15 @@ def enqueue_initial_public_source_ingestion(
     additional_source_jobs = 0
     feedback_ordered_sources: tuple[str, ...] | None = None
     if allowed_sources is None:
-        website_sources = profile_source_preferences(profile)
+        community_plan = profile_community_plan(profile)
+        website_sources = community_plan.sources
+        logger.info(
+            "website_community_plan_selected tenant_id=%s service_profile_id=%s sources=%s communities=%s",
+            tenant_id,
+            service_profile_id,
+            website_sources,
+            community_plan.community_labels,
+        )
         feedback_ranking = load_source_feedback_ranking(
             tenant_id,
             service_profile_id,

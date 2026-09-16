@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from api.services.verifier import ServiceProfile
 
@@ -64,6 +65,14 @@ SOURCE_ORDER = (
 )
 
 
+@dataclass(frozen=True)
+class ProductCommunityPlan:
+    """Public communities where this product has a credible buyer context."""
+
+    sources: tuple[str, ...]
+    community_labels: tuple[str, ...]
+
+
 def _profile_context(profile: ServiceProfile) -> str:
     return " ".join(
         (
@@ -82,8 +91,8 @@ def _has_context_term(context: str, tokens: set[str], terms: frozenset[str]) -> 
     return any(term in context if " " in term else term in tokens for term in terms)
 
 
-def profile_source_preferences(profile: ServiceProfile) -> tuple[str, ...]:
-    """Choose bounded public sources from product-owned website context.
+def profile_community_plan(profile: ServiceProfile) -> ProductCommunityPlan:
+    """Choose bounded product-relevant public discussion communities.
 
     Hacker News and Bluesky remain complementary baseline public discussion
     sources. Technical Q&A, repositories, and independent technical forums are
@@ -110,6 +119,31 @@ def profile_source_preferences(profile: ServiceProfile) -> tuple[str, ...]:
     if is_technical or is_open_source:
         selected.add("lemmy")
 
-    return tuple(source for source in SOURCE_ORDER if source in selected) + (
+    sources = tuple(source for source in SOURCE_ORDER if source in selected) + (
         ("x",) if "x" in selected else ()
     )
+    labels = [
+        "hackernews: product and startup discussions",
+        "bluesky: practitioner conversations",
+    ]
+    if "stackexchange" in selected:
+        labels.append(
+            "stackexchange: webmasters"
+            if is_commerce and not is_technical
+            else "stackexchange: technical Q&A"
+        )
+    if "github" in selected:
+        labels.append("github: public repository issue discussions")
+    if "lemmy" in selected:
+        labels.append("lemmy: technology communities")
+    return ProductCommunityPlan(sources=sources, community_labels=tuple(labels))
+
+
+def profile_source_preferences(profile: ServiceProfile) -> tuple[str, ...]:
+    """Return the source portion of :func:`profile_community_plan`.
+
+    This compatibility boundary keeps integrations that only understand source
+    IDs stable while activation records the richer community plan.
+    """
+
+    return profile_community_plan(profile).sources

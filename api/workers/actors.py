@@ -447,6 +447,7 @@ def ingest_initial_public_sources_fast_job(
     selected_embedding_keys: set[tuple[str, str]] = set()
     selected_embedding_posts_by_source: dict[str, int] = {}
     selected_embedding_signal_groups: set[str] = set()
+    selected_embedding_posts_by_community: dict[str, int] = {}
     selected_embedding_signal_score_total = 0
     selected_embedding_signal_reasons: dict[str, int] = {}
     if tenant_id and service_profile_id:
@@ -470,6 +471,7 @@ def ingest_initial_public_sources_fast_job(
                 selected_keys=selected_embedding_keys,
                 selected_by_source=selected_embedding_posts_by_source,
                 selected_signal_groups=selected_embedding_signal_groups,
+                selected_by_community=selected_embedding_posts_by_community,
             )
             selected_refs = selection.refs
             embedding_posts_excluded += selection.excluded_count
@@ -763,8 +765,10 @@ def ingest_initial_public_sources_fast_job(
                 {
                     "post_limit": embedding_budget.post_limit,
                     "per_source_limit": embedding_budget.per_source_limit,
+                    "per_community_limit": embedding_budget.per_community_limit,
                     "selected": len(selected_embedding_keys),
                     "selected_by_source": selected_embedding_posts_by_source,
+                    "selected_by_community": selected_embedding_posts_by_community,
                     "selected_identified_authors": len(selected_embedding_signal_groups),
                     "excluded": embedding_posts_excluded,
                     "average_signal_score": round(
@@ -2218,8 +2222,15 @@ def enqueue_source_post_embedding_batch_job(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    visibility_retry_attempt: int = 0,
 ) -> None:
-    """Embed a small public-post batch before applying normal lead matching."""
+    """Embed a small public-post batch before applying normal lead matching.
+
+    The shared lease keeps a burst of source results from running several
+    embedding and verifier batches in parallel.  Work that cannot acquire a
+    slot is delayed rather than retained in Dramatiq's in-memory prefetch
+    buffer, which protects the worker's RSS and the system scheduler queue.
+    """
     refs = [
         {
             "source": str(ref.get("source") or "").strip(),
@@ -2233,29 +2244,75 @@ def enqueue_source_post_embedding_batch_job(
     if not refs:
         return
 
+    try:
+        normalized_visibility_retry_attempt = max(0, int(visibility_retry_attempt))
+    except (TypeError, ValueError):
+        # Older/manual messages can omit or mis-shape this additive field.
+        # Treat them as their first visibility retry without dropping work.
+        normalized_visibility_retry_attempt = 0
+
     _job_started(
         job_name="source_post_embedding_batch_handoff",
         tenant_id=tenant_id,
         service_profile_id=service_profile_id,
         source_post_count=len(refs),
+        visibility_retry_attempt=normalized_visibility_retry_attempt,
     )
-    try:
-        from api.services.social_ingestion import (
-            process_public_source_post_embedding_batch,
-        )
+    from api.services.cost_controls import env_int, provider_concurrency_limiter
 
-        result = process_public_source_post_embedding_batch(
-            refs,
-            tenant_id=tenant_id,
-            service_profile_id=service_profile_id,
-            retry_on_not_found=True,
+    batch_lease = provider_concurrency_limiter.try_acquire(
+        provider="public-source-embedding-batch",
+        limit=max(
+            1,
+            min(8, env_int("ARCLI_PUBLIC_SOURCE_EMBEDDING_ACTIVE_BATCHES", 2)),
+        ),
+        lease_seconds=max(
+            60,
+            min(
+                1_800,
+                env_int("ARCLI_PUBLIC_SOURCE_EMBEDDING_BATCH_LEASE_SECONDS", 300),
+            ),
+        ),
+    )
+    if batch_lease is None:
+        delay_seconds = max(
+            5,
+            min(
+                60,
+                env_int("ARCLI_PUBLIC_SOURCE_EMBEDDING_DEFER_SECONDS", 10),
+            ),
         )
-        # Watchlists remain an independent tenant-scoped view.  Batch the
-        # shared embedding work, but never let a watchlist error retry or
-        # duplicate the profile-wide matching result above.
+        message = enqueue_source_post_embedding_batch_job.send_with_options(
+            args=(refs,),
+            kwargs={
+                "tenant_id": tenant_id,
+                "service_profile_id": service_profile_id,
+                "visibility_retry_attempt": normalized_visibility_retry_attempt,
+            },
+            delay=delay_seconds * 1_000,
+        )
+        logger.info(
+            "source_post_embedding_batch_deferred source_post_count=%s delay_seconds=%s reason=%s message_id=%s",
+            len(refs),
+            delay_seconds,
+            "concurrency_limited",
+            message.message_id,
+        )
+        _job_finished(
+            job_name="source_post_embedding_batch_handoff",
+            state="deferred",
+            tenant_id=tenant_id,
+            source_post_count=len(refs),
+            reason="concurrency_limited",
+        )
+        return
+
+    def process_watchlists(matching_refs: Sequence[dict[str, str]]) -> tuple[int, int]:
+        """Keep watchlist evaluation independent from shared profile matching."""
+
         watchlist_candidates = 0
         watchlist_ready_for_review = 0
-        for ref in refs:
+        for ref in matching_refs:
             try:
                 from api.services.watchlist_matching import (
                     process_active_watchlists_for_public_source_post,
@@ -2277,14 +2334,92 @@ def enqueue_source_post_embedding_batch_job(
                     watchlist_exc.__class__.__name__,
                     watchlist_exc,
                 )
+        return watchlist_candidates, watchlist_ready_for_review
+
+    try:
+        from api.services.social_ingestion import (
+            process_public_source_post_embedding_batch,
+        )
+
+        result = process_public_source_post_embedding_batch(
+            refs,
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+            retry_on_not_found=True,
+        )
+        watchlist_candidates, watchlist_ready_for_review = process_watchlists(refs)
     except Exception as exc:
         if exc.__class__.__name__ == "RetryablePublicSourcePostNotFound":
-            logger.info(
-                "source_post_embedding_batch_retry_deferred source_post_count=%s reason=%s",
-                len(refs),
-                "global_source_post_not_found",
+            missing_refs = [
+                {"source": source, "source_post_id": source_post_id}
+                for source, source_post_id in getattr(exc, "missing_refs", ())
+                if source and source_post_id
+            ]
+            missing_keys = {
+                (ref["source"], ref["source_post_id"])
+                for ref in missing_refs
+            }
+            completed_refs = [
+                ref
+                for ref in refs
+                if (ref["source"], ref["source_post_id"]) not in missing_keys
+            ]
+            watchlist_candidates, watchlist_ready_for_review = process_watchlists(
+                completed_refs
             )
-            raise
+            result = {
+                key: int(value)
+                for key, value in getattr(exc, "partial_result", {}).items()
+            }
+            max_visibility_retries = min(
+                5,
+                _int_env("ARCLI_PUBLIC_SOURCE_VISIBILITY_MAX_RETRIES", 3),
+            )
+            if missing_refs and normalized_visibility_retry_attempt < max_visibility_retries:
+                retry_delay_seconds = min(
+                    60,
+                    10 * (2 ** normalized_visibility_retry_attempt),
+                )
+                message = enqueue_source_post_embedding_batch_job.send_with_options(
+                    args=(missing_refs,),
+                    kwargs={
+                        "tenant_id": tenant_id,
+                        "service_profile_id": service_profile_id,
+                        "visibility_retry_attempt": normalized_visibility_retry_attempt
+                        + 1,
+                    },
+                    delay=retry_delay_seconds * 1_000,
+                )
+                logger.info(
+                    "source_post_embedding_batch_visibility_retry_enqueued source_post_count=%s missing_source_post_count=%s attempt=%s delay_seconds=%s message_id=%s",
+                    len(refs),
+                    len(missing_refs),
+                    normalized_visibility_retry_attempt + 1,
+                    retry_delay_seconds,
+                    message.message_id,
+                )
+            else:
+                logger.warning(
+                    "source_post_embedding_batch_visibility_retry_exhausted source_post_count=%s missing_source_post_count=%s attempts=%s",
+                    len(refs),
+                    len(missing_refs),
+                    normalized_visibility_retry_attempt,
+                )
+            _job_finished(
+                job_name="source_post_embedding_batch_handoff",
+                state="partial",
+                tenant_id=tenant_id,
+                source_post_count=len(refs),
+                missing_source_post_count=len(missing_refs),
+                visibility_retry_attempt=normalized_visibility_retry_attempt,
+                posts=result.get("posts", 0),
+                embedded=result.get("embedded", 0),
+                candidates=result.get("candidates", 0),
+                ready_for_review=result.get("ready_for_review", 0),
+                watchlist_candidates=watchlist_candidates,
+                watchlist_ready_for_review=watchlist_ready_for_review,
+            )
+            return
         logger.exception(
             "source_post_embedding_batch_failed job_state=%s source_post_count=%s error_type=%s error=%s",
             "failed",
@@ -2295,6 +2430,7 @@ def enqueue_source_post_embedding_batch_job(
         raise
     finally:
         _close_actor_openai_clients()
+        provider_concurrency_limiter.release(batch_lease)
 
     _job_finished(
         job_name="source_post_embedding_batch_handoff",
@@ -2545,17 +2681,48 @@ def process_crawl_job(
 @dramatiq.actor(
     actor_name="dispatch_due_website_recrawls",
     queue_name="system",
-    max_retries=0,
+    # A successor-publication failure resets the durable tick and uses this
+    # bounded retry.  Ordinary scheduler failures still wait for the next
+    # already-published tick, avoiding a retry storm against PostgreSQL.
+    max_retries=3,
+    min_backoff=10_000,
+    max_backoff=60_000,
     time_limit=_int_env("ARCLI_RECRAWL_SCHEDULER_TIME_LIMIT_MS", 120_000, minimum=1),
 )
 def dispatch_due_website_recrawls() -> None:
-    """Run one bounded scheduler tick and keep the next tick durable in Redis."""
+    """Run a singleton bounded scheduler tick and publish its successor."""
     from api.services.website_recrawl import (
         DEFAULT_SCHEDULER_TICK_SECONDS,
+        claim_website_recrawl_scheduler_tick,
         dispatch_due_website_recrawls as execute,
+        release_website_recrawl_scheduler_tick,
     )
 
     next_delay_seconds = DEFAULT_SCHEDULER_TICK_SECONDS
+    claimed_delay_seconds = claim_website_recrawl_scheduler_tick()
+    if claimed_delay_seconds is None:
+        logger.debug(
+            "website_recrawl_scheduler_tick_skipped reason=%s",
+            "not_due_or_claimed_by_another_worker",
+        )
+        return
+
+    # Publish the successor before database/admission work.  If a worker is
+    # recycled in the middle of a slow tick, the durable timestamp and this
+    # delayed message preserve forward progress without a second active loop.
+    try:
+        next_delay_seconds = claimed_delay_seconds
+        dispatch_due_website_recrawls.send_with_options(
+            delay=max(60, next_delay_seconds) * 1_000,
+        )
+    except Exception:
+        release_website_recrawl_scheduler_tick()
+        logger.exception(
+            "website_recrawl_scheduler_successor_enqueue_failed next_delay_seconds=%s",
+            next_delay_seconds,
+        )
+        raise
+
     try:
         result = execute()
         next_delay_seconds = result.next_delay_seconds
@@ -2574,10 +2741,6 @@ def dispatch_due_website_recrawls() -> None:
             "website_recrawl_scheduler_tick_failed error_type=%s error=%s",
             exc.__class__.__name__,
             exc,
-        )
-    finally:
-        dispatch_due_website_recrawls.send_with_options(
-            delay=max(60, next_delay_seconds) * 1_000,
         )
 
 

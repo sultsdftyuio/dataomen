@@ -182,11 +182,11 @@ workers:
       - key: ARCLI_DRAMATIQ_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
-        value: "16"
+        value: "8"
       - key: ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
-        value: "64"
+        value: "32"
       - key: ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS
         scope: RUN_TIME
         type: general
@@ -242,7 +242,33 @@ workers:
       - key: ARCLI_SOURCE_POST_EMBEDDING_BATCH_SIZE
         scope: RUN_TIME
         type: general
-        value: "16"
+        value: "8"
+      # One noisy repository, site, or federated community cannot consume an
+      # activation's whole embedding budget before other buyer conversations
+      # are checked.
+      - key: ARCLI_INITIAL_PUBLIC_EMBEDDING_POSTS_PER_COMMUNITY_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "8"
+      # Shared Redis leases prevent an activation burst from executing several
+      # memory-heavy embedding/verifier batches at once.  Deferred messages
+      # stay durable in Redis rather than occupying worker prefetch memory.
+      - key: ARCLI_PUBLIC_SOURCE_EMBEDDING_ACTIVE_BATCHES
+        scope: RUN_TIME
+        type: general
+        value: "2"
+      - key: ARCLI_PUBLIC_SOURCE_EMBEDDING_BATCH_LEASE_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "300"
+      - key: ARCLI_PUBLIC_SOURCE_EMBEDDING_DEFER_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "10"
+      - key: ARCLI_PUBLIC_SOURCE_VISIBILITY_MAX_RETRIES
+        scope: RUN_TIME
+        type: general
+        value: "3"
       - key: ARCLI_OPENAI_EMBEDDING_BATCH_SIZE
         scope: RUN_TIME
         type: general
@@ -260,7 +286,9 @@ workers:
       - key: ARCLI_TECHNICAL_SOURCE_REQUIRE_TECHNICAL_QUERY
         scope: RUN_TIME
         type: general
-        value: "true"
+        # The product-aware source plan has already authorized technical
+        # communities; buyer-language queries need not repeat a tech keyword.
+        value: "false"
       - key: ARCLI_STRICT_BUYER_CONTEXT_FILTER
         scope: RUN_TIME
         type: general
@@ -302,11 +330,11 @@ workers:
       - key: ARCLI_GITHUB_INGESTION_ENABLED
         scope: RUN_TIME
         type: general
-        value: "false"
+        value: "true"
       - key: ARCLI_STACKEXCHANGE_INGESTION_ENABLED
         scope: RUN_TIME
         type: general
-        value: "false"
+        value: "true"
       - key: ARCLI_X_INGESTION_ENABLED
         scope: RUN_TIME
         type: general

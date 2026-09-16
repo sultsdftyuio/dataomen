@@ -69,13 +69,28 @@ class RetryablePublicSourcePostNotFound(RuntimeError):
     delay; direct callers keep the historic empty-result behavior.
     """
 
-    def __init__(self, *, source: str, source_post_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        source: str,
+        source_post_id: str,
+        missing_refs: Sequence[tuple[str, str]] = (),
+        partial_result: dict[str, int] | None = None,
+    ) -> None:
         super().__init__(
             "public source post is not visible yet "
             f"(source={source}, source_post_id={source_post_id})"
         )
         self.source = source
         self.source_post_id = source_post_id
+        self.missing_refs = tuple(
+            dict.fromkeys(
+                (str(missing_source).strip(), str(missing_post_id).strip())
+                for missing_source, missing_post_id in missing_refs
+                if str(missing_source).strip() and str(missing_post_id).strip()
+            )
+        ) or ((source, source_post_id),)
+        self.partial_result = dict(partial_result or {})
 
 
 def _normalized_website_identity(value: Any) -> str | None:
@@ -198,6 +213,65 @@ def _public_matching_profile_rows(conn: Connection) -> list[dict[str, Any]]:
     return _current_profile_rows_for_active_websites(
         [dict(row) for row in rows]
     )[:profile_limit]
+
+
+def _profile_rows_for_requested_profile(
+    conn: Connection,
+    *,
+    tenant_id: str | None,
+    service_profile_id: str | None,
+) -> list[dict[str, Any]]:
+    """Load the requested current profile without a global-list dependency.
+
+    Fresh activation handoffs must not lose their target merely because a
+    capped global matching query is full or the tenant's current row was
+    updated just after that query began.  The active-website check remains
+    mandatory, so this optimisation cannot revive an old profile for a
+    replaced website.
+    """
+
+    normalized_tenant_id = _string_value(tenant_id)
+    normalized_profile_id = _string_value(service_profile_id)
+    if not normalized_tenant_id or not normalized_profile_id:
+        return _public_matching_profile_rows(conn)
+
+    profile_columns = _service_profile_columns(conn)
+    profile_row = _load_service_profile(
+        conn,
+        normalized_tenant_id,
+        normalized_profile_id,
+        profile_columns,
+    )
+    if not profile_row:
+        logger.warning(
+            "public_source_profile_match_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            normalized_tenant_id,
+            normalized_profile_id,
+            "service_profile_not_found",
+        )
+        return []
+
+    candidate_row = {
+        **profile_row,
+        "active_website_url": _active_tenant_website_url(conn, normalized_tenant_id),
+    }
+    if not _profile_matches_active_website(candidate_row):
+        logger.warning(
+            "public_source_profile_match_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            normalized_tenant_id,
+            normalized_profile_id,
+            "profile_not_current_for_active_website",
+        )
+        return []
+    if not _profile_embedding_from_row(candidate_row):
+        logger.warning(
+            "public_source_profile_match_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            normalized_tenant_id,
+            normalized_profile_id,
+            "service_profile_embedding_missing",
+        )
+        return []
+    return [candidate_row]
 
 
 
@@ -1213,7 +1287,11 @@ def process_public_source_post_embedding_batch(
                     source=source,
                 )
             )
-        profile_rows = _public_matching_profile_rows(conn)
+        profile_rows = _profile_rows_for_requested_profile(
+            conn,
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+        )
         lead_match_columns = _table_columns(conn, "lead_matches")
 
     retryable_missing_refs: list[tuple[str, str]] = []
@@ -1244,16 +1322,6 @@ def process_public_source_post_embedding_batch(
                         )
                     else:
                         retryable_missing_refs.append((source, source_post_id))
-
-    normalized_tenant_id = _string_value(tenant_id)
-    normalized_profile_id = _string_value(service_profile_id)
-    if normalized_tenant_id and normalized_profile_id:
-        profile_rows = [
-            row
-            for row in profile_rows
-            if _string_value(row.get("tenant_id")) == normalized_tenant_id
-            and _string_value(row.get("id")) == normalized_profile_id
-        ]
 
     embedding_service = EmbeddingService()
     embedding_values_by_database_post_id: dict[str, list[float]] = {}
@@ -1302,6 +1370,8 @@ def process_public_source_post_embedding_batch(
         raise RetryablePublicSourcePostNotFound(
             source=retry_source,
             source_post_id=retry_source_post_id,
+            missing_refs=retryable_missing_refs,
+            partial_result=totals,
         )
     return totals
 

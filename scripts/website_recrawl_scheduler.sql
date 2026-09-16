@@ -80,6 +80,24 @@ ALTER TABLE public.website_recrawl_dispatches
     ADD CONSTRAINT website_recrawl_dispatches_dispatch_priority_check
     CHECK (dispatch_priority IN ('pro', 'free'));
 
+-- A durable singleton heartbeat prevents every worker recycle from creating
+-- another independently self-scheduling Dramatiq loop.  The backend service
+-- is the only principal that needs this table; customers never read it.
+CREATE TABLE IF NOT EXISTS public.website_recrawl_scheduler_state (
+    scheduler_name TEXT PRIMARY KEY,
+    next_tick_at TIMESTAMPTZ NOT NULL,
+    last_tick_started_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (scheduler_name = 'website_recrawl')
+);
+
+ALTER TABLE public.website_recrawl_scheduler_state
+    ADD COLUMN IF NOT EXISTS last_tick_started_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_website_recrawl_scheduler_state_due
+    ON public.website_recrawl_scheduler_state(next_tick_at ASC);
+
 CREATE INDEX IF NOT EXISTS idx_website_recrawl_dispatches_daily_budget
     ON public.website_recrawl_dispatches(enqueued_at DESC)
     WHERE status = 'enqueued';
@@ -96,6 +114,7 @@ GRANT SELECT ON TABLE public.website_recrawl_dispatches TO authenticated;
 
 ALTER TABLE public.website_recrawl_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.website_recrawl_dispatches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.website_recrawl_scheduler_state ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "website_recrawl_schedules_tenant_isolation"
     ON public.website_recrawl_schedules;

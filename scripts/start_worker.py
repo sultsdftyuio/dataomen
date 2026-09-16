@@ -251,11 +251,16 @@ def verify_dramatiq_version(dramatiq_module: Any) -> str:
     return installed_version
 
 
-def bootstrap_website_recrawl_scheduler(queue_allowlist: set[str] | None) -> None:
+def bootstrap_website_recrawl_scheduler(
+    queue_allowlist: set[str] | None,
+    *,
+    retry_attempt: int = 0,
+) -> None:
     """Seed a scheduler tick only on workers that consume the ``system`` queue.
 
-    Multiple worker starts are safe: PostgreSQL admits one scheduler tick to
-    dispatch work, while other ticks become inexpensive no-ops.
+    PostgreSQL records the sole next tick before this process publishes it.
+    Worker restarts therefore recover an overdue tick without creating a
+    second recurring chain beside an already queued delayed message.
     """
     if queue_allowlist is not None and "system" not in queue_allowlist:
         return
@@ -270,6 +275,16 @@ def bootstrap_website_recrawl_scheduler(queue_allowlist: set[str] | None) -> Non
 
     try:
         from api.workers.actors import dispatch_due_website_recrawls
+        from api.services.website_recrawl import (
+            bootstrap_website_recrawl_scheduler as acquire_website_recrawl_scheduler_tick,
+        )
+
+        if not acquire_website_recrawl_scheduler_tick():
+            logger.info(
+                "website_recrawl_scheduler_bootstrap_skipped reason=%s",
+                "future_tick_already_scheduled_or_state_unavailable",
+            )
+            return
 
         message = dispatch_due_website_recrawls.send()
         logger.info(
@@ -278,11 +293,30 @@ def bootstrap_website_recrawl_scheduler(queue_allowlist: set[str] | None) -> Non
         )
     except Exception as exc:
         # A delayed scheduler message may already be queued. Do not prevent
-        # ordinary crawl work merely because this extra seed could not publish.
+        # ordinary crawl work merely because this extra seed could not publish,
+        # but retry a transient broker outage without waiting for a deploy or
+        # a process recycle. The database singleton prevents duplicate loops.
         logger.warning(
-            "website_recrawl_scheduler_bootstrap_failed error_type=%s error=%s",
+            "website_recrawl_scheduler_bootstrap_failed retry_attempt=%s error_type=%s error=%s",
+            retry_attempt,
             exc.__class__.__name__,
             exc,
+        )
+        if retry_attempt >= 3:
+            return
+        delay_seconds = min(300, 30 * (2**retry_attempt))
+        retry_timer = threading.Timer(
+            delay_seconds,
+            bootstrap_website_recrawl_scheduler,
+            args=(queue_allowlist,),
+            kwargs={"retry_attempt": retry_attempt + 1},
+        )
+        retry_timer.daemon = True
+        retry_timer.start()
+        logger.info(
+            "website_recrawl_scheduler_bootstrap_retry_scheduled retry_attempt=%s delay_seconds=%s",
+            retry_attempt + 1,
+            delay_seconds,
         )
 
 

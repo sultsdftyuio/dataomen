@@ -319,8 +319,10 @@ class FastPublicSourceCheckTests(unittest.TestCase):
         assert budget == {
             "post_limit": 3,
             "per_source_limit": 1,
+            "per_community_limit": 3,
             "selected": 2,
             "selected_by_source": {"hackernews": 1, "bluesky": 1},
+            "selected_by_community": {},
             "selected_identified_authors": 0,
             "excluded": 2,
             "average_signal_score": 0,

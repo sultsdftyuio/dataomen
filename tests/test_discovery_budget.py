@@ -99,6 +99,44 @@ def test_embedding_budget_keeps_one_highest_priority_post_per_person() -> None:
     assert selection.excluded_count == 1
 
 
+def test_embedding_budget_keeps_community_coverage() -> None:
+    budget = InitialEmbeddingBudget(
+        post_limit=3,
+        per_source_limit=3,
+        per_community_limit=1,
+    )
+    selection = select_initial_embedding_refs(
+        (
+            PublicSourcePostRef(
+                "github",
+                "first",
+                lead_signal_score=12,
+                lead_signal_community="github:acme/one",
+            ),
+            PublicSourcePostRef(
+                "github",
+                "second",
+                lead_signal_score=11,
+                lead_signal_community="github:acme/one",
+            ),
+            PublicSourcePostRef(
+                "github",
+                "other",
+                lead_signal_score=10,
+                lead_signal_community="github:acme/two",
+            ),
+        ),
+        source="github",
+        budget=budget,
+        selected_keys=set(),
+        selected_by_source={},
+        selected_by_community={},
+    )
+
+    assert [ref.source_post_id for ref in selection.refs] == ["first", "other"]
+    assert selection.excluded_count == 1
+
+
 def test_repeated_author_signals_boost_the_best_candidate_without_hiding_posts() -> None:
     refs = prioritized_source_post_refs(
         (
@@ -122,3 +160,31 @@ def test_repeated_author_signals_boost_the_best_candidate_without_hiding_posts()
     assert len(refs) == 2
     assert {ref.lead_signal_group for ref in refs} == {"lemmy:alice"}
     assert all("repeat_author_signal" in ref.lead_signal_reasons for ref in refs)
+
+
+def test_credible_buyer_conversations_boost_their_community() -> None:
+    refs = prioritized_source_post_refs(
+        (
+            SimpleNamespace(
+                source="lemmy",
+                source_post_id="first",
+                title="Need help replacing our manual sales workflow",
+                body="",
+                author="alice",
+                metadata={"community": "sales-operations"},
+            ),
+            SimpleNamespace(
+                source="lemmy",
+                source_post_id="second",
+                title="Looking for a better outbound workflow",
+                body="",
+                author="bob",
+                metadata={"community": "sales-operations"},
+            ),
+        )
+    )
+
+    assert {ref.lead_signal_community for ref in refs} == {
+        "lemmy:sales-operations"
+    }
+    assert all("community_buyer_signal_density" in ref.lead_signal_reasons for ref in refs)

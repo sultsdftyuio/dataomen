@@ -1,4 +1,7 @@
-from api.services.social.source_planning import profile_source_preferences
+from api.services.social.source_planning import (
+    profile_community_plan,
+    profile_source_preferences,
+)
 from api.services.verifier import ServiceProfile
 
 
@@ -44,3 +47,15 @@ def test_open_source_technical_profile_uses_relevant_technical_connectors() -> N
         "lemmy",
         "x",
     )
+
+
+def test_community_plan_exposes_the_product_relevant_discussion_groups() -> None:
+    community_profile = profile(
+        one_liner="Open-source API observability for platform engineering teams.",
+        target_audience=["Developer platform teams"],
+    )
+    plan = profile_community_plan(community_profile)
+
+    assert plan.sources == profile_source_preferences(community_profile)
+    assert "github: public repository issue discussions" in plan.community_labels
+    assert "stackexchange: technical Q&A" in plan.community_labels

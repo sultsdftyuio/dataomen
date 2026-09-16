@@ -207,6 +207,9 @@ class PublicSourcePostRef:
     lead_signal_score: int = field(default=0, compare=False)
     lead_signal_reasons: tuple[str, ...] = field(default=(), compare=False)
     lead_signal_group: str | None = field(default=None, compare=False)
+    # Provider-local community evidence (repository, Stack Exchange site, or
+    # federated community) is transient activation metadata, never lead data.
+    lead_signal_community: str | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if not self.source.strip() or not self.source_post_id.strip():
@@ -223,6 +226,8 @@ class PublicSourcePostRef:
         )
         group = str(self.lead_signal_group or "").strip()
         object.__setattr__(self, "lead_signal_group", group or None)
+        community = str(self.lead_signal_community or "").strip()
+        object.__setattr__(self, "lead_signal_community", community or None)
 
     def to_payload(self) -> dict[str, str]:
         return {

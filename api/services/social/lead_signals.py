@@ -152,6 +152,20 @@ def source_post_ref_signal(ref: Any) -> LeadSignalScore:
     return LeadSignalScore(score=score, reasons=reasons)
 
 
+def _community_signal_group(post: Any, *, source: str) -> str | None:
+    """Return a bounded provider-local discussion group for ranking only."""
+
+    metadata = getattr(post, "metadata", None)
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    raw_community = (
+        getattr(post, "community", None)
+        or metadata.get("community")
+        or metadata.get("repository")
+    )
+    community = " ".join(str(raw_community or "").split()).casefold()[:160]
+    return f"{source.casefold()}:{community}" if community else None
+
+
 def prioritized_source_post_refs(
     posts: Sequence[Any],
     *,
@@ -163,8 +177,11 @@ def prioritized_source_post_refs(
     priority score, which remains tied to the cheap buyer-signal scorer.
     """
 
-    candidates: list[tuple[Any, str, str, LeadSignalScore, str | None]] = []
+    candidates: list[
+        tuple[Any, str, str, LeadSignalScore, str | None, str | None]
+    ] = []
     group_counts: dict[str, int] = {}
+    community_signal_counts: dict[str, int] = {}
     for post in posts:
         source = str(getattr(post, "source", "") or "").strip()
         source_post_id = str(getattr(post, "source_post_id", "") or "").strip()
@@ -180,11 +197,29 @@ def prioritized_source_post_refs(
         )
         if group:
             group_counts[group] = group_counts.get(group, 0) + 1
-        candidates.append((post, source, source_post_id, lead_signal_score(post), group))
+        signal = lead_signal_score(post)
+        community = _community_signal_group(post, source=source)
+        # A community earns a boost only after several credible buyer signals.
+        # It is an explainable retrieval priority, not a claim about members.
+        if community and signal.score >= 3:
+            community_signal_counts[community] = (
+                community_signal_counts.get(community, 0) + 1
+            )
+        candidates.append(
+            (post, source, source_post_id, signal, group, community)
+        )
 
     refs: dict[tuple[str, str], PublicSourcePostRef] = {}
-    for _post, source, source_post_id, signal, group in candidates:
+    for _post, source, source_post_id, signal, group, community in candidates:
         group_boost = min(3, max(0, group_counts.get(group or "", 0) - 1))
+        community_boost = (
+            min(
+                4,
+                max(0, community_signal_counts.get(community or "", 0) - 1),
+            )
+            if signal.score >= 3
+            else 0
+        )
         admission_reasons = ()
         if admission_reasons_by_ref:
             admission_reasons = tuple(
@@ -199,15 +234,17 @@ def prioritized_source_post_refs(
             dict.fromkeys(
                 signal.reasons
                 + (("repeat_author_signal",) if group_boost else ())
+                + (("community_buyer_signal_density",) if community_boost else ())
                 + admission_reasons
             )
         )
         ref = PublicSourcePostRef(
             source=source,
             source_post_id=source_post_id,
-            lead_signal_score=signal.score + group_boost,
+            lead_signal_score=signal.score + group_boost + community_boost,
             lead_signal_reasons=reasons,
             lead_signal_group=group,
+            lead_signal_community=community,
         )
         key = (ref.source.casefold(), ref.source_post_id)
         previous = refs.get(key)

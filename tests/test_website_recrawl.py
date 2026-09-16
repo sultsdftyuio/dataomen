@@ -132,10 +132,61 @@ def test_scheduler_schema_has_a_daily_cap_audit_and_retention_contract() -> None
 
     assert "website_recrawl_schedules" in schema
     assert "website_recrawl_dispatches" in schema
+    assert "website_recrawl_scheduler_state" in schema
     assert "crawl_kind" in schema
     assert "dispatch_priority" in schema
     assert "UNIQUE (tenant_id, website_url, scheduled_for)" in schema
     assert "90 days" in schema
+
+
+def test_scheduler_actor_only_runs_after_claiming_the_durable_tick() -> None:
+    from api.workers import actors
+
+    result = website_recrawl.SchedulerTickResult(
+        dispatched=0,
+        deferred=0,
+        failed=0,
+        daily_budget_remaining=200,
+        next_delay_seconds=300,
+    )
+    with (
+        patch.object(
+            website_recrawl,
+            "claim_website_recrawl_scheduler_tick",
+            return_value=300,
+        ),
+        patch.object(
+            website_recrawl,
+            "dispatch_due_website_recrawls",
+            return_value=result,
+        ) as dispatch,
+        patch.object(actors.dispatch_due_website_recrawls, "send_with_options") as successor,
+    ):
+        actors.dispatch_due_website_recrawls.fn()
+
+    dispatch.assert_called_once()
+    successor.assert_called_once_with(delay=300_000)
+
+
+def test_scheduler_actor_does_not_create_a_successor_when_another_tick_won() -> None:
+    from api.workers import actors
+
+    with (
+        patch.object(
+            website_recrawl,
+            "claim_website_recrawl_scheduler_tick",
+            return_value=None,
+        ),
+        patch.object(
+            website_recrawl,
+            "dispatch_due_website_recrawls",
+        ) as dispatch,
+        patch.object(actors.dispatch_due_website_recrawls, "send_with_options") as successor,
+    ):
+        actors.dispatch_due_website_recrawls.fn()
+
+    dispatch.assert_not_called()
+    successor.assert_not_called()
 
 
 def test_crawl_completion_and_system_worker_own_the_schedule() -> None:

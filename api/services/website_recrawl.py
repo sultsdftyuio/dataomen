@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 SCHEDULE_TABLE = "website_recrawl_schedules"
 DISPATCH_TABLE = "website_recrawl_dispatches"
+SCHEDULER_STATE_TABLE = "website_recrawl_scheduler_state"
+SCHEDULER_STATE_NAME = "website_recrawl"
 INITIAL_CRAWL_KIND = "initial"
 RECURRING_CRAWL_KIND = "recurring"
 PRO_DISPATCH_PRIORITY = "pro"
@@ -40,6 +42,9 @@ DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
 
 _REQUIRED_SCHEDULE_COLUMNS = frozenset({"tenant_id", "website_url", "crawl_kind", "status", "next_crawl_at", "dispatch_lease_until", "consecutive_failures", "last_error"})
 _REQUIRED_DISPATCH_COLUMNS = frozenset({"tenant_id", "website_url", "scheduled_for", "crawl_kind", "dispatch_priority", "status"})
+_REQUIRED_SCHEDULER_STATE_COLUMNS = frozenset(
+    {"scheduler_name", "next_tick_at", "last_tick_started_at", "updated_at"}
+)
 
 @dataclass(frozen=True)
 class RecrawlLimits:
@@ -214,6 +219,171 @@ def _scheduler_tables_available(conn: Connection) -> bool:
         DISPATCH_TABLE,
         _REQUIRED_DISPATCH_COLUMNS,
     )
+
+
+def _scheduler_state_available(conn: Connection) -> bool:
+    """Return whether the singleton-tick migration is present.
+
+    Schedules and dispatch records may pre-date the singleton state table.
+    Those rows remain safe to write, but a worker must not execute automatic
+    recrawls until it can prove that exactly one durable tick owns the next
+    dispatch window.
+    """
+
+    return _table_has_columns(
+        conn,
+        SCHEDULER_STATE_TABLE,
+        _REQUIRED_SCHEDULER_STATE_COLUMNS,
+    )
+
+
+def bootstrap_website_recrawl_scheduler() -> bool:
+    """Return whether a system worker should seed an immediate scheduler tick.
+
+    The persistent state is intentionally independent of Redis delayed
+    messages.  After a restart, an already scheduled future tick suppresses a
+    second chain; an overdue row allows recovery when a delayed message was
+    lost while no worker was running.
+    """
+
+    from api.services.embeddings import _database_engine
+
+    try:
+        with _database_engine().begin() as conn:
+            if not _scheduler_state_available(conn):
+                logger.warning(
+                    "website_recrawl_scheduler_bootstrap_skipped reason=%s",
+                    "scheduler_state_schema_missing",
+                )
+                return False
+
+            inserted = conn.execute(
+                text(
+                    """
+                    INSERT INTO public.website_recrawl_scheduler_state (
+                        scheduler_name,
+                        next_tick_at,
+                        last_tick_started_at,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        :scheduler_name,
+                        NOW(),
+                        NULL,
+                        NOW(),
+                        NOW()
+                    )
+                    ON CONFLICT (scheduler_name) DO NOTHING
+                    RETURNING scheduler_name
+                    """
+                ),
+                {"scheduler_name": SCHEDULER_STATE_NAME},
+            ).scalar_one_or_none()
+            if inserted:
+                return True
+
+            # A state row in the past means the worker was unavailable when
+            # its delayed message should have run.  Publishing one recovery
+            # message is safe because the tick claim below is compare-and-set.
+            return bool(
+                conn.execute(
+                    text(
+                        """
+                        SELECT next_tick_at <= NOW()
+                          FROM public.website_recrawl_scheduler_state
+                         WHERE scheduler_name = :scheduler_name
+                        """
+                    ),
+                    {"scheduler_name": SCHEDULER_STATE_NAME},
+                ).scalar_one_or_none()
+            )
+    except Exception as exc:
+        logger.exception(
+            "website_recrawl_scheduler_bootstrap_state_failed error_type=%s error=%s",
+            exc.__class__.__name__,
+            exc,
+        )
+        return False
+
+
+def claim_website_recrawl_scheduler_tick() -> int | None:
+    """Advance and claim the one durable scheduler tick.
+
+    Every queued actor, including delayed messages created before a worker
+    recycle, compares against the same due timestamp.  Only one can advance
+    it.  The returned delay is persisted before the caller publishes its
+    successor, so duplicate deliveries become no-ops rather than permanent
+    parallel scheduler loops.
+    """
+
+    from api.services.embeddings import _database_engine
+
+    limits = recrawl_limits()
+    try:
+        with _database_engine().begin() as conn:
+            if not _scheduler_state_available(conn):
+                logger.warning(
+                    "website_recrawl_scheduler_tick_skipped reason=%s",
+                    "scheduler_state_schema_missing",
+                )
+                return None
+
+            row = conn.execute(
+                text(
+                    """
+                    UPDATE public.website_recrawl_scheduler_state
+                       SET next_tick_at = NOW() + (
+                               :tick_seconds * interval '1 second'
+                           ),
+                           last_tick_started_at = NOW(),
+                           updated_at = NOW()
+                     WHERE scheduler_name = :scheduler_name
+                       AND next_tick_at <= NOW()
+                    RETURNING next_tick_at
+                    """
+                ),
+                {
+                    "scheduler_name": SCHEDULER_STATE_NAME,
+                    "tick_seconds": limits.tick_seconds,
+                },
+            ).mappings().first()
+            return limits.tick_seconds if row else None
+    except Exception as exc:
+        logger.exception(
+            "website_recrawl_scheduler_tick_claim_failed error_type=%s error=%s",
+            exc.__class__.__name__,
+            exc,
+        )
+        return None
+
+
+def release_website_recrawl_scheduler_tick() -> None:
+    """Make a claimed tick recoverable when publishing its successor fails."""
+
+    from api.services.embeddings import _database_engine
+
+    try:
+        with _database_engine().begin() as conn:
+            if not _scheduler_state_available(conn):
+                return
+            conn.execute(
+                text(
+                    """
+                    UPDATE public.website_recrawl_scheduler_state
+                       SET next_tick_at = NOW(),
+                           updated_at = NOW()
+                     WHERE scheduler_name = :scheduler_name
+                    """
+                ),
+                {"scheduler_name": SCHEDULER_STATE_NAME},
+            )
+    except Exception as exc:
+        logger.exception(
+            "website_recrawl_scheduler_tick_release_failed error_type=%s error=%s",
+            exc.__class__.__name__,
+            exc,
+        )
 
 def _crawl_job_id(tenant_id: str, website_url: str) -> str:
     digest = hashlib.sha256(f"{tenant_id}:{website_url}".encode("utf-8")).hexdigest()

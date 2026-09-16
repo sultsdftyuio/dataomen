@@ -250,10 +250,12 @@ class PublicSourceMatchingTests(unittest.TestCase):
             def close(self) -> None:
                 return None
 
-        profile_rows = [
-            {"id": "profile-a", "tenant_id": "tenant-a"},
-            {"id": "profile-b", "tenant_id": "tenant-b"},
-        ]
+        profile_row = {
+            "id": "profile-a",
+            "tenant_id": "tenant-a",
+            "website_url": "https://billing.example/",
+            "profile_embedding": [1.0, 0.0],
+        }
         refs = [{"source": "hackernews", "source_post_id": "hn-1"}]
         with (
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
@@ -262,10 +264,12 @@ class PublicSourceMatchingTests(unittest.TestCase):
                 "_load_public_source_post_rows",
                 return_value=[{"id": "post-1"}],
             ),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=profile_row),
             patch.object(
                 ingestion,
-                "_public_matching_profile_rows",
-                return_value=profile_rows,
+                "_active_tenant_website_url",
+                return_value="https://billing.example/",
             ),
             patch.object(ingestion, "_table_columns", return_value={}),
             patch.object(
@@ -293,7 +297,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
             )
 
         self.assertEqual(result["candidates"], 1)
-        self.assertEqual(process.call_args.kwargs["_profile_rows"], [profile_rows[0]])
+        assert process.call_args.kwargs["_profile_rows"][0]["id"] == "profile-a"
 
     def test_activation_rematches_only_the_new_profile_against_cached_global_posts(self) -> None:
         import api.services.social_ingestion as ingestion

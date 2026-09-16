@@ -657,6 +657,52 @@ class PublicSourceReferenceTests(unittest.TestCase):
             retry_on_not_found=True,
         )
 
+    def test_embedding_batch_retries_only_the_not_yet_visible_refs(self) -> None:
+        from api.workers import actors
+        import api.services.social_ingestion as ingestion
+        import api.services.social.public_matching as public_matching
+
+        refs = [
+            {"source": "github", "source_post_id": "visible"},
+            {"source": "github", "source_post_id": "not-yet-visible"},
+        ]
+        retry = public_matching.RetryablePublicSourcePostNotFound(
+            source="github",
+            source_post_id="not-yet-visible",
+            missing_refs=(("github", "not-yet-visible"),),
+            partial_result={
+                "posts": 1,
+                "embedded": 1,
+                "candidates": 0,
+                "ready_for_review": 0,
+                "discovery_candidates": 0,
+            },
+        )
+        with (
+            patch.object(
+                ingestion,
+                "process_public_source_post_embedding_batch",
+                side_effect=retry,
+            ),
+            patch.object(
+                actors.enqueue_source_post_embedding_batch_job,
+                "send_with_options",
+                return_value=SimpleNamespace(message_id="retry-message"),
+            ) as schedule,
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.enqueue_source_post_embedding_batch_job.fn(refs)
+
+        schedule.assert_called_once_with(
+            args=([{"source": "github", "source_post_id": "not-yet-visible"}],),
+            kwargs={
+                "tenant_id": None,
+                "service_profile_id": None,
+                "visibility_retry_attempt": 1,
+            },
+            delay=10_000,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

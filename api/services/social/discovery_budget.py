@@ -24,6 +24,9 @@ class InitialEmbeddingBudget:
 
     post_limit: int
     per_source_limit: int
+    # Defaults preserve construction compatibility for callers that predate
+    # community-aware selection; deployment config supplies the active bound.
+    per_community_limit: int = 12
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,14 @@ def initial_embedding_budget() -> InitialEmbeddingBudget:
     return InitialEmbeddingBudget(
         post_limit=post_limit,
         per_source_limit=min(post_limit, per_source_limit),
+        per_community_limit=min(
+            post_limit,
+            _bounded_positive_int(
+                "ARCLI_INITIAL_PUBLIC_EMBEDDING_POSTS_PER_COMMUNITY_LIMIT",
+                12,
+                maximum=post_limit,
+            ),
+        ),
     )
 
 
@@ -93,6 +104,15 @@ def _ref_signal_group(ref: Any) -> str | None:
     return normalized or None
 
 
+def _ref_signal_community(ref: Any) -> str | None:
+    if isinstance(ref, dict):
+        value = ref.get("lead_signal_community")
+    else:
+        value = getattr(ref, "lead_signal_community", None)
+    normalized = str(value or "").strip().casefold()
+    return normalized or None
+
+
 def select_initial_embedding_refs(
     refs: Sequence[Any],
     *,
@@ -101,13 +121,17 @@ def select_initial_embedding_refs(
     selected_keys: set[tuple[str, str]],
     selected_by_source: dict[str, int],
     selected_signal_groups: set[str] | None = None,
+    selected_by_community: dict[str, int] | None = None,
 ) -> InitialEmbeddingSelection:
-    """Select diverse refs without letting a source or author dominate a scan."""
+    """Select diverse refs without letting a source, author, or group dominate."""
 
     selected: list[Any] = []
     excluded_count = 0
     normalized_source = source.strip().casefold()
     selected_signal_groups = selected_signal_groups if selected_signal_groups is not None else set()
+    selected_by_community = (
+        selected_by_community if selected_by_community is not None else {}
+    )
 
     ranked_refs = sorted(
         enumerate(refs),
@@ -120,10 +144,16 @@ def select_initial_embedding_refs(
 
         ref_source = identity[0]
         signal_group = _ref_signal_group(ref)
+        signal_community = _ref_signal_community(ref)
         if (
             len(selected_keys) >= budget.post_limit
             or selected_by_source.get(ref_source, 0) >= budget.per_source_limit
             or (signal_group is not None and signal_group in selected_signal_groups)
+            or (
+                signal_community is not None
+                and selected_by_community.get(signal_community, 0)
+                >= budget.per_community_limit
+            )
         ):
             excluded_count += 1
             continue
@@ -132,6 +162,10 @@ def select_initial_embedding_refs(
         selected_by_source[ref_source] = selected_by_source.get(ref_source, 0) + 1
         if signal_group is not None:
             selected_signal_groups.add(signal_group)
+        if signal_community is not None:
+            selected_by_community[signal_community] = (
+                selected_by_community.get(signal_community, 0) + 1
+            )
         selected.append(ref)
 
     return InitialEmbeddingSelection(tuple(selected), excluded_count)
