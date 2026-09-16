@@ -69,8 +69,9 @@ export function WebsiteDemandMap({
               <Button
                 type="button"
                 size="sm"
-                className="h-7 shrink-0 bg-[#1B6EBF] px-2.5 text-[11px] text-white hover:bg-[#155a9f]"
+                className="h-7 min-w-[8.5rem] shrink-0 bg-[#1B6EBF] px-2.5 text-[11px] text-white hover:bg-[#155a9f]"
                 disabled={isPending || pendingId !== null}
+                aria-busy={isActivating}
                 onClick={() => activate(suggestion.id)}
               >
                 <Radar className="size-3" aria-hidden="true" />
@@ -94,6 +95,7 @@ export function WebsiteDemandMap({
               {suggestion.communityPlan.sources.slice(0, 3).flatMap((source) => source.queryTerms.slice(0, 1)).map((term) => (
                 <span
                   key={term.toLowerCase()}
+                  title={term}
                   className="max-w-full truncate rounded border px-1.5 py-0.5 text-[10px]"
                   style={{ borderColor: C.rule, color: C.muted }}
                 >

@@ -91,6 +91,12 @@ const nextConfig = {
     ],
   },
 
+  // The repository sits beside another lockfile in local development. Pinning
+  // the root prevents Turbopack from walking into an inaccessible parent path.
+  turbopack: {
+    root: process.cwd(),
+  },
+
   // 4. Security by Design: Structural Backbone
   // Enforces global headers for tenant isolation and data sovereignty.
   async headers() {

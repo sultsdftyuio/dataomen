@@ -279,6 +279,9 @@ export function DiscoveryLoadingPage({
   const isTakingLongerThanUsual =
     !hasError && !isReady && !isQueued && elapsedSeconds >= 90;
   const isWorkspaceScan = mode === "scan";
+  const liveUpdateLabel = isQueued
+    ? "Queued to read website"
+    : `Live: ${STAGES[Math.min(activeIndex, STAGES.length - 1)]?.label ?? "Updating discovery"}`;
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
   const canShowLiveFunnel =
     Boolean(buyerDemandReport) ||
@@ -360,13 +363,20 @@ export function DiscoveryLoadingPage({
 
         <section className="mt-9" aria-label="Discovery progress">
           <div className="flex items-center justify-between border-b pb-3 text-left" style={{ borderColor: C.rule }}>
-            <p className="text-xs font-semibold" style={{ color: C.navy }}>
-              Discovery progress
-            </p>
+            <div>
+              <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                Discovery progress
+              </p>
+              {!hasError && !isReady ? (
+                <p className="mt-0.5 text-[11px]" style={{ color: C.muted }}>
+                  Step {Math.min(activeIndex + 1, STAGES.length)} of {STAGES.length}
+                </p>
+              ) : null}
+            </div>
             {!hasError && !isReady ? (
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: C.muted }}>
                 <span className="size-1.5 animate-pulse rounded-full" style={{ backgroundColor: C.blue }} />
-                Live updates
+                {liveUpdateLabel}
               </span>
             ) : null}
           </div>
@@ -380,6 +390,7 @@ export function DiscoveryLoadingPage({
               return (
                 <li
                   key={stage.label}
+                  aria-current={isActive ? "step" : undefined}
                   className="min-h-32 border-b px-0 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:px-4 sm:first:pl-0 sm:last:border-r-0 sm:last:pr-0"
                   style={{ borderColor: C.rule }}
                 >
@@ -421,12 +432,21 @@ export function DiscoveryLoadingPage({
         ) : null}
 
         {!hasError && !isReady ? (
-          <p className="mt-5 text-xs leading-5" style={{ color: C.muted }}>
-            <span className="font-semibold" style={{ color: C.navy }}>{lastUpdate}.</span>{" "}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-xs leading-5" style={{ color: C.muted }}>
+            <p>
+              <span className="font-semibold" style={{ color: C.navy }}>{lastUpdate}.</span>{" "}
             {isQueued
               ? "Your place is saved and the scan starts automatically."
               : "You can leave this page — we will keep checking in the background."}
-          </p>
+            </p>
+            <Link
+              href="/dashboard"
+              className="font-semibold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
+              style={{ color: C.blue }}
+            >
+              View results while scan continues
+            </Link>
+          </div>
         ) : null}
 
         {isTakingLongerThanUsual && !canShowLiveFunnel ? (

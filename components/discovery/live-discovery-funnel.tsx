@@ -260,7 +260,6 @@ export function LiveDiscoveryFunnel({
       className="mt-6 rounded-xl border text-left"
       style={{ borderColor: C.blueLight, backgroundColor: "rgba(255, 255, 255, 0.72)" }}
       aria-label="Live discovery funnel"
-      aria-live="polite"
     >
       <div className="border-b px-4 py-4 sm:px-5" style={{ borderColor: C.rule }}>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -268,7 +267,12 @@ export function LiveDiscoveryFunnel({
             <p className="text-xs font-semibold" style={{ color: C.navy }}>
               What the scan is finding
             </p>
-            <p className="mt-1 max-w-2xl text-[11px] leading-5" style={{ color: C.navySoft }}>
+            <p
+              className="mt-1 max-w-2xl text-[11px] leading-5"
+              role="status"
+              aria-live="polite"
+              style={{ color: C.navySoft }}
+            >
               {description}
             </p>
           </div>

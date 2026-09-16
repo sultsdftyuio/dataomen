@@ -134,5 +134,6 @@ test("the default prospects page carries website hypotheses into the focused sca
   );
   assert.match(leadDeskSource, /<WebsiteDemandMap/);
   assert.match(leadDeskSource, /<WebsiteDemandMap[\s\S]*collapsible/);
-  assert.match(leadDeskSource, /Scan website demand/);
+  assert.match(leadDeskSource, /activateBuyerGroup=\{activateBuyerGroup\}/);
+  assert.doesNotMatch(leadDeskSource, /Scan website demand/);
 });

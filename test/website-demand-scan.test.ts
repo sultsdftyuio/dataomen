@@ -49,7 +49,7 @@ const matchingBriefPageSource = readFileSync(
 test("the prospect desk relies on automatic website monitoring", () => {
   assert.match(
     leadDeskSource,
-    /<Link href="\/dashboard\/brief">Update website<\/Link>/,
+    /<Link href="\/dashboard\/brief">Edit matching brief<\/Link>/,
   );
   assert.doesNotMatch(leadDeskSource, /startWebsiteDemandScan/);
   assert.doesNotMatch(leadDeskSource, /Scan website demand/);
