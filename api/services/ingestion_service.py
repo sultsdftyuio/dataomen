@@ -82,6 +82,29 @@ def process_initial_public_ingestion_job(
     service_profile_id: str | None = None,
 ) -> None:
     from api.services.social_ingestion import enqueue_initial_public_source_ingestion
+    from api.services.crawling import _database_engine
+    from api.services.tenant_entitlements import tenant_has_active_paid_access
+
+    try:
+        with _database_engine().begin() as conn:
+            lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+    except Exception as exc:
+        logger.exception(
+            "initial_public_ingestion_entitlement_check_failed tenant_id=%s service_profile_id=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+        )
+        return
+
+    if not lead_discovery_entitled:
+        logger.info(
+            "initial_public_ingestion_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            "active_paid_plan_required",
+        )
+        return
 
     try:
         result = enqueue_initial_public_source_ingestion(tenant_id, service_profile_id)

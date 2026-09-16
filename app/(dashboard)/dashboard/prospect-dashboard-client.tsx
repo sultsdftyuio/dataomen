@@ -56,7 +56,6 @@ import {
   type LeadFeedbackValue,
   type QualifiedLeadView,
   type ServiceProfileView,
-  type WebsiteDemandScanAction,
 } from "./prospect-types";
 
 type ProspectDashboardClientProps = {
@@ -68,7 +67,6 @@ type ProspectDashboardClientProps = {
   buyerDemandReport: BuyerDemandReportView | null;
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
-  startWebsiteDemandScan: WebsiteDemandScanAction;
   verificationThreshold: number;
   isWarmingUp: boolean;
 };
@@ -2718,7 +2716,6 @@ export default function ProspectDashboardClient({
   buyerDemandReport,
   buyerGroupSuggestions,
   activateBuyerGroup,
-  startWebsiteDemandScan,
   verificationThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
@@ -2946,7 +2943,6 @@ export default function ProspectDashboardClient({
         potentialBuyers={discoveryCandidates}
         buyerGroupSuggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
-        startWebsiteDemandScan={startWebsiteDemandScan}
         verificationThreshold={verificationThreshold}
         reviewedConversationCount={queueItems.length}
         screenedMatches={screenedMatches}

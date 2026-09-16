@@ -1,13 +1,11 @@
 "use client";
 
-import { type ReactNode, useState, useTransition } from "react";
+import { type ReactNode, useTransition } from "react";
 import {
   CheckCircle2,
   CircleAlert,
-  FileSearch,
   Globe2,
   Loader2,
-  Radar,
   RefreshCw,
   RotateCcw,
   Target,
@@ -19,7 +17,6 @@ import type {
   ProspectActionResult,
   ServiceProfileFields,
   ServiceProfileView,
-  WebsiteDemandScanAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
@@ -33,10 +30,10 @@ type WorkspaceRefreshCenterProps = {
   crawlJob: CrawlJobView | null;
   websiteDraft: string;
   websiteChanged: boolean;
+  isPro: boolean;
   isWebsitePending: boolean;
   isBriefPending: boolean;
   result: ProspectActionResult | null;
-  startWebsiteDemandScan: WebsiteDemandScanAction;
   onWebsiteDraftChange: (value: string) => void;
   onRecrawlWebsite: () => void;
   onRefreshBrief: () => void;
@@ -77,9 +74,13 @@ function crawlState(crawlJob: CrawlJobView | null) {
   return { label: "Ready", tone: "ready" as const };
 }
 
-function briefState(serviceProfile: ServiceProfileView) {
+function briefState(serviceProfile: ServiceProfileView, isPro: boolean) {
   if (!serviceProfile.hasProfile) {
     return { label: "Building", tone: "updating" as const };
+  }
+
+  if (!isPro) {
+    return { label: "Profile ready", tone: "ready" as const };
   }
 
   if (serviceProfile.embeddingStatus === "failed") {
@@ -140,9 +141,10 @@ function TargetingSummary({
   briefFields,
   websiteDraft,
   websiteChanged,
+  isPro,
 }: Pick<
   WorkspaceRefreshCenterProps,
-  "briefFields" | "websiteDraft" | "websiteChanged"
+  "briefFields" | "websiteDraft" | "websiteChanged" | "isPro"
 >) {
   const audiences = briefFields.target_audience.slice(0, 2);
   const buyer = audiences.length > 0 ? audiences.join(" / ") : "Add a target buyer";
@@ -182,7 +184,11 @@ function TargetingSummary({
             {websiteDomain(websiteDraft) ?? "Website needed"}
           </dd>
           <p className="mt-0.5 text-xs leading-5" style={{ color: C.muted }}>
-            {websiteChanged ? "New source context" : "Refresh current context"}
+            {websiteChanged
+              ? "New source context"
+              : isPro
+                ? "Automatic 24–48 hour refresh"
+                : "One included website crawl"}
           </p>
         </div>
         <div className="min-w-0">
@@ -229,35 +235,17 @@ export function WorkspaceRefreshCenter({
   crawlJob,
   websiteDraft,
   websiteChanged,
+  isPro,
   isWebsitePending,
   isBriefPending,
   result,
-  startWebsiteDemandScan,
   onWebsiteDraftChange,
   onRecrawlWebsite,
   onRefreshBrief,
 }: WorkspaceRefreshCenterProps) {
-  const [isDemandScanPending, startDemandScanTransition] = useTransition();
-  const [demandScanResult, setDemandScanResult] =
-    useState<ProspectActionResult | null>(null);
   const crawl = crawlState(crawlJob);
-  const brief = briefState(serviceProfile);
-  const isAnyActionPending =
-    isWebsitePending || isBriefPending || isDemandScanPending;
-  const actionResult = demandScanResult ?? result;
-
-  const startDemandScan = () => {
-    startDemandScanTransition(async () => {
-      try {
-        setDemandScanResult(await startWebsiteDemandScan());
-      } catch {
-        setDemandScanResult({
-          ok: false,
-          message: "Could not start the demand scan. Please try again.",
-        });
-      }
-    });
-  };
+  const brief = briefState(serviceProfile, isPro);
+  const isAnyActionPending = isWebsitePending || isBriefPending;
 
   return (
     <section aria-labelledby="workspace-refresh-title" className="space-y-3">
@@ -270,7 +258,9 @@ export function WorkspaceRefreshCenter({
             Refresh workspace
           </h2>
           <p className="mt-2 text-sm leading-6" style={{ color: C.muted }}>
-            Update the source, brief, or demand scan - one action at a time.
+            {isPro
+              ? "Update your source or brief. Arcli keeps monitoring the active website automatically."
+              : "Update your source or brief. Free includes one website crawl; ongoing monitoring and leads require Pro."}
           </p>
         </div>
         <p className="text-xs" style={{ color: C.muted }}>
@@ -305,7 +295,7 @@ export function WorkspaceRefreshCenter({
             <Button
               type="button"
               className="h-9 shrink-0"
-              disabled={isAnyActionPending || !websiteDraft.trim()}
+              disabled={isAnyActionPending || !websiteDraft.trim() || !websiteChanged}
               onClick={onRecrawlWebsite}
             >
               {isWebsitePending ? (
@@ -313,11 +303,13 @@ export function WorkspaceRefreshCenter({
               ) : (
                 <RotateCcw className="size-4" aria-hidden="true" />
               )}
-              {isWebsitePending ? "Queueing..." : "Re-crawl"}
+              {isWebsitePending ? "Saving..." : "Save website"}
             </Button>
           </div>
           <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-            Refreshes the website source only.
+            {isPro
+              ? "Saving a changed website starts its first crawl. Arcli then refreshes it automatically every 24–48 hours."
+              : "Saving a changed website starts its one included crawl. Upgrade to Pro for automatic refreshes and lead discovery."}
           </p>
         </ActionPane>
 
@@ -351,32 +343,20 @@ export function WorkspaceRefreshCenter({
         </ActionPane>
 
         <ActionPane
-          label="Demand scan"
-          title="Public conversations"
-          status="Ready"
-          tone="ready"
-          icon={Radar}
+          label="Automatic monitoring"
+          title={isPro ? "Public conversations" : "Pro feature"}
+          status={isPro ? "Ready" : "Locked"}
+          tone={isPro ? "ready" : "attention"}
+          icon={RotateCcw}
         >
           <p className="mt-3 text-sm font-medium" style={{ color: C.navy }}>
-            Search for buyer-demand signals
+            {isPro ? "New signals are collected automatically" : "Lead discovery is available on Pro"}
           </p>
           <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            Uses the active matching brief.
+            {isPro
+              ? "Each scheduled website refresh uses your active matching brief to keep lead discovery current."
+              : "Your first crawl builds the website profile. Free workspaces do not run recurring crawls or collect lead signals."}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-3 h-9"
-            disabled={isAnyActionPending}
-            onClick={startDemandScan}
-          >
-            {isDemandScanPending ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FileSearch className="size-4" aria-hidden="true" />
-            )}
-            {isDemandScanPending ? "Starting..." : "Scan demand"}
-          </Button>
         </ActionPane>
       </div>
 
@@ -384,24 +364,25 @@ export function WorkspaceRefreshCenter({
         briefFields={briefFields}
         websiteDraft={websiteDraft}
         websiteChanged={websiteChanged}
+        isPro={isPro}
       />
 
-      {actionResult ? (
+      {result ? (
         <div
           className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5"
           style={{
-            borderColor: actionResult.ok ? C.blueLight : C.red,
-            backgroundColor: actionResult.ok ? C.bluePale : C.redPale,
-            color: actionResult.ok ? C.navySoft : C.red,
+            borderColor: result.ok ? C.blueLight : C.red,
+            backgroundColor: result.ok ? C.bluePale : C.redPale,
+            color: result.ok ? C.navySoft : C.red,
           }}
           role="status"
         >
-          {actionResult.ok ? (
+          {result.ok ? (
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           ) : (
             <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           )}
-          <span>{actionResult.message}</span>
+          <span>{result.message}</span>
         </div>
       ) : null}
     </section>

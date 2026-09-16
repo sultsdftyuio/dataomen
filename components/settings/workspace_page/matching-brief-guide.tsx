@@ -76,7 +76,7 @@ const GUIDE_STEPS: readonly GuideStep[] = [
     description:
       "Once the brief is clear, use the refresh controls for the change you actually made.",
     instruction:
-      "Use Refresh brief after editing the brief, Re-crawl only when the website changed, or Scan demand when you are ready to find new conversations.",
+      "Use Refresh brief after editing the brief. Save a changed website once; Pro automatically recrawls the active website and refreshes discovery every 24–48 hours. Free includes the first crawl only.",
     check: "Choose one action at a time so the result is easy to understand.",
     icon: RefreshCw,
   },

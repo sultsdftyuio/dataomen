@@ -6,9 +6,9 @@ import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchingBriefGuide } from "@/components/settings/workspace_page/matching-brief-guide";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
-import { startWebsiteDemandScan } from "../actions";
 import {
   fetchLatestCrawlJob,
   fetchServiceProfile,
@@ -47,16 +47,17 @@ export default async function MatchingBriefPage() {
     redirect("/onboarding/workspace");
   }
 
-  const [serviceProfile, crawlJob] = await Promise.all([
+  const [serviceProfile, crawlJob, entitlements] = await Promise.all([
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+    getWorkspaceEntitlements(supabase, tenantId),
   ]);
   const sourceFeedbackInsights = await fetchSourceFeedbackInsights(
     supabase,
     tenantId,
     serviceProfile.id,
   );
-  const isActive = serviceProfile.embeddingStatus === "completed";
+  const isActive = !entitlements.isPro || serviceProfile.embeddingStatus === "completed";
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col gap-3 overflow-y-auto pr-1">
@@ -75,7 +76,9 @@ export default async function MatchingBriefPage() {
             </p>
             <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>
               {isActive
-                ? "This brief is shaping the signals in Prospects."
+                ? entitlements.isPro
+                  ? "This brief is shaping the signals in Prospects."
+                  : "Your website profile is ready. Upgrade to Pro to collect and review prospect signals."
                 : "Your last active brief remains in use while this one refreshes."}
             </p>
           </div>
@@ -98,8 +101,8 @@ export default async function MatchingBriefPage() {
             serviceProfile={serviceProfile}
             crawlJob={crawlJob}
             websiteUrl={websiteUrl}
+            isPro={entitlements.isPro}
             layout="progressive"
-            startWebsiteDemandScan={startWebsiteDemandScan}
             sourceFeedbackInsights={sourceFeedbackInsights}
           />
         </CardContent>

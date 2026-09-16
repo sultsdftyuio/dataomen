@@ -331,6 +331,50 @@ Website profiling is a distinct, two-minute job. Public-source retrieval and
 verification are separate queue stages: they can keep adding results after the
 website crawl has completed, but they must never keep the crawl itself open.
 
+### Automatic website recrawls
+
+Every workspace receives one durable initial website crawl. The request is
+stored before it enters browser admission, so a signup burst is drained by the
+scheduler instead of returning capacity errors. After that first success, only
+workspaces with active Pro or Enterprise access receive a randomly distributed
+refresh between 24 and 48 hours later. Free workspaces retain their website
+profile but do not receive recurring crawls, profile embeddings, or public
+lead-discovery work.
+
+Initial paid crawls are selected ahead of Free onboarding work. The scheduler
+also reserves part of the global daily crawl budget for Pro, preventing a Free
+onboarding burst from delaying paying customers. The recurring crawl reuses
+the same `crawl_jobs` admission and browser/provider limits as onboarding; it
+does not run the interactive Pass 1 homepage call.
+
+Apply `scripts/website_recrawl_scheduler.sql` after the crawl reliability
+ledger and before deploying this release. The normal worker consumes the
+`system` queue and seeds a durable scheduler tick on startup. The dedicated
+browser worker must continue consuming `crawling,workspace-brain` only.
+
+```text
+ARCLI_RECRAWL_MIN_HOURS=24
+ARCLI_RECRAWL_MAX_HOURS=48
+ARCLI_RECRAWL_SCHEDULER_TICK_SECONDS=300
+ARCLI_RECRAWL_MAX_DISPATCHES_PER_TICK=4
+ARCLI_RECRAWL_MAX_DISPATCHES_PER_DAY=200
+ARCLI_RECRAWL_RESERVED_PRO_DISPATCHES_PER_DAY=50
+ARCLI_RECRAWL_DISPATCH_LEASE_SECONDS=900
+ARCLI_RECRAWL_ADMISSION_RETRY_SECONDS=300
+ARCLI_INITIAL_CRAWL_FAILURE_RETRY_SECONDS=3600
+ARCLI_RECRAWL_MAX_CONSECUTIVE_FAILURES=3
+```
+
+The scheduler clamps the interval to 24–48 hours even if an invalid deployment
+value is supplied. A PostgreSQL advisory lock preserves the global daily cap
+and Pro reserve across worker replicas, `FOR UPDATE SKIP LOCKED` claims each
+site once, and a lease makes a worker crash safely retryable. Admission
+rejection only retries the scheduler handoff after five minutes—before any
+browser or model work. An initial crawl that reaches three terminal failures
+is paused; its first two terminal retries occur after one hour. Inspect
+`website_recrawl_schedules` for the next run and
+`website_recrawl_dispatches` for the 90-day audit trail.
+
 ```text
 ARCLI_CRAWL_JOB_TOTAL_TIMEOUT_SECONDS=120
 ARCLI_CRAWL_PHASE_TIMEOUT_SECONDS=75

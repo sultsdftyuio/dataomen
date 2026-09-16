@@ -22,20 +22,6 @@ from sqlalchemy.engine import Engine
 logger = logging.getLogger(__name__)
 
 
-def _is_best_effort_pass1_exception(exc: BaseException) -> bool:
-    """Identify transient failures that should not be presented as Pass 1 defects."""
-
-    if isinstance(exc, (TimeoutError, ConnectionError)):
-        return True
-    return exc.__class__.__name__ in {
-        "APITimeoutError",
-        "APIConnectionError",
-        "ConnectTimeout",
-        "ReadTimeout",
-        "TimeoutException",
-    }
-
-
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -621,153 +607,45 @@ def trigger_crawl(
     job_id: Annotated[str, Depends(require_idempotency_key)],
 ) -> CrawlTriggerResponse:
     """
-    Accept a trusted frontend handoff and enqueue the slow crawl asynchronously.
-    The crawl itself must run only inside the Dramatiq worker.
+    Persist a trusted first-crawl request before it reaches browser admission.
+
+    The scheduler later submits it through the normal guarded crawler. This
+    keeps a concurrent onboarding burst durable without making the request
+    compete for one of the bounded active browser slots.
     """
-    from api.services.crawling import (
-        CrawlQueueCapacityLimit,
-        _database_engine,
-        _upsert_service_profile,
-        enqueue_crawl_job,
-        reserve_website_crawl_slot,
-    )
+    from api.services.crawling import _database_engine
+    from api.services.website_recrawl import queue_initial_website_crawl
 
     started_at = time.monotonic()
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
-
-    with _database_engine().begin() as conn:
-        crawl_slot = reserve_website_crawl_slot(
-            conn,
-            tenant_id=payload.tenant_id,
-            crawl_job_id=job_id,
-            website_url=payload.website_url,
-            source=payload.source,
-        )
-    if isinstance(crawl_slot, CrawlQueueCapacityLimit):
-        logger.warning(
-            "crawl_job_admission_rejected tenant_id=%s job_id=%s website_url=%s max_queued_jobs=%s retry_after_seconds=%s",
-            payload.tenant_id,
-            job_id,
-            payload.website_url,
-            crawl_slot.max_queued_jobs,
-            crawl_slot.retry_after_seconds,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                "Website crawl capacity is temporarily full. Please try again in "
-                f"about {crawl_slot.retry_after_seconds} seconds."
-            ),
-            headers={"Retry-After": str(crawl_slot.retry_after_seconds)},
-        )
-
-    logger.info(
-        "crawl_job_trigger_received tenant_id=%s job_id=%s website_url=%s source=%s requested_by=%s",
-        payload.tenant_id,
-        job_id,
-        payload.website_url,
-        payload.source,
-        payload.requested_by,
+    submission = queue_initial_website_crawl(
+        _database_engine(),
+        tenant_id=payload.tenant_id,
+        website_url=payload.website_url,
     )
-
-    pass1_status: Literal["completed", "skipped", "failed"] = "skipped"
-    service_profile_id: str | None = None
-    pass1_enabled = os.getenv("ARCLI_PASS1_ENABLED", "true").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-    }
-
-    if pass1_enabled:
-        try:
-            from api.services.service_profile_pass1 import extract_pass1_service_profile
-
-            _, hero_snippet, pass1_profile, elapsed_ms = extract_pass1_service_profile(
-                payload.website_url
-            )
-            with _database_engine().begin() as conn:
-                service_profile_id = _upsert_service_profile(
-                    conn,
-                    tenant_id=payload.tenant_id,
-                    website_url=payload.website_url,
-                    profile=pass1_profile.as_service_profile_payload(),
-                )
-            pass1_status = "completed"
-            logger.info(
-                "service_profile_pass1_completed tenant_id=%s job_id=%s website_url=%s service_profile_id=%s hero_chars=%s elapsed_ms=%s",
-                payload.tenant_id,
-                job_id,
-                payload.website_url,
-                service_profile_id,
-                len(hero_snippet),
-                elapsed_ms,
-            )
-        except Exception as exc:
-            # Pass 1 is intentionally best-effort: the full crawl remains the
-            # authoritative profile path and must still run after a fast-path
-            # timeout, source-page failure, or model validation rejection.
-            if _is_best_effort_pass1_exception(exc):
-                pass1_status = "skipped"
-                logger.info(
-                    "service_profile_pass1_skipped tenant_id=%s job_id=%s website_url=%s skip_reason=%s error_type=%s",
-                    payload.tenant_id,
-                    job_id,
-                    payload.website_url,
-                    "transient_timeout_or_connection_error",
-                    exc.__class__.__name__,
-                )
-            else:
-                pass1_status = "failed"
-                logger.warning(
-                    "service_profile_pass1_failed tenant_id=%s job_id=%s website_url=%s error_type=%s error=%s",
-                    payload.tenant_id,
-                    job_id,
-                    payload.website_url,
-                    exc.__class__.__name__,
-                    exc,
-                )
-
-    try:
-        message_id = enqueue_crawl_job(
-            tenant_id=payload.tenant_id,
-            website_url=payload.website_url,
-            job_id=job_id,
-        )
-    except Exception as exc:
-        logger.exception(
-            "crawl_job_enqueue_failed tenant_id=%s job_id=%s website_url=%s elapsed_ms=%s error_type=%s error=%s",
-            payload.tenant_id,
-            job_id,
-            payload.website_url,
-            int((time.monotonic() - started_at) * 1000),
-            exc.__class__.__name__,
-            exc,
-        )
+    if submission is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Crawler queue is unavailable.",
-        ) from exc
+            detail="Website crawl scheduling is unavailable.",
+        )
 
     logger.info(
-        "crawl_job_enqueued tenant_id=%s job_id=%s website_url=%s message_id=%s source=%s requested_by=%s pass1_status=%s service_profile_id=%s elapsed_ms=%s",
+        "website_initial_crawl_accepted tenant_id=%s requested_job_id=%s crawl_job_id=%s website_url=%s source=%s requested_by=%s deduplicated=%s elapsed_ms=%s",
         payload.tenant_id,
         job_id,
+        submission.job_id,
         payload.website_url,
-        message_id,
         payload.source,
         payload.requested_by,
-        pass1_status,
-        service_profile_id,
+        submission.deduplicated,
         int((time.monotonic() - started_at) * 1000),
     )
 
     return CrawlTriggerResponse(
         tenant_id=payload.tenant_id,
         website_url=payload.website_url,
-        job_id=job_id,
-        message_id=message_id,
-        pass1_status=pass1_status,
-        service_profile_id=service_profile_id,
+        job_id=submission.job_id,
+        message_id=submission.job_id,
     )
 
 

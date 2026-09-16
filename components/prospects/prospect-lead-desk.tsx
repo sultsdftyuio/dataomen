@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Check,
   CircleCheckBig,
@@ -36,7 +35,6 @@ import type {
   LeadFeedbackValue,
   QualifiedLeadView,
   ServiceProfileView,
-  WebsiteDemandScanAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 
 type QueueFilter = LeadQueueFilter;
@@ -50,7 +48,6 @@ type ProspectLeadDeskProps = {
   potentialBuyers: QualifiedLeadView[];
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
-  startWebsiteDemandScan: WebsiteDemandScanAction;
   verificationThreshold: number;
   reviewedConversationCount: number;
   screenedMatches: QualifiedLeadView[];
@@ -253,7 +250,6 @@ export function ProspectLeadDesk({
   potentialBuyers,
   buyerGroupSuggestions,
   activateBuyerGroup,
-  startWebsiteDemandScan,
   verificationThreshold,
   reviewedConversationCount,
   screenedMatches,
@@ -283,10 +279,7 @@ export function ProspectLeadDesk({
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
-  const router = useRouter();
   const [detailTab, setDetailTab] = useState<DetailTab>("match");
-  const [discoveryMessage, setDiscoveryMessage] = useState<string | null>(null);
-  const [isDiscoveryPending, startDiscoveryTransition] = useTransition();
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
@@ -295,23 +288,6 @@ export function ProspectLeadDesk({
     ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
     : null;
   const isScreenedAudit = queueFilter === "screened";
-
-  const checkNewLeads = () => {
-    setDiscoveryMessage(null);
-    startDiscoveryTransition(async () => {
-      try {
-        const result = await startWebsiteDemandScan();
-        if (!result.ok) {
-          setDiscoveryMessage(result.message);
-          return;
-        }
-
-        router.replace("/dashboard/discovery?scan=1");
-      } catch {
-        setDiscoveryMessage("We could not reach the discovery service. Please try again.");
-      }
-    });
-  };
 
   return (
     <main className="flex w-full flex-col gap-1.5 sm:gap-2 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
@@ -342,7 +318,7 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead discovery controls"
-        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.35fr)_minmax(140px,.58fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_auto_auto] xl:items-center"
+        className="shrink-0 grid gap-2 rounded-lg border p-2 xl:grid-cols-[minmax(240px,1.35fr)_minmax(140px,.58fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_auto] xl:items-center"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
         <label className="relative block">
@@ -386,20 +362,6 @@ export function ProspectLeadDesk({
         <Button asChild variant="outline" className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
           <Link href="/dashboard/brief">Update website</Link>
         </Button>
-        <Button
-          type="button"
-          onClick={checkNewLeads}
-          disabled={isDiscoveryPending}
-          className="h-9 whitespace-nowrap bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
-        >
-          <Radar className={cn("size-4", isDiscoveryPending && "animate-pulse")} aria-hidden="true" />
-          {isDiscoveryPending ? "Starting scan…" : "Scan website demand"}
-        </Button>
-        {discoveryMessage ? (
-          <p className="text-xs leading-5 xl:col-span-full" role="alert" style={{ color: C.red }}>
-            {discoveryMessage}
-          </p>
-        ) : null}
       </section>
 
       <section

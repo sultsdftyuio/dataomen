@@ -18,7 +18,6 @@ import {
   Loader2,
   Plus,
   Radar,
-  RotateCcw,
   Save,
   Target,
   X,
@@ -37,7 +36,6 @@ import type {
   ProspectActionResult,
   ServiceProfileFields,
   ServiceProfileView,
-  WebsiteDemandScanAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 import {
   DISCOVERY_QUERY_TYPES,
@@ -73,7 +71,7 @@ type ServiceProfileSettingsProps = {
   serviceProfile: ServiceProfileView;
   crawlJob: CrawlJobView | null;
   websiteUrl: string;
-  startWebsiteDemandScan: WebsiteDemandScanAction;
+  isPro: boolean;
   sourceFeedbackInsights?: SourceFeedbackInsight[];
   onFieldsChange?: (fields: ServiceProfileFields) => void;
   layout?: "standard" | "progressive";
@@ -453,7 +451,7 @@ export function ServiceProfileSettings({
   serviceProfile,
   crawlJob,
   websiteUrl,
-  startWebsiteDemandScan,
+  isPro,
   sourceFeedbackInsights,
   onFieldsChange,
   layout = "standard",
@@ -543,7 +541,9 @@ export function ServiceProfileSettings({
             ? {
                 ok: true,
                 message:
-                  "Brief refresh queued. Matching will use your saved buyer, problem, and signal updates.",
+                  isPro
+                    ? "Brief refresh queued. Matching will use your saved buyer, problem, and signal updates."
+                    : "Brief saved. Lead discovery remains locked until you upgrade to Pro.",
               }
             : result,
         );
@@ -586,7 +586,9 @@ export function ServiceProfileSettings({
             ? {
                 ok: true,
                 message:
-                  "Website re-crawl queued. It will rebuild your matching brief.",
+                  isPro
+                    ? "Website update queued. Arcli will rebuild your matching brief, then continue automatic 24–48 hour refreshes."
+                    : "Website update queued. Your Free plan includes this one website crawl; upgrade to enable ongoing monitoring and lead discovery.",
               }
             : result,
         );
@@ -649,10 +651,10 @@ export function ServiceProfileSettings({
           crawlJob={crawlJob}
           websiteDraft={websiteDraft}
           websiteChanged={websiteChanged}
+          isPro={isPro}
           isWebsitePending={isWebsitePending}
           isBriefPending={isPending}
           result={profileResult}
-          startWebsiteDemandScan={startWebsiteDemandScan}
           onWebsiteDraftChange={setWebsiteDraft}
           onRecrawlWebsite={refreshWebsiteContext}
           onRefreshBrief={() => persistProfile("save")}
@@ -662,8 +664,11 @@ export function ServiceProfileSettings({
     );
   }
 
-  const statusLabel =
-    serviceProfile.embeddingStatus === "completed" ? "Active" : "Regenerating";
+  const statusLabel = !isPro
+    ? "Profile ready"
+    : serviceProfile.embeddingStatus === "completed"
+      ? "Active"
+      : "Regenerating";
   const activeWebsiteDomain = websiteDomain(resolvedWebsiteUrl);
   const draftedWebsiteDomain = websiteDomain(websiteDraft);
   if (layout === "progressive") {
@@ -675,10 +680,10 @@ export function ServiceProfileSettings({
           crawlJob={crawlJob}
           websiteDraft={websiteDraft}
           websiteChanged={websiteChanged}
+          isPro={isPro}
           isWebsitePending={isWebsitePending}
           isBriefPending={isPending}
           result={profileResult}
-          startWebsiteDemandScan={startWebsiteDemandScan}
           onWebsiteDraftChange={setWebsiteDraft}
           onRecrawlWebsite={refreshWebsiteContext}
           onRefreshBrief={() => persistProfile("save")}
@@ -880,27 +885,23 @@ export function ServiceProfileSettings({
               <Button
                 type="button"
                 className="h-12 shrink-0 rounded-lg px-4"
-                disabled={isWebsitePending || !websiteDraft.trim()}
+                disabled={isWebsitePending || !websiteDraft.trim() || !websiteChanged}
                 onClick={refreshWebsiteContext}
                 style={{ backgroundColor: C.navy, color: C.white }}
               >
                 {isWebsitePending ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (
-                  <RotateCcw className="size-4" aria-hidden="true" />
+                  <Save className="size-4" aria-hidden="true" />
                 )}
-                {isWebsitePending
-                  ? "Queueing re-crawl..."
-                  : websiteChanged
-                    ? "Replace & re-crawl"
-                    : "Re-crawl website"}
+                {isWebsitePending ? "Saving..." : "Save website"}
               </Button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" style={{ color: C.muted }}>
               {draftedWebsiteDomain ? (
                 <span className="inline-flex items-center gap-1.5" style={{ color: C.green }}>
                   <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                  Ready to re-crawl {draftedWebsiteDomain}
+                  Ready to update {draftedWebsiteDomain}
                 </span>
               ) : (
                 <span>Paste a domain or full URL. We add https automatically.</span>
@@ -915,7 +916,7 @@ export function ServiceProfileSettings({
               style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.amber }}
             >
               <span className="font-semibold">You are replacing the discovery source.</span>{" "}
-              We will re-crawl this website and create a fresh matching brief for it.
+              We will crawl this website and create a fresh matching brief for it.
             </div>
           ) : null}
 

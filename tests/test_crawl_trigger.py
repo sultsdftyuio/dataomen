@@ -6,57 +6,34 @@ from unittest.mock import AsyncMock, patch
 
 import api.main as main
 import api.services.crawling as crawling
-import pytest
-from fastapi import HTTPException
+import api.services.website_recrawl as website_recrawl
 
 
-class APITimeoutError(Exception):
-    pass
-
-
-class _NoopTransaction:
-    def __enter__(self):
-        return object()
-
-    def __exit__(self, exc_type, exc, traceback):
-        return False
-
-
-class _NoopEngine:
-    def begin(self):
-        return _NoopTransaction()
-
-
-def _trigger_with_pass1_error(error: Exception):
+def _trigger_initial_crawl():
     payload = main.CrawlTriggerRequest(
         tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
         website_url="https://example.com/",
     )
     with (
         patch.object(main, "_validate_internal_tenant_scope"),
-        patch("api.services.crawling._database_engine", return_value=_NoopEngine()),
-        patch("api.services.crawling.reserve_website_crawl_slot", return_value=None),
+        patch("api.services.crawling._database_engine", return_value=object()),
         patch(
-            "api.services.service_profile_pass1.extract_pass1_service_profile",
-            side_effect=error,
+            "api.services.website_recrawl.queue_initial_website_crawl",
+            return_value=website_recrawl.InitialCrawlSubmission(
+                job_id="durable-job-1",
+                deduplicated=False,
+            ),
         ),
-        patch("api.services.crawling.enqueue_crawl_job", return_value="message-1"),
     ):
         return main.trigger_crawl(payload, None, "idempotency-key")
 
 
-def test_pass1_timeout_is_reported_as_skipped_while_deep_crawl_is_queued() -> None:
-    response = _trigger_with_pass1_error(APITimeoutError("timed out"))
+def test_initial_crawl_is_durably_accepted_before_browser_admission() -> None:
+    response = _trigger_initial_crawl()
 
     assert response.pass1_status == "skipped"
-    assert response.message_id == "message-1"
-
-
-def test_non_transient_pass1_failure_remains_visible_without_blocking_deep_crawl() -> None:
-    response = _trigger_with_pass1_error(ValueError("unexpected homepage payload"))
-
-    assert response.pass1_status == "failed"
-    assert response.message_id == "message-1"
+    assert response.job_id == "durable-job-1"
+    assert response.message_id == "durable-job-1"
 
 
 class _NoRecentCrawlConnection:
@@ -130,31 +107,30 @@ def test_crawl_queue_admission_records_a_retryable_rejection(monkeypatch) -> Non
     assert upsert.call_args.kwargs["failure_reason"] == "admission_rejected"
 
 
-def test_crawl_queue_capacity_stops_pass1_before_it_uses_api_or_model_capacity() -> None:
+def test_initial_crawl_handoff_does_not_compete_for_browser_capacity() -> None:
     payload = main.CrawlTriggerRequest(
         tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
         website_url="https://example.com/",
     )
     with (
         patch.object(main, "_validate_internal_tenant_scope"),
-        patch("api.services.crawling._database_engine", return_value=_NoopEngine()),
-        patch(
-            "api.services.crawling.reserve_website_crawl_slot",
-            return_value=crawling.CrawlQueueCapacityLimit(
-                max_queued_jobs=6,
-                retry_after_seconds=60,
-            ),
-        ),
+        patch("api.services.crawling._database_engine", return_value=object()),
+        patch("api.services.crawling.reserve_website_crawl_slot") as reserve,
         patch(
             "api.services.service_profile_pass1.extract_pass1_service_profile",
         ) as extract_profile,
+        patch(
+            "api.services.website_recrawl.queue_initial_website_crawl",
+            return_value=website_recrawl.InitialCrawlSubmission(
+                job_id="durable-job-1",
+                deduplicated=False,
+            ),
+        ),
     ):
-        with pytest.raises(HTTPException) as error:
-            main.trigger_crawl(payload, None, "idempotency-key")
+        response = main.trigger_crawl(payload, None, "idempotency-key")
 
-    assert error.value.status_code == 429
-    assert error.value.headers == {"Retry-After": "60"}
-    assert "capacity is temporarily full" in str(error.value.detail)
+    assert response.status == "queued"
+    reserve.assert_not_called()
     extract_profile.assert_not_called()
 
 

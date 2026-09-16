@@ -41,9 +41,8 @@ envs:
     scope: RUN_TIME
     type: general
     value: "false"
-  # Admission is enforced by the API before Pass 1, then the dedicated browser
-  # worker consumes this bounded shared queue. During a sudden signup burst,
-  # callers beyond this capacity receive a retryable 429 instead of creating
+  # The scheduler owns the durable backlog; only dispatched work reaches this
+  # bounded browser queue. A signup burst is accepted safely without creating
   # an hours-long Redis backlog or exhausting AI/browser providers.
   - key: ARCLI_CRAWL_MAX_QUEUED_JOBS
     scope: RUN_TIME
@@ -53,6 +52,51 @@ envs:
     scope: RUN_TIME
     type: general
     value: "60"
+  # The automatic cycle is distributed between one and two days. The system
+  # worker applies both per-tick and daily ceilings before a job can enter the
+  # normal crawl admission queue or downstream lead-discovery work.
+  - key: ARCLI_RECRAWL_MIN_HOURS
+    scope: RUN_TIME
+    type: general
+    value: "24"
+  - key: ARCLI_RECRAWL_MAX_HOURS
+    scope: RUN_TIME
+    type: general
+    value: "48"
+  - key: ARCLI_RECRAWL_SCHEDULER_TICK_SECONDS
+    scope: RUN_TIME
+    type: general
+    value: "300"
+  - key: ARCLI_RECRAWL_MAX_DISPATCHES_PER_TICK
+    scope: RUN_TIME
+    type: general
+    value: "4"
+  - key: ARCLI_RECRAWL_MAX_DISPATCHES_PER_DAY
+    scope: RUN_TIME
+    type: general
+    value: "200"
+  # Protect paid customers when Free onboarding traffic is high. Free tenants
+  # receive their one initial crawl, but never consume recurring capacity.
+  - key: ARCLI_RECRAWL_RESERVED_PRO_DISPATCHES_PER_DAY
+    scope: RUN_TIME
+    type: general
+    value: "50"
+  - key: ARCLI_RECRAWL_DISPATCH_LEASE_SECONDS
+    scope: RUN_TIME
+    type: general
+    value: "900"
+  - key: ARCLI_RECRAWL_ADMISSION_RETRY_SECONDS
+    scope: RUN_TIME
+    type: general
+    value: "300"
+  - key: ARCLI_INITIAL_CRAWL_FAILURE_RETRY_SECONDS
+    scope: RUN_TIME
+    type: general
+    value: "3600"
+  - key: ARCLI_RECRAWL_MAX_CONSECUTIVE_FAILURES
+    scope: RUN_TIME
+    type: general
+    value: "3"
   # Public-source data is minimised before storage and removed after this
   # bounded period, including all copied lead-brief and research snapshots.
   - key: ARCLI_PUBLIC_DATA_RETENTION_DAYS

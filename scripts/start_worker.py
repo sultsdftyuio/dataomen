@@ -251,6 +251,41 @@ def verify_dramatiq_version(dramatiq_module: Any) -> str:
     return installed_version
 
 
+def bootstrap_website_recrawl_scheduler(queue_allowlist: set[str] | None) -> None:
+    """Seed a scheduler tick only on workers that consume the ``system`` queue.
+
+    Multiple worker starts are safe: PostgreSQL admits one scheduler tick to
+    dispatch work, while other ticks become inexpensive no-ops.
+    """
+    if queue_allowlist is not None and "system" not in queue_allowlist:
+        return
+
+    if os.getenv("ARCLI_RECRAWL_ENABLED", "true").strip().lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        logger.info("website_recrawl_scheduler_bootstrap_skipped reason=disabled")
+        return
+
+    try:
+        from api.workers.actors import dispatch_due_website_recrawls
+
+        message = dispatch_due_website_recrawls.send()
+        logger.info(
+            "website_recrawl_scheduler_bootstrapped message_id=%s",
+            message.message_id,
+        )
+    except Exception as exc:
+        # A delayed scheduler message may already be queued. Do not prevent
+        # ordinary crawl work merely because this extra seed could not publish.
+        logger.warning(
+            "website_recrawl_scheduler_bootstrap_failed error_type=%s error=%s",
+            exc.__class__.__name__,
+            exc,
+        )
+
+
 def close_dramatiq_broker(broker: Any) -> None:
     """Release Redis sockets before a child exits or is recycled."""
     try:
@@ -375,6 +410,7 @@ def run_embedded_dramatiq_worker(state: WorkerState) -> int:
     recycle = False
     try:
         worker.start()
+        bootstrap_website_recrawl_scheduler(queue_allowlist)
         while not state.shutdown_requested.wait(1.0):
             if state.recycle_requested.is_set():
                 # pause waits for active actor calls to finish and prevents a

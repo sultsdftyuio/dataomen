@@ -1427,6 +1427,29 @@ def enqueue_service_profile_embedding_job(
     service_profile_id: str | None = None,
 ) -> str:
     try:
+        from api.services.tenant_entitlements import tenant_has_active_paid_access
+
+        with _database_engine().begin() as conn:
+            lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+    except Exception as exc:
+        logger.exception(
+            "service_profile_embedding_enqueue_entitlement_check_failed tenant_id=%s service_profile_id=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+        )
+        raise RuntimeError("Unable to verify lead-discovery entitlement.") from exc
+
+    if not lead_discovery_entitled:
+        logger.info(
+            "service_profile_embedding_enqueue_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            "active_paid_plan_required",
+        )
+        return "skipped-not-entitled"
+
+    try:
         _require_redis_broker()
         from api.workers.actors import process_service_profile_embedding_job
 
@@ -1463,6 +1486,32 @@ def process_service_profile_embedding_job(
     service_profile_id: str | None = None,
 ) -> None:
     engine = _database_engine()
+    try:
+        from api.services.tenant_entitlements import tenant_has_active_paid_access
+
+        with engine.begin() as conn:
+            lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+    except Exception as exc:
+        # A billing read failure must never spend embedding capacity. The
+        # website profile itself is already durable and can be refreshed after
+        # the next successful entitlement check.
+        logger.exception(
+            "service_profile_embedding_entitlement_check_failed tenant_id=%s service_profile_id=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+        )
+        return
+
+    if not lead_discovery_entitled:
+        logger.info(
+            "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            "active_paid_plan_required",
+        )
+        return
+
     embedding_service = EmbeddingService()
     profile_hydration_url: str | None = None
     resolved_profile_id: str | None = service_profile_id

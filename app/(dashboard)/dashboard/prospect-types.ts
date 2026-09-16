@@ -152,12 +152,6 @@ export type BuyerGroupActivationAction = (
  */
 export type BuyerLanguageResearchRequestAction = () => Promise<ProspectActionResult>;
 
-/**
- * Starts a fresh opportunity scan from the authenticated workspace's current
- * approved matching brief. The browser supplies no tenant or profile scope.
- */
-export type WebsiteDemandScanAction = () => Promise<ProspectActionResult>;
-
 export type WatchlistCreateInput = {
   name: string;
   targetBuyer: string;

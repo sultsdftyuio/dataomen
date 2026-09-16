@@ -2,16 +2,11 @@ import { createHash, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import type { Json } from "@/types/supabase";
 import { createServiceRoleClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ACTIVE_STATUSES = ["pending", "processing"] as const;
-const TERMINAL_STATUSES = ["completed", "failed", "dead_lettered"] as const;
-
-type DbRecord = Record<string, Json>;
 type QueryResult<T> = { data: T | null; error: unknown };
 type CrawlJobRow = {
   id: string;
@@ -40,8 +35,6 @@ function db() {
   return createServiceRoleClient() as unknown as {
     from: (table: string) => {
       select: (columns: string) => any;
-      insert: (payload: DbRecord) => any;
-      update: (payload: DbRecord) => any;
     };
   };
 }
@@ -165,77 +158,6 @@ async function validateTenant(
   }
 
   return null;
-}
-
-async function findActiveJob(
-  supabase: ReturnType<typeof db>,
-  tenantId: string,
-  websiteUrl: string,
-) {
-  const result = (await supabase
-    .from("crawl_jobs")
-    .select("id,status,message_id")
-    .eq("tenant_id", tenantId)
-    .eq("website_url", websiteUrl)
-    .in("status", ACTIVE_STATUSES)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()) as QueryResult<CrawlJobRow>;
-
-  if (result.error) throw result.error;
-  return result.data;
-}
-
-async function createPendingJob(
-  supabase: ReturnType<typeof db>,
-  tenantId: string,
-  websiteUrl: string,
-) {
-  const now = new Date().toISOString();
-  const id = crawlJobId(tenantId, websiteUrl);
-  const payload: DbRecord = {
-    id,
-    tenant_id: tenantId,
-    website_url: websiteUrl,
-    status: "pending",
-    phase: "queued",
-    message_id: null,
-    failure_reason: null,
-    error_type: null,
-    error_message: null,
-    error_context: {},
-    queued_at: now,
-    last_heartbeat_at: now,
-    updated_at: now,
-  };
-
-  const inserted = (await supabase
-    .from("crawl_jobs")
-    .insert(payload)
-    .select("id,status,message_id")
-    .maybeSingle()) as QueryResult<CrawlJobRow>;
-
-  if (!inserted.error && inserted.data) return { job: inserted.data, created: true };
-
-  const activeJob = await findActiveJob(supabase, tenantId, websiteUrl);
-  if (activeJob) return { job: activeJob, created: false };
-
-  const retried = (await supabase
-    .from("crawl_jobs")
-    .update(payload)
-    .eq("id", id)
-    .eq("tenant_id", tenantId)
-    .in("status", TERMINAL_STATUSES)
-    .select("id,status,message_id")
-    .maybeSingle()) as QueryResult<CrawlJobRow>;
-
-  if (retried.error) throw retried.error;
-  if (retried.data) return { job: retried.data, created: true };
-
-  const recheckedJob = await findActiveJob(supabase, tenantId, websiteUrl);
-  if (recheckedJob) return { job: recheckedJob, created: false };
-
-  throw inserted.error ?? new Error("Unable to create crawl job.");
 }
 
 function joinBackendPath(baseUrl: string, path: string) {
@@ -371,28 +293,6 @@ async function triggerWorker(
   }
 }
 
-async function markTriggerFailed(
-  supabase: ReturnType<typeof db>,
-  jobId: string,
-  tenantId: string,
-  message: string,
-) {
-  await supabase
-    .from("crawl_jobs")
-    .update({
-      status: "failed",
-      phase: "trigger_failed",
-      failure_reason: "trigger_unavailable",
-      error_type: "CrawlerTriggerError",
-      error_message: message.slice(0, 2000),
-      error_context: { source: "next_crawl_trigger" },
-      failed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", jobId)
-    .eq("tenant_id", tenantId);
-}
-
 function accepted(
   tenantId: string,
   websiteUrl: string,
@@ -453,65 +353,26 @@ export async function POST(request: Request) {
     );
     if (tenantError) return tenantError;
 
-    const activeJob = await findActiveJob(
-      supabase,
-      parsed.data.tenant_id,
-      websiteUrl,
-    );
-    if (activeJob) {
-      return accepted(parsed.data.tenant_id, websiteUrl, activeJob, true);
-    }
-
-    const { job, created } = await createPendingJob(
-      supabase,
-      parsed.data.tenant_id,
-      websiteUrl,
-    );
-    if (!created) return accepted(parsed.data.tenant_id, websiteUrl, job, true);
-
-    const workerResult = await triggerWorker(request, parsed.data, websiteUrl, job.id);
+    // The Python service writes the durable initial-crawl backlog before
+    // admission. Do not create a `crawl_jobs` row here: a burst of pending
+    // rows would otherwise consume the six-slot browser admission budget
+    // before the scheduler can pace it.
+    const jobId = crawlJobId(parsed.data.tenant_id, websiteUrl);
+    const workerResult = await triggerWorker(request, parsed.data, websiteUrl, jobId);
     if (!workerResult.ok) {
-      // The Python admission guard has already recorded a terminal
-      // `admission_rejected` job. Preserve that reason so a retry is allowed
-      // as soon as capacity is free instead of incorrectly starting the
-      // immediate retry when capacity becomes available.
-      if (workerResult.status !== 429) {
-        await markTriggerFailed(
-          supabase,
-          job.id,
-          parsed.data.tenant_id,
-          workerResult.message,
-        );
-      }
       return jsonResponse(
         {
           error: workerResult.message,
-          code:
-            workerResult.status === 429
-              ? "crawler_capacity_limited"
-              : "crawler_queue_unavailable",
+          code: "crawler_queue_unavailable",
         },
-        {
-          status: workerResult.status,
-          headers:
-            workerResult.status === 429 ? { "Retry-After": "60" } : undefined,
-        },
+        { status: workerResult.status },
       );
     }
-
-    await supabase
-      .from("crawl_jobs")
-      .update({
-        message_id: workerResult.messageId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", job.id)
-      .eq("tenant_id", parsed.data.tenant_id);
 
     return accepted(
       parsed.data.tenant_id,
       websiteUrl,
-      job,
+      { id: jobId, status: "pending", message_id: workerResult.messageId },
       false,
       workerResult.messageId,
     );

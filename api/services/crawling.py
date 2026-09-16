@@ -3165,6 +3165,14 @@ def process_crawl_job(
             "stale_or_missing_tenant_website_url",
             current_website_url,
         )
+        from api.services.website_recrawl import pause_website_recrawl
+
+        pause_website_recrawl(
+            engine,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            reason="stale_or_missing_tenant_website_url",
+        )
         return
 
     with engine.begin() as conn:
@@ -3300,6 +3308,7 @@ def process_crawl_job(
         profile["crawl_quality"] = crawl_quality
 
         phase = "persisting_profile"
+        stale_after_crawl = False
         with engine.begin() as conn:
             _touch_crawl_job_phase(
                 conn,
@@ -3327,50 +3336,96 @@ def process_crawl_job(
                     phase="stale_after_crawl",
                     status="failed",
                 )
-                return
+                stale_after_crawl = True
+            else:
+                service_profile_id = _upsert_service_profile(
+                    conn,
+                    tenant_id=tenant_id,
+                    website_url=normalized_url,
+                    profile=profile,
+                    crawl_markdown_sha256=crawl_markdown_sha256,
+                )
+                _touch_crawl_job_phase(
+                    conn,
+                    crawl_job_id=crawl_job_id,
+                    tenant_id=tenant_id,
+                    website_url=normalized_url,
+                    phase="completed",
+                    status="completed",
+                    service_profile_id=service_profile_id,
+                )
 
-            service_profile_id = _upsert_service_profile(
-                conn,
+        if stale_after_crawl:
+            from api.services.website_recrawl import pause_website_recrawl
+
+            pause_website_recrawl(
+                engine,
                 tenant_id=tenant_id,
                 website_url=normalized_url,
-                profile=profile,
-                crawl_markdown_sha256=crawl_markdown_sha256,
+                reason="tenant_website_url_changed_after_crawl",
             )
-            _touch_crawl_job_phase(
-                conn,
-                crawl_job_id=crawl_job_id,
-                tenant_id=tenant_id,
-                website_url=normalized_url,
-                phase="completed",
-                status="completed",
-                service_profile_id=service_profile_id,
-            )
+            return
+
+        from api.services.website_recrawl import schedule_website_recrawl
+
+        schedule_website_recrawl(
+            engine,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+        )
 
         try:
-            from api.services.embeddings import enqueue_service_profile_embedding_job
+            from api.services.tenant_entitlements import tenant_has_active_paid_access
 
-            embedding_message_id = enqueue_service_profile_embedding_job(
-                tenant_id,
-                service_profile_id,
-            )
-            logger.info(
-                "service_profile_embedding_enqueued_after_extraction tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s message_id=%s",
-                tenant_id,
-                normalized_url,
-                crawl_job_id,
-                service_profile_id,
-                embedding_message_id,
-            )
-        except Exception as enqueue_exc:
+            with engine.begin() as conn:
+                lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+        except Exception as entitlement_exc:
+            # Do not turn a successfully persisted website profile into a
+            # failed crawl, and fail closed before any paid provider work.
+            lead_discovery_entitled = False
             logger.exception(
-                "service_profile_embedding_enqueue_after_extraction_failed tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s error_type=%s error=%s",
+                "lead_discovery_entitlement_check_failed tenant_id=%s website_url=%s crawl_job_id=%s error_type=%s",
+                tenant_id,
+                normalized_url,
+                crawl_job_id,
+                entitlement_exc.__class__.__name__,
+            )
+
+        if not lead_discovery_entitled:
+            logger.info(
+                "lead_discovery_skipped_after_crawl tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s skip_reason=%s",
                 tenant_id,
                 normalized_url,
                 crawl_job_id,
                 service_profile_id,
-                enqueue_exc.__class__.__name__,
-                enqueue_exc,
+                "active_paid_plan_required",
             )
+        else:
+            try:
+                from api.services.embeddings import enqueue_service_profile_embedding_job
+
+                embedding_message_id = enqueue_service_profile_embedding_job(
+                    tenant_id,
+                    service_profile_id,
+                )
+                logger.info(
+                    "service_profile_embedding_enqueued_after_extraction tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s message_id=%s",
+                    tenant_id,
+                    normalized_url,
+                    crawl_job_id,
+                    service_profile_id,
+                    embedding_message_id,
+                )
+            except Exception as enqueue_exc:
+                logger.exception(
+                    "service_profile_embedding_enqueue_after_extraction_failed tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s error_type=%s error=%s",
+                    tenant_id,
+                    normalized_url,
+                    crawl_job_id,
+                    service_profile_id,
+                    enqueue_exc.__class__.__name__,
+                    enqueue_exc,
+                )
 
         logger.info(
             "crawl_job_completed tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s elapsed_ms=%s",
@@ -3460,6 +3515,14 @@ def mark_crawl_job_dead_lettered(
             "max_retries": max_retries,
             "message_id": message_data.get("message_id"),
         },
+    )
+    from api.services.website_recrawl import record_terminal_recrawl_failure
+
+    record_terminal_recrawl_failure(
+        engine,
+        tenant_id=tenant_id,
+        website_url=normalized_url,
+        failure_reason="retry_exhausted",
     )
     logger.error(
         "crawl_job_dead_lettered tenant_id=%s website_url=%s crawl_job_id=%s retries=%s max_retries=%s message_id=%s",

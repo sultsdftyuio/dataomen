@@ -2543,6 +2543,45 @@ def process_crawl_job(
 
 
 @dramatiq.actor(
+    actor_name="dispatch_due_website_recrawls",
+    queue_name="system",
+    max_retries=0,
+    time_limit=_int_env("ARCLI_RECRAWL_SCHEDULER_TIME_LIMIT_MS", 120_000, minimum=1),
+)
+def dispatch_due_website_recrawls() -> None:
+    """Run one bounded scheduler tick and keep the next tick durable in Redis."""
+    from api.services.website_recrawl import (
+        DEFAULT_SCHEDULER_TICK_SECONDS,
+        dispatch_due_website_recrawls as execute,
+    )
+
+    next_delay_seconds = DEFAULT_SCHEDULER_TICK_SECONDS
+    try:
+        result = execute()
+        next_delay_seconds = result.next_delay_seconds
+        logger.info(
+            "website_recrawl_scheduler_tick_completed dispatched=%s deferred=%s failed=%s daily_budget_remaining=%s next_delay_seconds=%s",
+            result.dispatched,
+            result.deferred,
+            result.failed,
+            result.daily_budget_remaining,
+            next_delay_seconds,
+        )
+    except Exception as exc:
+        # A new delayed tick is published even if this one cannot reach the
+        # database. A worker restart is therefore not required for recovery.
+        logger.exception(
+            "website_recrawl_scheduler_tick_failed error_type=%s error=%s",
+            exc.__class__.__name__,
+            exc,
+        )
+    finally:
+        dispatch_due_website_recrawls.send_with_options(
+            delay=max(60, next_delay_seconds) * 1_000,
+        )
+
+
+@dramatiq.actor(
     actor_name="mark_crawl_job_dead_lettered",
     queue_name=os.getenv("ARCLI_CRAWL_QUEUE_NAME", "crawling"),
 )

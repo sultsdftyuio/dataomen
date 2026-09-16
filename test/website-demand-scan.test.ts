@@ -3,14 +3,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const actionsSource = readFileSync(
-  fileURLToPath(new URL("../app/(dashboard)/dashboard/actions.ts", import.meta.url)),
-  "utf8",
-);
-const dashboardSource = readFileSync(
-  fileURLToPath(new URL("../app/(dashboard)/dashboard/page.tsx", import.meta.url)),
-  "utf8",
-);
 const leadDeskSource = readFileSync(
   fileURLToPath(
     new URL("../components/prospects/prospect-lead-desk.tsx", import.meta.url),
@@ -54,28 +46,13 @@ const matchingBriefPageSource = readFileSync(
   ),
   "utf8",
 );
-const demandScanStart = actionsSource.slice(
-  actionsSource.indexOf("export async function startWebsiteDemandScan"),
-  actionsSource.indexOf("export async function requestBuyerLanguageResearch"),
-);
-
-test("the dashboard demand scan starts discovery from the server-owned matching brief", () => {
-  assert.match(
-    actionsSource,
-    /export async function startWebsiteDemandScan\(\): Promise<ProspectActionResult>/,
-  );
-  assert.match(demandScanStart, /const context = await requireProTenant\(\)/);
-  assert.match(demandScanStart, /const serviceProfile = await fetchServiceProfile\(/);
-  assert.match(demandScanStart, /postCrawlerTrigger\([\s\S]*"dashboard_demand_scan"/);
-  assert.match(demandScanStart, /postEmbeddingTrigger\([\s\S]*serviceProfile\.id[\s\S]*"dashboard_demand_scan"/);
-  assert.doesNotMatch(demandScanStart, /isServiceProfileApproved/);
-  assert.match(dashboardSource, /startWebsiteDemandScan=\{startWebsiteDemandScan\}/);
-  assert.match(leadDeskSource, /const result = await startWebsiteDemandScan\(\)/);
+test("the prospect desk relies on automatic website monitoring", () => {
   assert.match(
     leadDeskSource,
     /<Link href="\/dashboard\/brief">Update website<\/Link>/,
   );
-  assert.match(leadDeskSource, /Scan website demand/);
+  assert.doesNotMatch(leadDeskSource, /startWebsiteDemandScan/);
+  assert.doesNotMatch(leadDeskSource, /Scan website demand/);
   assert.doesNotMatch(leadDeskSource, /body: JSON\.stringify\(\{ websiteUrl \}\)/);
 });
 
@@ -85,9 +62,13 @@ test("website re-crawls and brief updates each start only their own job", () => 
     /body: JSON\.stringify\(\{ websiteUrl: normalizedWebsiteUrl \}\)/,
   );
   assert.match(profileSettingsSource, /WorkspaceRefreshCenter/);
-  assert.match(workspaceRefreshCenterSource, /Re-crawl/);
+  assert.match(workspaceRefreshCenterSource, /Save website/);
+  assert.match(workspaceRefreshCenterSource, /isPro/);
+  assert.match(workspaceRefreshCenterSource, /Free includes one website crawl/);
+  assert.match(workspaceRefreshCenterSource, /do not run recurring crawls or collect lead signals/);
+  assert.doesNotMatch(workspaceRefreshCenterSource, /Re-crawl/);
   assert.match(workspaceRefreshCenterSource, /Refresh brief/);
-  assert.match(workspaceRefreshCenterSource, /Scan demand/);
+  assert.match(workspaceRefreshCenterSource, /Automatic monitoring/);
   assert.match(
     workspaceRefreshCenterSource,
     /Next update will target/,
