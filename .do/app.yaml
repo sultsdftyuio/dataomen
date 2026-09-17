@@ -36,6 +36,55 @@ envs:
     scope: RUN_TIME
     type: secret
     value: REPLACE_WITH_INTERNAL_WORKER_SECRET
+  # Result emails stay dark until the verified Resend sender and secret below
+  # are configured in DigitalOcean. This prevents a deploy from sending from
+  # an unverified address or accidentally emailing historical crawl records.
+  - key: ARCLI_CRAWL_RESULT_EMAILS_ENABLED
+    scope: RUN_TIME
+    type: general
+    value: "false"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_API_KEY
+    scope: RUN_TIME
+    type: secret
+    value: REPLACE_WITH_RESEND_API_KEY
+  - key: ARCLI_CRAWL_RESULT_EMAIL_SENDER
+    scope: RUN_TIME
+    type: general
+    value: REPLACE_WITH_VERIFIED_RESEND_SENDER
+  - key: ARCLI_DASHBOARD_URL
+    scope: RUN_TIME
+    type: general
+    value: "https://arcli.tech/dashboard"
+  # One completion email per recipient per 20 hours prevents manual retries
+  # and duplicate terminal events from becoming a cost or inbox problem.
+  - key: ARCLI_CRAWL_RESULT_EMAIL_MIN_INTERVAL_HOURS
+    scope: RUN_TIME
+    type: general
+    value: "20"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_MAX_RETRIES
+    scope: RUN_TIME
+    type: general
+    value: "3"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_MIN_BACKOFF_MS
+    scope: RUN_TIME
+    type: general
+    value: "60000"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_MAX_BACKOFF_MS
+    scope: RUN_TIME
+    type: general
+    value: "1800000"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_RECOVERY_GRACE_SECONDS
+    scope: RUN_TIME
+    type: general
+    value: "900"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_RECOVERY_BATCH_SIZE
+    scope: RUN_TIME
+    type: general
+    value: "25"
+  - key: ARCLI_CRAWL_RESULT_EMAIL_RETENTION_DAYS
+    scope: RUN_TIME
+    type: general
+    value: "90"
   # Daily website crawl guard. Do not enable unlimited scans in production.
   - key: ARCLI_UNLIMITED_CRAWL_TEST_MODE
     scope: RUN_TIME
@@ -178,7 +227,7 @@ workers:
       - key: ARCLI_DRAMATIQ_QUEUES
         scope: RUN_TIME
         type: general
-        value: "system,ingestion,embeddings,maintenance"
+        value: "system,ingestion,embeddings,maintenance,notifications"
       - key: ARCLI_DRAMATIQ_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general

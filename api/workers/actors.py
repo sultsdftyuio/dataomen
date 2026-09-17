@@ -361,6 +361,31 @@ def _complete_discovery_run(
             status,
             exc.__class__.__name__,
         )
+        return
+
+    # Email is intentionally downstream of the telemetry update: it reads the
+    # persisted, sanitised terminal summary instead of a transient actor
+    # payload. Failed discovery actors keep retrying and do not notify here.
+    if status not in {"completed", "partial"}:
+        return
+    try:
+        from api.services.crawl_notifications import (
+            enqueue_discovery_completion_notifications,
+        )
+
+        enqueue_discovery_completion_notifications(
+            tenant_id=tenant_id,
+            discovery_run_id=discovery_run_id,
+            status=status,
+        )
+    except Exception as exc:
+        logger.info(
+            "crawl_result_notification_enqueue_skipped tenant_id=%s discovery_run_id=%s status=%s error_type=%s",
+            tenant_id,
+            discovery_run_id,
+            status,
+            exc.__class__.__name__,
+        )
 
 
 @dramatiq.actor(
@@ -2734,6 +2759,20 @@ def dispatch_due_website_recrawls() -> None:
             result.daily_budget_remaining,
             next_delay_seconds,
         )
+        try:
+            from api.workers.notification_actors import (
+                recover_pending_crawl_result_notifications,
+            )
+
+            recover_pending_crawl_result_notifications.send()
+        except Exception as exc:
+            # The recurring crawl scheduler is also the durable, low-frequency
+            # recovery trigger for committed outbox rows whose broker publish
+            # was interrupted. It must never affect crawl admission itself.
+            logger.info(
+                "crawl_result_notification_recovery_enqueue_skipped error_type=%s",
+                exc.__class__.__name__,
+            )
     except Exception as exc:
         # A new delayed tick is published even if this one cannot reach the
         # database. A worker restart is therefore not required for recovery.

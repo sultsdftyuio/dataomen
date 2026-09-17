@@ -80,6 +80,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const tenantResult = await resolveTenantContext();
   let settings = buildSettingsSnapshot(null);
   let serviceProfile: ServiceProfileView | null = null;
+  let crawlNotificationEmailsEnabled = true;
   let billingPlanData: WorkspaceBillingCardProps["planData"] = {
     planName: "Free Access",
     planStatus: "free",
@@ -108,17 +109,40 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       }
     }
 
-    const [settingsResult, entitlements, websiteUrl, qualifiedLeadUsage] = await Promise.all([
+    const [
+      settingsResult,
+      entitlements,
+      websiteUrl,
+      qualifiedLeadUsage,
+      notificationPreference,
+    ] = await Promise.all([
       fetchTenantSettingsRow(tenantSupabase, tenantId),
       getWorkspaceEntitlements(tenantSupabase, tenantId),
       fetchTenantWebsiteUrl(tenantSupabase, tenantId),
       fetchCurrentMonthQualifiedLeadUsage(tenantSupabase, tenantId),
+      tenantSupabase
+        .from("crawl_notification_preferences")
+        .select("enabled")
+        .eq("tenant_id", tenantId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
     ]);
 
     if (settingsResult.error) {
       console.error("[SETTINGS_FETCH_ERROR]", settingsResult.error);
     } else {
       settings = buildSettingsSnapshot(settingsResult.data as never, null);
+    }
+
+    if (notificationPreference.error) {
+      console.error("[CRAWL_NOTIFICATION_PREFERENCE_FETCH_ERROR]", {
+        event: "crawl_notification_preference_fetch_failed",
+        tenant_id: tenantId,
+        user_id: user.id,
+        error: notificationPreference.error,
+      });
+    } else {
+      crawlNotificationEmailsEnabled = notificationPreference.data?.enabled ?? true;
     }
 
     serviceProfile = await fetchServiceProfile(
@@ -177,6 +201,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     <SettingsClient
       user={user}
       initialSettings={settings}
+      initialCrawlNotificationEmailsEnabled={crawlNotificationEmailsEnabled}
       serviceProfile={serviceProfile}
       planData={billingPlanData}
       showBillingTestControls={areBillingTestControlsEnabled()}

@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   routing: {
     notifyAnomalies: true,
     notifyWeekly: true,
+    notifyCrawlCompletion: true,
   },
 };
 
@@ -51,6 +52,9 @@ export function buildSettingsSnapshot(
       hasApiKey,
       keyLastUpdated,
     },
-    routing: { ...DEFAULT_SETTINGS.routing },
+    routing: {
+      ...DEFAULT_SETTINGS.routing,
+      notifyCrawlCompletion: row.crawl_completion_email_enabled ?? true,
+    },
   };
 }

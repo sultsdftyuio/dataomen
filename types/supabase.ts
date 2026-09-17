@@ -77,6 +77,7 @@ export type Database = {
           website_url: string | null;
           stripe_account_id: string | null;
           email_provider_status: boolean | null;
+          crawl_completion_email_enabled: boolean | null;
           api_key: string | null;
           key_last_updated: string | null;
           crm_webhook_url: string | null;
@@ -90,6 +91,7 @@ export type Database = {
           website_url?: string | null;
           stripe_account_id?: string | null;
           email_provider_status?: boolean | null;
+          crawl_completion_email_enabled?: boolean | null;
           api_key?: string | null;
           key_last_updated?: string | null;
           crm_webhook_url?: string | null;
@@ -103,9 +105,34 @@ export type Database = {
           website_url?: string | null;
           stripe_account_id?: string | null;
           email_provider_status?: boolean | null;
+          crawl_completion_email_enabled?: boolean | null;
           api_key?: string | null;
           key_last_updated?: string | null;
           crm_webhook_url?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      crawl_notification_preferences: {
+        Row: {
+          tenant_id: string;
+          user_id: string;
+          enabled: boolean;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          tenant_id: string;
+          user_id: string;
+          enabled?: boolean;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          tenant_id?: string;
+          user_id?: string;
+          enabled?: boolean;
+          created_at?: string | null;
           updated_at?: string | null;
         };
         Relationships: [];

@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ACTOR_MODULES = (
     "api.workers.actors",
+    "api.workers.notification_actors",
 )
 
 

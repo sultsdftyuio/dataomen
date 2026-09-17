@@ -29,6 +29,7 @@ export type SettingsIntegrations = {
 export type SettingsRouting = {
   notifyAnomalies: boolean;
   notifyWeekly: boolean;
+  notifyCrawlCompletion: boolean;
 };
 
 export type SettingsSnapshot = {

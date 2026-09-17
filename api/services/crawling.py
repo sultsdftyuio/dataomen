@@ -3400,6 +3400,27 @@ def process_crawl_job(
                 service_profile_id,
                 "active_paid_plan_required",
             )
+            try:
+                from api.services.crawl_notifications import (
+                    enqueue_initial_crawl_completion_notifications,
+                )
+
+                enqueue_initial_crawl_completion_notifications(
+                    tenant_id=tenant_id,
+                    crawl_job_id=crawl_job_id,
+                    website_url=normalized_url,
+                    pages_crawled=pages_crawled,
+                )
+            except Exception as notification_exc:
+                # A completed initial crawl remains successful if the optional
+                # notification path is not yet deployed or temporarily down.
+                logger.info(
+                    "crawl_result_notification_enqueue_skipped tenant_id=%s website_url=%s crawl_job_id=%s error_type=%s",
+                    tenant_id,
+                    normalized_url,
+                    crawl_job_id,
+                    notification_exc.__class__.__name__,
+                )
         else:
             try:
                 from api.services.embeddings import enqueue_service_profile_embedding_job
@@ -3524,6 +3545,26 @@ def mark_crawl_job_dead_lettered(
         website_url=normalized_url,
         failure_reason="retry_exhausted",
     )
+    try:
+        from api.services.crawl_notifications import (
+            enqueue_terminal_crawl_failure_notifications,
+        )
+
+        enqueue_terminal_crawl_failure_notifications(
+            tenant_id=tenant_id,
+            crawl_job_id=crawl_job_id,
+            website_url=normalized_url,
+        )
+    except Exception as notification_exc:
+        # The error has already been durably recorded and the recurrence state
+        # updated; a notification failure must not disturb either operation.
+        logger.info(
+            "crawl_failure_notification_enqueue_skipped tenant_id=%s website_url=%s crawl_job_id=%s error_type=%s",
+            tenant_id,
+            normalized_url,
+            crawl_job_id,
+            notification_exc.__class__.__name__,
+        )
     logger.error(
         "crawl_job_dead_lettered tenant_id=%s website_url=%s crawl_job_id=%s retries=%s max_retries=%s message_id=%s",
         tenant_id,

@@ -8,6 +8,7 @@ import WorkspaceBillingCard, {
   type WorkspaceBillingCardProps,
 } from "@/components/settings/workspace_page/workspace-billing-card";
 import BillingTestSwitcher from "@/components/settings/workspace_page/billing-test-switcher";
+import CrawlNotificationPreferences from "@/components/settings/workspace_page/crawl-notification-preferences";
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
 import LogoutButton from "@/components/dashboard/logout-button";
 import { C } from "@/lib/tokens";
@@ -15,6 +16,7 @@ import { C } from "@/lib/tokens";
 type SettingsClientProps = {
   user: User;
   initialSettings: any;
+  initialCrawlNotificationEmailsEnabled: boolean;
   serviceProfile: ServiceProfileView | null;
   planData: WorkspaceBillingCardProps["planData"];
   showBillingTestControls: boolean;
@@ -31,6 +33,7 @@ function websiteDomain(value: string) {
 export default function SettingsClient({
   user,
   initialSettings,
+  initialCrawlNotificationEmailsEnabled,
   serviceProfile,
   planData,
   showBillingTestControls,
@@ -117,6 +120,9 @@ export default function SettingsClient({
 
         <aside className="min-w-0 space-y-3 xl:sticky xl:top-0 xl:self-start">
           <WorkspaceBillingCard planData={planData} />
+          <CrawlNotificationPreferences
+            initialEnabled={initialCrawlNotificationEmailsEnabled}
+          />
           {showBillingTestControls ? (
             <BillingTestSwitcher currentStatus={planData?.planStatus} />
           ) : null}
