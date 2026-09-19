@@ -61,8 +61,10 @@ export type LeadQueueCounts = {
 };
 
 export function verifierScoreThreshold() {
-  const configured = Number(process.env.LEAD_VERIFIER_SCORE_THRESHOLD ?? "0.6");
-  return Number.isFinite(configured) ? configured : 0.6;
+  // Keep server-rendered views aligned with the worker's default. This score
+  // identifies strong signals for ordering; it is not a purchase probability.
+  const configured = Number(process.env.LEAD_VERIFIER_SCORE_THRESHOLD ?? "0.55");
+  return Number.isFinite(configured) ? configured : 0.55;
 }
 
 function asRecord(value: unknown): DbRecord | null {
@@ -705,7 +707,6 @@ async function runLeadQuery(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   serviceProfileId: string,
-  threshold: number,
   select: string,
   withOrder = true,
   activeSince: string | null = null,
@@ -715,8 +716,10 @@ async function runLeadQuery(
     .select(select)
     .eq("tenant_id", tenantId)
     .eq("service_profile_id", serviceProfileId)
-    .in("match_status", ["ready_for_review", "qualified"])
-    .gte("verifier_score", threshold);
+    // Match lifecycle is decided by the verifier worker. Re-applying a
+    // separately configured UI threshold hid worker-approved leads whenever
+    // the dashboard and worker deployments used different environment values.
+    .in("match_status", ["ready_for_review", "qualified"]);
 
   // A profile that was historically overwritten during a website replacement
   // can share an ID with legacy matches. Only show matches evaluated since the
@@ -732,14 +735,15 @@ async function runLeadQuery(
       .order("created_at", { ascending: false });
   }
 
-  return query.limit(10);
+  // A customer can choose to review a broader set of public opportunities;
+  // the worker's cost is already paid, and the UI still ranks strongest first.
+  return query.limit(20);
 }
 
 export async function fetchQualifiedLeads(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   serviceProfileId: string | null,
-  threshold: number,
   activeSince: string | null = null,
 ): Promise<QualifiedLeadView[]> {
   if (!serviceProfileId) return [];
@@ -748,7 +752,6 @@ export async function fetchQualifiedLeads(
     supabase,
     tenantId,
     serviceProfileId,
-    threshold,
     "*, source_posts(*)",
     true,
     activeSince,
@@ -759,7 +762,6 @@ export async function fetchQualifiedLeads(
       supabase,
       tenantId,
       serviceProfileId,
-      threshold,
       "*",
       true,
       activeSince,
@@ -771,7 +773,6 @@ export async function fetchQualifiedLeads(
       supabase,
       tenantId,
       serviceProfileId,
-      threshold,
       "*",
       false,
       activeSince,
@@ -786,7 +787,6 @@ export async function fetchQualifiedLeads(
       supabase,
       tenantId,
       serviceProfileId,
-      threshold,
       "*",
     );
   }
@@ -794,15 +794,13 @@ export async function fetchQualifiedLeads(
   if (result.error) {
     console.error("[ProspectDashboard] qualified lead lookup failed", {
       tenant_id: tenantId,
-      verifier_score_threshold: threshold,
       error: result.error,
     });
     return [];
   }
 
   return ((result.data ?? []) as unknown[])
-    .map((row, index) => leadView(asRecord(row) ?? {}, index))
-    .filter((lead) => lead.verifierScore >= threshold);
+    .map((row, index) => leadView(asRecord(row) ?? {}, index));
 }
 
 type ReviewOnlyMatchStatus = "discovery_candidate" | "rejected";
@@ -833,7 +831,7 @@ async function runReviewOnlyMatchQuery(
       .order("created_at", { ascending: false });
   }
 
-  return query.limit(15);
+  return query.limit(30);
 }
 
 /**
@@ -908,8 +906,9 @@ async function fetchReviewOnlyMatches(
 }
 
 /**
- * These posts passed the LLM's relevance check but did not meet the automatic
- * review score. They remain separate from verified leads for human review.
+ * These posts passed the LLM's relevance check but do not have the evidence
+ * level of a strong signal. They remain visible as broader opportunities for
+ * human review rather than being treated as confirmed buyers.
  */
 export async function fetchDiscoveryCandidates(
   supabase: SupabaseClient<Database>,

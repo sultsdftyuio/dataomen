@@ -380,9 +380,10 @@ def _lead_match_status(verification: Any) -> str:
         "LEAD_VERIFIER_SCORE_THRESHOLD",
         DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
     )
-    # Main leads need both the configured confidence and direct evidence of a
-    # real buyer problem. Potential buyers stay in their own review-only lane,
-    # even if the model gave an unusually high numeric score.
+    # Strong signals need both the configured confidence and direct evidence
+    # of a real buyer problem. Broader opportunities stay in their own
+    # review-only lane, even if the model gave an unusually high numeric score.
+    # The score ranks relevance; it is not a conversion prediction.
     if decision_label == "strong_match" and verifier_score >= threshold:
         return "ready_for_review"
     discovery_threshold = env_float(

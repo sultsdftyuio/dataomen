@@ -1492,16 +1492,16 @@ def process_service_profile_embedding_job(
         with engine.begin() as conn:
             lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
     except Exception as exc:
-        # A billing read failure must never spend embedding capacity. The
-        # website profile itself is already durable and can be refreshed after
-        # the next successful entitlement check.
+        # Do not spend capacity until the billing read succeeds. Raising lets
+        # the Dramatiq retry/dead-letter policy recover a transient database
+        # outage instead of silently stranding a paid tenant's activation.
         logger.exception(
             "service_profile_embedding_entitlement_check_failed tenant_id=%s service_profile_id=%s error_type=%s",
             tenant_id,
             service_profile_id,
             exc.__class__.__name__,
         )
-        return
+        raise RuntimeError("Unable to verify lead-discovery entitlement.") from exc
 
     if not lead_discovery_entitled:
         logger.info(
@@ -1763,6 +1763,10 @@ def _enqueue_public_ingestion_after_embedding(
             exc.__class__.__name__,
             exc,
         )
+        # The embedding actor owns bounded retries and a dead-letter state.
+        # Swallowing this exception made a successful crawl look complete
+        # even though its paid discovery handoff never happened.
+        raise
 
     # The initial fast check schedules the historical rematch after it has
     # handed fresh source results to matching.  That makes a new scan useful

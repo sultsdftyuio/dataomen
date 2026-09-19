@@ -15,14 +15,15 @@ STARTED_AT = "2026-08-24T00:00:00+00:00"
 
 def _limits() -> run_control.InitialDiscoveryRunLimits:
     return run_control.InitialDiscoveryRunLimits(
-        target_ready_for_review=3,
-        minimum_seconds=120,
+        target_ready_for_review=1,
+        minimum_seconds=60,
         maximum_seconds=300,
         poll_seconds=15,
+        rematch_after_seconds=120,
     )
 
 
-def test_limits_cannot_weaken_the_three_find_or_two_to_five_minute_contract(
+def test_limits_keep_a_fast_preview_and_bounded_background_window(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("ARCLI_INITIAL_PUBLIC_DISCOVERY_TARGET_READY", "1")
@@ -31,16 +32,18 @@ def test_limits_cannot_weaken_the_three_find_or_two_to_five_minute_contract(
 
     limits = run_control.initial_discovery_run_limits()
 
-    assert limits.target_ready_for_review == 3
-    assert limits.minimum_seconds == 120
+    assert limits.target_ready_for_review == 1
+    assert limits.minimum_seconds == 60
     assert limits.maximum_seconds == 300
+    assert limits.rematch_after_seconds == 120
 
 
 def test_next_monitor_waits_for_the_minimum_then_stops_at_the_maximum() -> None:
     limits = _limits()
 
-    assert run_control.next_monitor_delay_seconds(elapsed_seconds=60, limits=limits) == 15
-    assert run_control.next_monitor_delay_seconds(elapsed_seconds=119.8, limits=limits) == 1
+    assert run_control.next_monitor_delay_seconds(elapsed_seconds=30, limits=limits) == 15
+    assert run_control.next_monitor_delay_seconds(elapsed_seconds=59.8, limits=limits) == 1
+    assert run_control.next_monitor_delay_seconds(elapsed_seconds=119, limits=limits) == 1
     assert run_control.next_monitor_delay_seconds(elapsed_seconds=299, limits=limits) == 1
     assert run_control.next_monitor_delay_seconds(elapsed_seconds=300, limits=limits) is None
 
@@ -80,15 +83,15 @@ def test_count_only_includes_new_ready_for_review_posts() -> None:
     assert connection.params["service_profile_id"] == PROFILE_ID
 
 
-def test_monitor_waits_for_two_minutes_even_when_three_posts_arrive_early() -> None:
+def test_monitor_waits_for_the_fast_preview_window_when_a_post_arrives_early() -> None:
     from api.workers import actors
 
     next_message = SimpleNamespace(message_id="next-monitor")
     complete_run = MagicMock()
     with (
         patch("api.services.social.run_control.initial_discovery_run_limits", return_value=_limits()),
-        patch("api.services.social.run_control.elapsed_run_seconds", return_value=60),
-        patch("api.services.social.run_control.ready_for_review_count_since", return_value=3),
+        patch("api.services.social.run_control.elapsed_run_seconds", return_value=30),
+        patch("api.services.social.run_control.ready_for_review_count_since", return_value=1),
         patch.object(
             actors.monitor_initial_public_discovery_run,
             "send_with_options",
@@ -107,14 +110,14 @@ def test_monitor_waits_for_two_minutes_even_when_three_posts_arrive_early() -> N
     assert schedule.call_args.kwargs["delay"] == 15_000
 
 
-def test_monitor_completes_after_the_minimum_when_three_posts_are_ready() -> None:
+def test_monitor_completes_after_the_fast_preview_when_a_post_is_ready() -> None:
     from api.workers import actors
 
     complete_run = MagicMock()
     with (
         patch("api.services.social.run_control.initial_discovery_run_limits", return_value=_limits()),
-        patch("api.services.social.run_control.elapsed_run_seconds", return_value=121),
-        patch("api.services.social.run_control.ready_for_review_count_since", return_value=3),
+        patch("api.services.social.run_control.elapsed_run_seconds", return_value=61),
+        patch("api.services.social.run_control.ready_for_review_count_since", return_value=1),
         patch.object(actors.monitor_initial_public_discovery_run, "send_with_options") as schedule,
         patch.object(actors, "_complete_discovery_run", complete_run),
     ):
@@ -207,7 +210,7 @@ def test_monitor_stops_with_a_partial_run_at_five_minutes() -> None:
     with (
         patch("api.services.social.run_control.initial_discovery_run_limits", return_value=_limits()),
         patch("api.services.social.run_control.elapsed_run_seconds", return_value=300),
-        patch("api.services.social.run_control.ready_for_review_count_since", return_value=2),
+        patch("api.services.social.run_control.ready_for_review_count_since", return_value=0),
         patch.object(actors.monitor_initial_public_discovery_run, "send_with_options") as schedule,
         patch.object(actors, "_complete_discovery_run", complete_run),
     ):

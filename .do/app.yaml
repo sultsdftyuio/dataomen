@@ -54,7 +54,7 @@ envs:
   - key: ARCLI_DASHBOARD_URL
     scope: RUN_TIME
     type: general
-    value: "https://arcli.tech/dashboard"
+    value: "https://www.arcli.tech/dashboard"
   # One completion email per recipient per 20 hours prevents manual retries
   # and duplicate terminal events from becoming a cost or inbox problem.
   - key: ARCLI_CRAWL_RESULT_EMAIL_MIN_INTERVAL_HOURS
@@ -205,11 +205,25 @@ workers:
     # Four times the RAM of basic-xxs gives the I/O-heavy matching worker
     # room for eight threads and avoids recycling during a normal scan.
     instance_size_slug: apps-s-1vcpu-2gb
+    # A worker can remain deployed while its child process has exited. Probe
+    # the supervisor so stalled embedding and ingestion queues are restarted.
+    liveness_health_check:
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+      http_path: /health
+      port: 8080
     envs:
       - key: ARCLI_WORKER_BACKEND
         scope: RUN_TIME
         type: general
         value: dramatiq
+      - key: ARCLI_WORKER_HEALTH_PORT
+        scope: RUN_TIME
+        type: general
+        value: "8080"
       - key: ARCLI_DRAMATIQ_MODULES
         scope: RUN_TIME
         type: general
@@ -353,7 +367,9 @@ workers:
       - key: LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD
         scope: RUN_TIME
         type: general
-        value: "0.30"
+        # This ranks public-conversation relevance; it is not a purchase
+        # probability. Preserve credible early buyer situations for review.
+        value: "0.20"
       - key: ARCLI_GITHUB_DISCOVERY_QUERY_TERMS
         scope: RUN_TIME
         type: general
@@ -421,6 +437,33 @@ workers:
         scope: RUN_TIME
         type: general
         value: "20"
+      # Pro is bounded by the work that creates variable cost, never by a
+      # promise of lead volume. These rolling-30-day limits are enforced by
+      # the Redis tenant quota guard and recorded in the discovery report.
+      - key: ARCLI_DISCOVERY_USAGE_GUARD_ENABLED
+        scope: RUN_TIME
+        type: general
+        value: "true"
+      - key: ARCLI_DISCOVERY_USAGE_WINDOW_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "2592000"
+      - key: ARCLI_PRO_MONTHLY_SOURCE_REQUEST_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "480"
+      - key: ARCLI_PRO_MONTHLY_FRESH_EMBEDDING_POST_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "600"
+      - key: ARCLI_PRO_MONTHLY_VERIFIER_CALL_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "300"
+      - key: ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "20"
       # The discovery worker owns raw -> plausible -> review candidate state.
       # It is explicit here so a new deployment cannot silently omit the
       # candidate-first funnel after its database contract is installed.
@@ -431,19 +474,31 @@ workers:
       - key: ARCLI_INITIAL_PUBLIC_REMATCH_ENABLED
         scope: RUN_TIME
         type: general
+        # A new Pro profile must also be matched against the already embedded
+        # public corpus; it does not re-embed posts and is budget-bounded.
+        value: "true"
+      # A global request claim cannot stand in for tenant-specific matching.
+      # Keep it off until query-cache replay persists source-post references.
+      - key: ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED
+        scope: RUN_TIME
+        type: general
         value: "false"
       # Used only when ARCLI_INITIAL_PUBLIC_REMATCH_ENABLED is true.
       - key: ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS
         scope: RUN_TIME
         type: general
         value: "120000"
-      # Discovery stays open for at least two minutes, and at most five, while
-      # it waits for three verifier-confirmed items for the review queue.
+      # One verified public signal can surface after a minute. The background
+      # scan continues for up to five minutes; it never promises lead volume.
       - key: ARCLI_INITIAL_PUBLIC_DISCOVERY_TARGET_READY
         scope: RUN_TIME
         type: general
-        value: "3"
+        value: "1"
       - key: ARCLI_INITIAL_PUBLIC_DISCOVERY_MIN_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "60"
+      - key: ARCLI_INITIAL_PUBLIC_REMATCH_AFTER_SECONDS
         scope: RUN_TIME
         type: general
         value: "120"

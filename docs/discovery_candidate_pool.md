@@ -1,9 +1,9 @@
 # Candidate-First Discovery
 
-The discovery pipeline now preserves useful public conversations before they
-become verified leads. This makes an empty verified-lead queue diagnosable:
-operators can distinguish no source coverage, no buyer-language matches, a
-limited embedding budget, and verifier rejection.
+The discovery pipeline preserves useful public conversations before they
+become stronger opportunities. This makes an empty opportunity inbox
+diagnosable: operators can distinguish no source coverage, no buyer-language
+matches, a limited embedding budget, and verifier rejection.
 
 ## What happens first
 
@@ -33,9 +33,12 @@ limited embedding budget, and verifier rejection.
    `raw -> plausible -> review -> qualified/rejected` by semantic matching
    and the verifier.
 
-The dashboard labels the raw/plausible/review records as **not qualified
-leads**. They have no CRM or outreach action until the existing verifier-owned
-lead workflow creates a reviewable lead.
+The dashboard keeps raw/plausible/review records as research material. A
+verifier-confirmed match at the 0.20 relevance floor becomes a **Relevant
+opportunity**; a strong, direct buyer problem at 0.55 or above becomes a
+**Strong signal**. These scores rank relevance to the website; they do not
+predict that the author will buy. Only the workspace owner's explicit action
+marks a signal as qualified for CRM use.
 
 ## Deploy the storage contract
 
@@ -60,9 +63,12 @@ profiles, and checks Hacker News, Bluesky, Stack Exchange, public GitHub,
 and Lemmy concurrently. A cost-controlled X fallback remains available only
 when free-source coverage is insufficient and credentials are configured.
 
-Source-query cache claims are released after a provider failure **or zero
-hits**. This prevents a transient empty response from hiding newly indexed
-posts for the cache TTL.
+The global source-query cache is disabled by default. A cache claim alone
+cannot replace the tenant-specific embedding and verification handoff, so it
+must not suppress a paid tenant's discovery run. Provider pacing and global
+post deduplication still bound repeated searches. Do not enable
+`ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED` until cache entries can
+replay the source-post references for every tenant.
 
 ## Account and contact extension
 

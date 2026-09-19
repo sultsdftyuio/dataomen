@@ -21,7 +21,6 @@ import {
   resumeSubscription,
 } from "@/app/actions/billing";
 import { WorkspacePlanBadge } from "@/components/dashboard/WorkspacePlanBadge";
-import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import type { WorkspaceEntitlements } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
@@ -39,10 +38,6 @@ export interface WorkspaceBillingCardProps {
     trialEndsAt?: string | null;
     workspaceName?: string;
     entitlements?: WorkspaceEntitlements;
-    qualifiedLeadUsage?: {
-      discovered: number;
-      limit: number;
-    };
     amountDueCents?: number;
     currency?: string;
     features?: Array<{
@@ -187,11 +182,6 @@ export default function WorkspaceBillingCard({
     }));
   const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
   const actionLabel = canOpenPortal ? "Manage Billing" : "Upgrade";
-  const usage = planData.qualifiedLeadUsage;
-  const usagePercent = usage
-    ? Math.min(100, Math.round((usage.discovered / Math.max(usage.limit, 1)) * 100))
-    : 0;
-
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow =
     "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
@@ -595,29 +585,6 @@ export default function WorkspaceBillingCard({
           </div>
         </div>
       )}
-
-      {usage ? (
-        <div
-          style={{
-            borderTop: `1px solid ${C.rule}`,
-            padding: "14px 16px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 7,
-          }}
-        >
-          <div
-            style={{
-              color: C.navy,
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            {new Intl.NumberFormat("en-US").format(usage.discovered)} / {new Intl.NumberFormat("en-US").format(usage.limit)} Qualified Leads Discovered
-          </div>
-          <Progress value={usagePercent} aria-label="Qualified leads discovered this month" />
-        </div>
-      ) : null}
 
       <div
           style={{

@@ -702,6 +702,15 @@ def _additional_source_query_cache_key(
 
 
 
+def _additional_public_source_query_cache_is_enabled() -> bool:
+    return os.getenv("ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def claim_additional_public_source_query(
     *,
     source: str,
@@ -711,11 +720,17 @@ def claim_additional_public_source_query(
 ) -> bool:
     """Claim a short global query cache slot before free-source ingestion.
 
-    The cache intentionally contains only a hash of public buyer language and
-    no tenant identifier. Redis makes repeated customer activations share one
-    source request; without Redis, the global database dedupe remains safe and
-    this function deliberately permits the query rather than dropping leads.
+    The cache is deliberately opt-in. Its original key stored only a claim,
+    not the source-post references needed to run each tenant's matching step.
+    Treating a global cache hit as a completed tenant search therefore dropped
+    valid Pro discovery work. Until cache entries can replay those references
+    safely, duplicate public searches are preferable to silently losing leads.
+
+    Provider pacing and global post deduplication still bound the extra work.
     """
+    if not _additional_public_source_query_cache_is_enabled():
+        return True
+
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return True
@@ -800,6 +815,9 @@ def release_additional_public_source_query(
     empty and failed searches are released so a newly indexed buyer post can
     be found by the next activation instead of looking like a cached zero.
     """
+    if not _additional_public_source_query_cache_is_enabled():
+        return
+
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return

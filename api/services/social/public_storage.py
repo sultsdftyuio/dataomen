@@ -272,6 +272,7 @@ def trigger_embedding_jobs(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
 ) -> int:
     """Hand fetched public rows to the embedding queue.
 
@@ -305,6 +306,7 @@ def trigger_embedding_jobs(
         source_post_refs,
         tenant_id=tenant_id,
         service_profile_id=service_profile_id,
+        discovery_run_id=discovery_run_id,
     )
 
 

@@ -754,6 +754,7 @@ def process_public_source_post_embedding(
     source_post_id: str,
     *,
     source: str | None = None,
+    discovery_run_id: str | None = None,
     retry_on_not_found: bool = False,
     _source_rows: Sequence[dict[str, Any]] | None = None,
     _profile_rows: Sequence[dict[str, Any]] | None = None,
@@ -1013,6 +1014,7 @@ def process_public_source_post_embedding(
                         service_profile,
                         tenant_id=tenant_id,
                         service_profile_id=service_profile_id,
+                        discovery_run_id=discovery_run_id,
                     )
 
                 if not verification.verifier_executed:
@@ -1257,6 +1259,7 @@ def process_public_source_post_embedding_batch(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
     retry_on_not_found: bool = False,
 ) -> dict[str, int]:
     """Batch post embeddings, then apply global or profile-scoped matching.
@@ -1346,6 +1349,7 @@ def process_public_source_post_embedding_batch(
             result = process_public_source_post_embedding(
                 source_post_id,
                 source=source,
+                discovery_run_id=discovery_run_id,
                 _source_rows=source_rows_by_ref[(source, source_post_id)],
                 _profile_rows=profile_rows,
                 _lead_match_columns=lead_match_columns,

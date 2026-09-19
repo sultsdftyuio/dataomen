@@ -187,6 +187,7 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
                 os.environ,
                 {
                     "REDIS_URL": "redis://cache.test/0",
+                    "ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED": "true",
                     "ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS": "600",
                 },
                 clear=True,
@@ -204,6 +205,33 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         self.assertTrue(client.calls[0][0].startswith("arcli:public-source-query:"))
         self.assertEqual(client.calls[0][3], 600)
+
+    def test_query_cache_is_disabled_by_default_to_preserve_tenant_matching(self) -> None:
+        class FakeClient:
+            def set(self, *_args, **_kwargs):
+                raise AssertionError("the disabled query cache must not use Redis")
+
+        class FakeRedis:
+            @staticmethod
+            def from_url(*_args, **_kwargs):
+                return FakeClient()
+
+        with (
+            patch.dict(
+                os.environ,
+                {"REDIS_URL": "redis://cache.test/0"},
+                clear=True,
+            ),
+            patch.dict(sys.modules, {"redis": types.SimpleNamespace(Redis=FakeRedis)}),
+        ):
+            claimed = claim_additional_public_source_query(
+                source="bluesky",
+                query="manual customer onboarding",
+                since_hours_ago=24,
+                scope="public.api.bsky.app",
+            )
+
+        self.assertTrue(claimed)
 
 
 class AdditionalPublicSourceActivationTests(unittest.TestCase):

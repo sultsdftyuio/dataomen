@@ -128,7 +128,6 @@ export default async function DashboardPage() {
       supabase,
       tenantId,
       serviceProfile.id,
-      threshold,
       serviceProfile.updatedAt,
     ),
     fetchDiscoveryCandidates(
@@ -154,7 +153,6 @@ export default async function DashboardPage() {
       buyerDemandReport={buyerDemandReport}
       buyerGroupSuggestions={buyerGroupSuggestions}
       activateBuyerGroup={activateSuggestedBuyerGroup}
-      verificationThreshold={threshold}
       isWarmingUp={isDiscoveryWarmingUp}
     />
   );

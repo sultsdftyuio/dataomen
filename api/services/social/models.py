@@ -80,9 +80,10 @@ DEFAULT_VERIFIER_QUALIFIED_THRESHOLD = 0.55
 
 
 # These are verifier-confirmed, human-review signals rather than qualified
-# opportunities. A lower floor preserves plausible evidence that would
-# otherwise vanish while the ready-for-review threshold remains higher.
-DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD = 0.30
+# opportunities. This is a relevance floor, never an estimate that the author
+# will buy. Keep it low enough for customers to inspect credible early buyer
+# situations instead of losing them to an overly strict automatic gate.
+DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD = 0.20
 
 
 

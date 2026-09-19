@@ -825,13 +825,13 @@ class PublicSourceMatchingTests(unittest.TestCase):
             "discovery_candidate",
         )
 
-        discovery_candidate = ready_for_review.model_copy(update={"confidence": 0.30})
+        discovery_candidate = ready_for_review.model_copy(update={"confidence": 0.20})
         self.assertEqual(
             ingestion._lead_match_status(discovery_candidate),
             "discovery_candidate",
         )
 
-        low_confidence = ready_for_review.model_copy(update={"confidence": 0.29})
+        low_confidence = ready_for_review.model_copy(update={"confidence": 0.19})
         self.assertEqual(ingestion._lead_match_status(low_confidence), "rejected")
 
         skipped = ready_for_review.model_copy(update={"verifier_executed": False})
@@ -857,6 +857,21 @@ class PublicSourceMatchingTests(unittest.TestCase):
             embeddings._enqueue_public_ingestion_after_embedding("tenant-a", "profile-1")
 
         initial_enqueue.assert_called_once_with("tenant-a", "profile-1")
+
+    def test_profile_activation_retries_when_initial_discovery_enqueue_fails(self) -> None:
+        import api.services.embeddings as embeddings
+        import api.services.ingestion_service as ingestion_service
+
+        with patch.object(
+            ingestion_service,
+            "enqueue_initial_public_ingestion_job",
+            side_effect=RuntimeError("broker unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "broker unavailable"):
+                embeddings._enqueue_public_ingestion_after_embedding(
+                    "tenant-a",
+                    "profile-1",
+                )
 
     def test_profile_embedding_text_includes_urgency_and_canonical_discovery_phrases(self) -> None:
         from api.services.embeddings import _service_profile_embedding_text

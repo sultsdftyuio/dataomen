@@ -14,6 +14,7 @@ REDIS_MAX_CONNECTIONS = max(1, int(os.getenv("ARCLI_QUOTA_REDIS_MAX_CONNECTIONS"
 
 class RedisLike(Protocol):
     def incr(self, name: str) -> int: ...
+    def incrby(self, name: str, amount: int) -> int: ...
     def expire(self, name: str, time: int) -> bool: ...
 
 
@@ -708,18 +709,21 @@ class TenantQuotaGuard:
         counter_name: str,
         limit: int,
         window_seconds: int,
+        amount: int = 1,
     ) -> UsageDecision:
         safe_tenant_id = self._safe_tenant_id(tenant_id)
         safe_counter_name = self._safe_counter_name(counter_name)
         safe_limit = max(1, int(limit))
         safe_window_seconds = max(1, int(window_seconds))
+        safe_amount = max(1, int(amount))
         key = f"arcli:quota:{safe_tenant_id}:{safe_counter_name}:{int(time.time() // safe_window_seconds)}"
 
         try:
             current_count = self._increment(
                 key,
                 safe_window_seconds,
-                reject_count=safe_limit + 1,
+                reject_count=safe_limit + safe_amount,
+                amount=safe_amount,
             )
         except Exception as exc:
             logger.warning(
@@ -733,7 +737,8 @@ class TenantQuotaGuard:
             current_count = self._increment_memory(
                 key,
                 safe_window_seconds,
-                reject_count=safe_limit + 1,
+                reject_count=safe_limit + safe_amount,
+                amount=safe_amount,
             )
 
         allowed = current_count <= safe_limit
@@ -749,12 +754,13 @@ class TenantQuotaGuard:
 
         if not allowed:
             logger.warning(
-                "tenant_quota_exceeded tenant_id=%s counter_name=%s current_count=%s limit=%s window_seconds=%s rejection_reason=%s",
+                "tenant_quota_exceeded tenant_id=%s counter_name=%s current_count=%s limit=%s window_seconds=%s requested_amount=%s rejection_reason=%s",
                 decision.tenant_id,
                 decision.counter_name,
                 decision.current_count,
                 decision.limit,
                 decision.window_seconds,
+                safe_amount,
                 decision.rejection_reason,
             )
 
@@ -766,6 +772,7 @@ class TenantQuotaGuard:
         window_seconds: int,
         *,
         reject_count: int,
+        amount: int,
     ) -> int:
         client = self.redis_client
         owns_client = client is None
@@ -776,11 +783,17 @@ class TenantQuotaGuard:
                 key,
                 window_seconds,
                 reject_count=reject_count,
+                amount=amount,
             )
 
         try:
-            current_count = int(client.incr(key))
-            if current_count == 1:
+            increment_by = getattr(client, "incrby", None)
+            current_count = (
+                int(increment_by(key, amount))
+                if callable(increment_by)
+                else sum(int(client.incr(key)) for _ in range(amount))
+            )
+            if current_count == amount:
                 client.expire(key, window_seconds)
             return current_count
         finally:
@@ -794,6 +807,7 @@ class TenantQuotaGuard:
         window_seconds: int,
         *,
         reject_count: int,
+        amount: int,
     ) -> int:
         now = time.monotonic()
         expires_at = now + window_seconds
@@ -819,7 +833,7 @@ class TenantQuotaGuard:
                 current_count = 0
                 current_expires_at = expires_at
 
-            current_count += 1
+            current_count += amount
             cls._memory_counts[key] = (current_count, current_expires_at)
             return current_count
 

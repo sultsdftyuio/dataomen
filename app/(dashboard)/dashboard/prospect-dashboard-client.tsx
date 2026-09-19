@@ -67,7 +67,6 @@ type ProspectDashboardClientProps = {
   buyerDemandReport: BuyerDemandReportView | null;
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
-  verificationThreshold: number;
   isWarmingUp: boolean;
 };
 
@@ -202,15 +201,15 @@ function denseStatusPresentation(lead: QualifiedLeadView) {
   }
 
   if (isPotentialBuyer(lead)) {
-    return { label: "Potential buyer", background: C.amberPale, color: C.amber };
+    return { label: "Relevant opportunity", background: C.amberPale, color: C.amber };
   }
 
-  return { label: "Lead", background: C.greenPale, color: C.green };
+  return { label: "Strong signal", background: C.greenPale, color: C.green };
 }
 
 function denseDetailStatusLabel(lead: QualifiedLeadView) {
   if (isScreenedMatch(lead)) return "Screened out";
-  return isPotentialBuyer(lead) ? "Potential buyer" : "Clear buyer problem";
+  return isPotentialBuyer(lead) ? "Relevant opportunity" : "Strong public signal";
 }
 
 function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
@@ -326,7 +325,7 @@ function pipelineStatus({
     label: "Latest scan complete",
     title: "Your latest scan is complete.",
     detail:
-      "Clear buyer-problem leads and potential buyers stay separate, so you can judge each one with confidence.",
+      "Strong signals and broader relevant opportunities stay separate. They are public evidence, not confirmed customers.",
   };
 }
 
@@ -441,7 +440,7 @@ function LeadOutreach({
   const isQualified = lead.matchStatus === "qualified";
   const draftStorageKey = `arcli:reply-draft:${lead.id}`;
   const sourceName = sourceDisplayName(lead.sourcePost.source);
-  // Potential and screened matches are useful evidence to inspect, but only a
+  // Relevant and screened opportunities are useful evidence to inspect, but only a
   // verifier-confirmed lead can be promoted. The server and RLS policy enforce
   // the same boundary; keeping it explicit prevents a misleading CRM action.
   const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate" || !isVerifiedLead(lead);
@@ -559,7 +558,7 @@ function LeadOutreach({
     <p className="text-xs font-medium" style={{ color: isScreenedMatch(lead) ? C.red : C.amber }}>
       {isScreenedMatch(lead)
         ? "Screened out by verification — inspect the evidence, but do not use it for outreach or CRM export."
-        : "Review only — potential buyer signal. Review the evidence before outreach; it cannot be qualified or exported to your CRM yet."}
+        : "Review only — relevant opportunity. Review the evidence before outreach; it cannot be qualified or exported to your CRM yet."}
     </p>
   ) : null;
 
@@ -751,7 +750,7 @@ function LeadCard({
                 ) : (
                   <ShieldCheck className="size-3" />
                 )}
-                {isWatch ? "Watch" : "Ready to act"}
+                {isWatch ? "Relevant" : "Strong signal"}
               </Badge>
               <Badge
                 variant="outline"
@@ -762,7 +761,7 @@ function LeadCard({
                   color: C.navySoft,
                 }}
               >
-                Verifier {formatScore(lead.verifierScore)}
+                Match strength {formatScore(lead.verifierScore)}
               </Badge>
               {lead.similarityScore !== null ? (
                 <Badge
@@ -1360,7 +1359,7 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
     coverageNote,
   ].filter((value): value is string => Boolean(value));
   const detail = isRunning
-    ? "Each source reports here as it finishes. New posts are checked before they appear as potential buyers or leads."
+    ? "Each source reports here as it finishes. New posts are checked before they appear as relevant or strong opportunities."
     : isPartial
       ? `${discoveryFinding} ${coverageNote ?? "Completed sources still produced usable discovery results."}`
       : isFailed
@@ -1500,12 +1499,12 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
   const detail = summary.verifierPending
     ? "Source collection is complete; remaining evidence is still being verified."
     : isPartial
-      ? "Some source coverage was unavailable. No conversations reached Ready to act in the available results."
+      ? "Some source coverage was unavailable. No conversations reached the strong-signal lane in the available results."
       : isSkipped
         ? "This scan did not run. Review the matching brief and source configuration before trying again."
         : isFailed
           ? "The scan could not complete. Review the matching brief and source configuration before trying again."
-        : "No conversations reached Ready to act in this completed scan.";
+        : "No conversations reached the strong-signal lane in this completed scan.";
   const statusLabel = isPartial
     ? "Partial"
     : isSkipped
@@ -2605,7 +2604,7 @@ function ScanOverview({
     : isReportFailed
       ? "Your latest discovery run needs attention."
       : isDiscoveryRunning
-        ? "Searching for buyer conversations."
+        ? "First buyer signals appear as sources finish."
         : discoveryIsComplete
           ? "Your latest discovery results are ready."
           : websiteSetupNeedsAttention
@@ -2618,9 +2617,9 @@ function ScanOverview({
     : isReportFailed
       ? "Review the discovery report for source details, then refine the brief or try another scan."
       : isDiscoveryRunning
-        ? "Arcli is checking public conversations and filtering them against your matching brief."
+        ? "Arcli is checking the selected public conversations against your matching brief. Early matches appear as they are verified; the wider scan can continue for up to five minutes."
         : discoveryIsComplete
-          ? "Review the buyer-problem leads, potential buyers, and source report from this run."
+          ? "Review the strong signals, relevant opportunities, and source report from this run."
           : websiteSetupNeedsAttention
             ? status.detail
           : websiteSetupIsComplete
@@ -2716,7 +2715,6 @@ export default function ProspectDashboardClient({
   buyerDemandReport,
   buyerGroupSuggestions,
   activateBuyerGroup,
-  verificationThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
@@ -2943,7 +2941,6 @@ export default function ProspectDashboardClient({
         potentialBuyers={discoveryCandidates}
         buyerGroupSuggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
-        verificationThreshold={verificationThreshold}
         reviewedConversationCount={queueItems.length}
         screenedMatches={screenedMatches}
         filteredQueueItems={filteredQueueItems}
@@ -2991,8 +2988,8 @@ export default function ProspectDashboardClient({
               {dashboardView === "focus"
                 ? "Focus"
                 : dashboardView === "queue"
-                  ? queueFilter === "screened" ? "Screened-out audit" : "Lead inbox"
-                  : "Leads"}
+                  ? queueFilter === "screened" ? "Screened-out audit" : "Opportunity inbox"
+                  : "Opportunities"}
             </h1>
             <p className="mt-1 text-[13px]" style={{ color: C.navySoft }}>
               {dashboardView === "focus"
@@ -3174,7 +3171,7 @@ export default function ProspectDashboardClient({
               </div>
               <dl className="grid grid-cols-3 divide-x rounded-xl border" style={{ borderColor: C.rule }}>
                 <div className="p-3.5 text-center">
-                  <dt className="text-[11px] font-semibold" style={{ color: C.muted }}>Clear leads</dt>
+                  <dt className="text-[11px] font-semibold" style={{ color: C.muted }}>Strong signals</dt>
                   <dd className="mt-1 text-2xl font-semibold leading-none" style={{ color: C.navy }}>{leads.length}</dd>
                 </div>
                 <div className="p-3.5 text-center">
@@ -3250,10 +3247,10 @@ export default function ProspectDashboardClient({
         >
           <div className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <h2 id="matches-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              {queueFilter === "screened" ? "Screened-out audit" : "Lead inbox"}
+              {queueFilter === "screened" ? "Screened-out audit" : "Opportunity inbox"}
             </h2>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
-              {leads.length} clear buyer problems
+              {leads.length} strong signals
             </span>
           </div>
           <div className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
@@ -3268,8 +3265,8 @@ export default function ProspectDashboardClient({
                   type="search"
                   value={queueQuery}
                   onChange={(event) => setQueueQuery(event.target.value)}
-                  placeholder={queueFilter === "screened" ? "Search screened-out records" : "Search leads and potential buyers"}
-                  aria-label={queueFilter === "screened" ? "Search screened-out records" : "Search leads and potential buyers"}
+                  placeholder={queueFilter === "screened" ? "Search screened-out records" : "Search strong and relevant opportunities"}
+                  aria-label={queueFilter === "screened" ? "Search screened-out records" : "Search strong and relevant opportunities"}
                   className="h-8 w-full rounded-full border bg-white pl-8 pr-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
                   style={{ borderColor: C.ruleDark, color: C.navy }}
                 />
@@ -3293,11 +3290,11 @@ export default function ProspectDashboardClient({
                 <div className="flex items-center gap-1" role="group" aria-label="Lead type filter">
                   {(["all", "leads", "potential", "screened"] as const).map((filter) => {
                     const label = filter === "all"
-                      ? "Lead inbox"
+                      ? "Opportunity inbox"
                       : filter === "leads"
-                        ? "Leads"
+                        ? "Strong signals"
                         : filter === "potential"
-                          ? "Potential buyers"
+                          ? "Relevant opportunities"
                           : "Screened-out audit";
                     const active = queueFilter === filter;
 
@@ -3389,7 +3386,7 @@ export default function ProspectDashboardClient({
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <h3 id="potential-buyers-heading" className="text-xs font-bold" style={{ color: C.amber }}>
-                            Potential buyers
+                            Relevant opportunities
                           </h3>
                           <p className="mt-0.5 text-[11px]" style={{ color: C.navySoft }}>
                             Relevant early signals that need a closer check.
@@ -3447,7 +3444,7 @@ export default function ProspectDashboardClient({
                 <ListFilter className="size-4" style={{ color: C.blue }} aria-hidden="true" />
                 <p className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
                   {queueFilter === "all" && screenedMatches.length > 0
-                    ? "No lead-ready signals yet"
+                    ? "No reviewable opportunities yet"
                     : "No matches fit these filters"}
                 </p>
                 <Button
@@ -3501,8 +3498,8 @@ export default function ProspectDashboardClient({
                 {selectedLead && isScreenedMatch(selectedLead)
                   ? "Screened-out audit"
                   : selectedLead?.matchStatus === "discovery_candidate"
-                    ? "Potential buyer brief"
-                    : "Lead brief"}
+                    ? "Relevant opportunity brief"
+                    : "Strong signal brief"}
               </h2>
             </div>
             <div className="flex shrink-0 items-center gap-2">

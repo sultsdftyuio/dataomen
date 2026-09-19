@@ -888,6 +888,7 @@ def process_watchlist_discovery_job(tenant_id: str, watchlist_id: str) -> dict[s
             context.service_profile_id,
             discovery_queries_override=list(context.queries),
             allowed_sources=context.source_preferences,
+            community_targets=community_target_payloads(context.community_targets),
         )
         _update_watchlist_status(tenant_id, watchlist_id, scan_status="queued")
         logger.info(

@@ -220,7 +220,9 @@ by eight local Dramatiq processes.
 Set that command in the deployment platform's **Worker service Start Command**
 (not the web/API service). Initial discovery runs HN first, then searches
 Bluesky, Stack Exchange, public GitHub issues, and Lemmy. Those five free
-sources share a short global query cache and write only to the global corpus.
+sources write only to the global corpus. The global source-query claim cache
+is disabled by default because a claim alone cannot perform a tenant's
+embedding and verification handoff.
 Every fetched post is still passed through the existing embedding similarity
 filter and verifier before it can appear for a tenant. Only after the complete
 free phase has fewer than the configured plausible phrase-level signals may
@@ -298,12 +300,12 @@ ARCLI_STACKEXCHANGE_INGESTION_ENABLED=true
 ARCLI_GITHUB_INGESTION_ENABLED=true
 ARCLI_LEMMY_INGESTION_ENABLED=true
 
-# Two pages per phrase/source by default. Redis shares
-# this 15-minute query dedupe window across workers and tenants. To raise the
-# global cap, also raise the relevant provider cap (for example,
-# ARCLI_BLUESKY_MAX_PAGES) because provider caps remain the hard safety limit.
+# Two pages per phrase/source by default. Provider pacing and global post
+# deduplication bound repeated searches across tenant activations. Do not
+# enable the optional global request-claim cache until it supports replaying
+# source-post references for each tenant.
 ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES=2
-ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS=900
+ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED=false
 
 # Optional credentials improve free API quotas; never expose them to clients.
 ARCLI_STACKEXCHANGE_API_KEY=...
@@ -320,6 +322,23 @@ ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS=86400
 # with cached completed embeddings are used, so this does not re-embed them.
 ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT=100
 ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES=15
+
+# A verified first signal can complete the visible initial phase after one
+# minute. No public search promises a minimum number of leads; the background
+# scan remains bounded to five minutes and starts corpus rematching at two.
+ARCLI_INITIAL_PUBLIC_DISCOVERY_TARGET_READY=1
+ARCLI_INITIAL_PUBLIC_DISCOVERY_MIN_SECONDS=60
+ARCLI_INITIAL_PUBLIC_REMATCH_AFTER_SECONDS=120
+ARCLI_INITIAL_PUBLIC_DISCOVERY_MAX_SECONDS=300
+
+# Bound Pro by source, embedding, verifier, and paid-provider work instead of
+# a lead-volume entitlement. These are rolling 30-day operational controls.
+ARCLI_DISCOVERY_USAGE_GUARD_ENABLED=true
+ARCLI_DISCOVERY_USAGE_WINDOW_SECONDS=2592000
+ARCLI_PRO_MONTHLY_SOURCE_REQUEST_LIMIT=480
+ARCLI_PRO_MONTHLY_FRESH_EMBEDDING_POST_LIMIT=600
+ARCLI_PRO_MONTHLY_VERIFIER_CALL_LIMIT=300
+ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT=20
 
 # A verifier-confirmed plausible signal is stored as discovery_candidate until
 # it reaches the higher Ready for review threshold.

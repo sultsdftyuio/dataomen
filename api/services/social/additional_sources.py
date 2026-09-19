@@ -262,26 +262,45 @@ def _additional_public_source_max_pages() -> int:
 
 
 
-def additional_public_source_cache_scope(source: str) -> str:
+def additional_public_source_cache_scope(
+    source: str,
+    *,
+    community_selector: str | None = None,
+) -> str:
     """Include provider routing configuration in the global query-cache key."""
     if source == "bluesky":
         from api.services.integrations.bluesky_connector import BLUESKY_SEARCH_POSTS_URL
 
-        return (os.getenv("ARCLI_BLUESKY_SEARCH_URL") or BLUESKY_SEARCH_POSTS_URL).strip()
+        base_scope = (os.getenv("ARCLI_BLUESKY_SEARCH_URL") or BLUESKY_SEARCH_POSTS_URL).strip()
+        return (
+            f"{base_scope}:community={community_selector}"
+            if community_selector
+            else base_scope
+        )
     if source == "stackexchange":
         configured_site = os.getenv("ARCLI_STACKEXCHANGE_SITE", "").strip() or "auto"
-        return f"{configured_site}:recall-v2"
+        return f"{community_selector or configured_site}:recall-v2"
     if source == "github":
-        return "recall-v2"
+        return f"recall-v2:community={community_selector}" if community_selector else "recall-v2"
     if source == "lemmy":
         from api.services.integrations.lemmy_connector import LEMMY_SEARCH_URL
 
-        return (os.getenv("ARCLI_LEMMY_SEARCH_URL") or LEMMY_SEARCH_URL).strip()
+        base_scope = (os.getenv("ARCLI_LEMMY_SEARCH_URL") or LEMMY_SEARCH_URL).strip()
+        return (
+            f"{base_scope}:community={community_selector}"
+            if community_selector
+            else base_scope
+        )
     return ""
 
 
 
-def _additional_public_source_connector(source: str, *, query: str | None = None) -> Any:
+def _additional_public_source_connector(
+    source: str,
+    *,
+    query: str | None = None,
+    community_selector: str | None = None,
+) -> Any:
     """Instantiate an adapter lazily so unrelated provider dependencies stay cold."""
     if source == "bluesky":
         from api.services.integrations.bluesky_connector import BlueskyConnector
@@ -290,17 +309,34 @@ def _additional_public_source_connector(source: str, *, query: str | None = None
     if source == "stackexchange":
         from api.services.integrations.stackexchange_connector import StackExchangeConnector
 
-        return StackExchangeConnector(site=_stackexchange_site_for_query(query or ""))
+        return StackExchangeConnector(
+            site=community_selector or _stackexchange_site_for_query(query or ""),
+        )
     if source == "github":
         from api.services.integrations.github_connector import GitHubIssuesConnector
 
-        return GitHubIssuesConnector()
+        return GitHubIssuesConnector(repository=community_selector)
     if source == "lemmy":
         from api.services.integrations.lemmy_connector import LemmyConnector
 
         return LemmyConnector()
     raise ValueError(f"unsupported additional public source: {source}")
 
+
+def _post_matches_community_selector(
+    post: PublicSourcePost,
+    selector: str,
+) -> bool:
+    """Keep a customer-selected public place inside the retrieval boundary."""
+
+    metadata = post.metadata if isinstance(post.metadata, dict) else {}
+    values = (
+        str(metadata.get("community") or ""),
+        str(metadata.get("repository") or ""),
+        str(post.author_handle or ""),
+        str(post.url or ""),
+    )
+    return any(selector in value.casefold() for value in values if value)
 
 
 def ingest_additional_public_source_posts(
@@ -310,6 +346,7 @@ def ingest_additional_public_source_posts(
     posts_per_query: int | None = None,
     *,
     query_type: str | None = None,
+    community_selector: str | None = None,
 ) -> AdditionalPublicSourceIngestionResult:
     """Fetch one free/low-cost source, retain credible buyer signals, and return refs.
 
@@ -334,6 +371,7 @@ def ingest_additional_public_source_posts(
     connector = _additional_public_source_connector(
         normalized_source,
         query=normalized_query,
+        community_selector=community_selector,
     )
     posts: list[PublicSourcePost] = asyncio.run(
         connector.fetch_recent_posts(
@@ -343,6 +381,13 @@ def ingest_additional_public_source_posts(
             max_pages=_additional_public_source_max_pages(),
         )
     )
+    normalized_selector = normalise_text(community_selector).casefold()
+    if normalized_selector:
+        posts = [
+            post
+            for post in posts
+            if _post_matches_community_selector(post, normalized_selector)
+        ]
     admission_reasons_by_ref: dict[tuple[str, str], tuple[str, ...]] = {}
     if not posts:
         result = AdditionalPublicSourceIngestionResult(

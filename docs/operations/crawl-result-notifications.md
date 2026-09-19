@@ -6,7 +6,7 @@ Keep `ARCLI_CRAWL_RESULT_EMAILS_ENABLED=false` for the first deployment. Confirm
 
 - `ARCLI_CRAWL_RESULT_EMAIL_API_KEY` is a Resend API key with permission to send;
 - `ARCLI_CRAWL_RESULT_EMAIL_SENDER` is a verified sender in the form `Arcli <notifications@example.com>`;
-- `ARCLI_DASHBOARD_URL` is the public HTTPS dashboard URL; and
+- `ARCLI_DASHBOARD_URL` is the public HTTPS dashboard URL (`https://www.arcli.tech/dashboard` in this deployment); and
 - the normal worker consumes the `notifications` queue.
 
 Then enable the flag and run one controlled Free and Pro crawl. The first test should create one outbox row per workspace owner/admin and one Resend event per row. Replaying the same crawl or discovery terminal event must not create another email because the outbox uses `(tenant_id, user_id, event_key)` as its durable idempotency boundary.

@@ -24,7 +24,7 @@ worker can retrieve posts but cannot retain raw or plausible candidates.
   project's JWKS endpoint.
 - `SUPABASE_SERVICE_ROLE_KEY`: server-only public-source storage and trusted
   worker writes. Never expose this key to the browser.
-- `REDIS_URL`: Dramatiq, source-query cache, and tenant quotas.
+- `REDIS_URL`: Dramatiq, tenant quotas, and the optional source-query cache.
 - `INTERNAL_WORKER_SECRET`: trusted handoffs from the Next.js server to the
   Python API.
 - `OPENAI_API_KEY`: website profile extraction, embeddings, and the lead
@@ -68,6 +68,25 @@ reviewing cost. The activation path permits at most one single-page fallback
 and observes the tenant quota. It is suppressed only after sufficiently varied
 plausible free-source coverage (default: three query types).
 
+### Pro discovery cost controls
+
+Pro is limited by the work that creates variable cost, not by a number of
+leads. Enable the rolling 30-day guard only when `REDIS_URL` is available:
+
+```text
+ARCLI_DISCOVERY_USAGE_GUARD_ENABLED=true
+ARCLI_DISCOVERY_USAGE_WINDOW_SECONDS=2592000
+ARCLI_PRO_MONTHLY_SOURCE_REQUEST_LIMIT=480
+ARCLI_PRO_MONTHLY_FRESH_EMBEDDING_POST_LIMIT=600
+ARCLI_PRO_MONTHLY_VERIFIER_CALL_LIMIT=300
+ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT=20
+```
+
+The system records each accepted or limited reservation in the tenant-scoped
+discovery report. Recalibrate these values from the 95th-percentile run after
+the first operating month; do not replace them with a customer-visible lead
+volume promise.
+
 ## Customer Watchlists
 
 Watchlists let a workspace owner define a specific buyer group, its real-world
@@ -79,9 +98,12 @@ using natural buyer-language queries. Results live in the tenant-scoped
 
 The default Watchlist sources are Hacker News, Bluesky, Lemmy, Stack Exchange,
 and GitHub. X is off unless the user explicitly selects it and the deployment
-has its existing X credentials and enablement flag. Community names or URLs
-entered by users are retained as prioritization notes; this release does not
-claim to access private groups or unsupported communities.
+has its existing X credentials and enablement flag. Explicit public selectors
+such as `github:owner/repository` and `stackexchange:stackoverflow` now become
+source-native retrieval boundaries; supported Lemmy and Bluesky selectors are
+filtered before a post enters embedding. Free-text places remain notes rather
+than brittle filters. This release does not access private groups or unsupported
+communities.
 
 Configure the trusted Next.js-to-worker handoff in addition to the standard
 worker settings:

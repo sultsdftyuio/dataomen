@@ -146,6 +146,7 @@ def _source_result_for_additional_source(
     *,
     since_hours_ago: int,
     posts_per_query: int,
+    community_selectors: Sequence[str] = (),
 ) -> FastCheckSourceResult:
     from api.services.social_ingestion import (
         additional_public_source_cache_scope,
@@ -157,93 +158,99 @@ def _source_result_for_additional_source(
 
     outcomes: list[FastCheckQueryOutcome] = []
     refs: dict[tuple[str, str], Any] = {}
-    cache_scope = additional_public_source_cache_scope(source)
-    for query in queries:
-        if not additional_public_source_supports_discovery_query(source, query["phrase"]):
-            outcomes.append(
-                FastCheckQueryOutcome(
-                    source=source,
-                    query_type=query["query_type"],
-                    query=query["phrase"],
-                    outcome="skipped",
-                )
-            )
-            continue
-
-        if not claim_additional_public_source_query(
-            source=source,
-            query=query["phrase"],
-            since_hours_ago=since_hours_ago,
-            scope=cache_scope,
-        ):
-            outcomes.append(
-                FastCheckQueryOutcome(
-                    source=source,
-                    query_type=query["query_type"],
-                    query=query["phrase"],
-                    outcome="cached",
-                )
-            )
-            continue
-
-        try:
-            result = ingest_additional_public_source_posts(
-                source=source,
-                query=query["phrase"],
-                since_hours_ago=since_hours_ago,
-                posts_per_query=posts_per_query,
-                query_type=query["query_type"],
-            )
-        except Exception as exc:
-            response = getattr(exc, "response", None)
-            status_code = getattr(response, "status_code", None)
-            release_additional_public_source_query(
-                source=source,
-                query=query["phrase"],
-                since_hours_ago=since_hours_ago,
-                scope=cache_scope,
-            )
-            outcomes.append(
-                FastCheckQueryOutcome(
-                    source=source,
-                    query_type=query["query_type"],
-                    query=query["phrase"],
-                    outcome="failed",
-                    error_type=exc.__class__.__name__,
-                    status_code=status_code if isinstance(status_code, int) else None,
-                )
-            )
-            # As above, one source outage should not burn its remaining query
-            # budget, but it must not hold back the other providers.
-            break
-
-        # Empty source responses are not useful cache entries. Holding the
-        # claim for the TTL made a newly indexed post invisible until a later
-        # run, which is especially damaging during first-time discovery.
-        if int(result.hits_found) == 0:
-            release_additional_public_source_query(
-                source=source,
-                query=query["phrase"],
-                since_hours_ago=since_hours_ago,
-                scope=cache_scope,
-            )
-
-        query_refs = tuple(result.matchable_source_post_refs)
-
-        outcomes.append(
-            FastCheckQueryOutcome(
-                source=source,
-                query_type=query["query_type"],
-                query=query["phrase"],
-                outcome="completed",
-                hits_found=max(0, int(result.hits_found)),
-                plausible_hits=max(0, int(result.plausible_hits)),
-                inserted_count=max(0, int(result.inserted_count)),
-                source_post_refs=query_refs,
-            )
+    selectors = tuple(dict.fromkeys(selector for selector in community_selectors if selector)) or (None,)
+    for community_selector in selectors:
+        cache_scope = additional_public_source_cache_scope(
+            source,
+            community_selector=community_selector,
         )
-        for ref in query_refs:
-            _keep_higher_priority_ref(refs, ref)
+        for query in queries:
+            if not additional_public_source_supports_discovery_query(source, query["phrase"]):
+                outcomes.append(
+                    FastCheckQueryOutcome(
+                        source=source,
+                        query_type=query["query_type"],
+                        query=query["phrase"],
+                        outcome="skipped",
+                    )
+                )
+                continue
+
+            if not claim_additional_public_source_query(
+                source=source,
+                query=query["phrase"],
+                since_hours_ago=since_hours_ago,
+                scope=cache_scope,
+            ):
+                outcomes.append(
+                    FastCheckQueryOutcome(
+                        source=source,
+                        query_type=query["query_type"],
+                        query=query["phrase"],
+                        outcome="cached",
+                    )
+                )
+                continue
+
+            try:
+                result = ingest_additional_public_source_posts(
+                    source=source,
+                    query=query["phrase"],
+                    since_hours_ago=since_hours_ago,
+                    posts_per_query=posts_per_query,
+                    query_type=query["query_type"],
+                    community_selector=community_selector,
+                )
+            except Exception as exc:
+                response = getattr(exc, "response", None)
+                status_code = getattr(response, "status_code", None)
+                release_additional_public_source_query(
+                    source=source,
+                    query=query["phrase"],
+                    since_hours_ago=since_hours_ago,
+                    scope=cache_scope,
+                )
+                outcomes.append(
+                    FastCheckQueryOutcome(
+                        source=source,
+                        query_type=query["query_type"],
+                        query=query["phrase"],
+                        outcome="failed",
+                        error_type=exc.__class__.__name__,
+                        status_code=status_code if isinstance(status_code, int) else None,
+                    )
+                )
+                # Continue a different explicitly selected place. A failure
+                # in one repository/site must not hide the other targets.
+                break
+
+            # Empty source responses are not useful cache entries. Holding the
+            # claim for the TTL made a newly indexed post invisible until a later
+            # run, which is especially damaging during first-time discovery.
+            if int(result.hits_found) == 0:
+                release_additional_public_source_query(
+                    source=source,
+                    query=query["phrase"],
+                    since_hours_ago=since_hours_ago,
+                    scope=cache_scope,
+                )
+
+            query_refs = tuple(result.matchable_source_post_refs)
+
+            outcomes.append(
+                FastCheckQueryOutcome(
+                    source=source,
+                    query_type=query["query_type"],
+                    query=query["phrase"],
+                    outcome="completed",
+                    hits_found=max(0, int(result.hits_found)),
+                    plausible_hits=max(0, int(result.plausible_hits)),
+                    inserted_count=max(0, int(result.inserted_count)),
+                    source_post_refs=query_refs,
+                )
+            )
+            for ref in query_refs:
+                _keep_higher_priority_ref(refs, ref)
 
     return FastCheckSourceResult(
         source=source,
@@ -259,6 +266,7 @@ def run_fast_public_source_check(
     since_hours_ago: int,
     posts_per_query: int,
     max_concurrency: int,
+    community_targets: Sequence[dict[str, str]] | None = None,
     on_source_completed: Callable[[FastCheckSourceResult], None] | None = None,
 ) -> list[FastCheckSourceResult]:
     """Collect selected public sources concurrently and yield each completion.
@@ -276,21 +284,39 @@ def run_fast_public_source_check(
     if not normalized_sources:
         return []
 
+    selectors_by_source: dict[str, tuple[str, ...]] = {}
+    for target in community_targets or ():
+        if not isinstance(target, dict):
+            continue
+        source = str(target.get("source") or "").strip().casefold()
+        selector = str(target.get("selector") or "").strip().casefold()
+        if source and selector and source in normalized_sources:
+            selectors_by_source[source] = tuple(
+                dict.fromkeys((*selectors_by_source.get(source, ()), selector))
+            )
+
     worker_count = max(1, min(max_concurrency, len(normalized_sources)))
     completed: list[FastCheckSourceResult] = []
     with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="arcli-source") as executor:
-        futures = {
-            executor.submit(
-                _source_result_for_hackernews
-                if source == "hackernews"
-                else _source_result_for_additional_source,
-                *(() if source == "hackernews" else (source,)),
-                queries,
-                since_hours_ago=since_hours_ago,
-                posts_per_query=posts_per_query,
-            ): source
-            for source in normalized_sources
-        }
+        futures = {}
+        for source in normalized_sources:
+            if source == "hackernews":
+                future = executor.submit(
+                    _source_result_for_hackernews,
+                    queries,
+                    since_hours_ago=since_hours_ago,
+                    posts_per_query=posts_per_query,
+                )
+            else:
+                future = executor.submit(
+                    _source_result_for_additional_source,
+                    source,
+                    queries,
+                    since_hours_ago=since_hours_ago,
+                    posts_per_query=posts_per_query,
+                    community_selectors=selectors_by_source.get(source, ()),
+                )
+            futures[future] = source
         for future in as_completed(futures):
             source = futures[future]
             try:

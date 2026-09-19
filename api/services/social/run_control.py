@@ -14,12 +14,13 @@ from api.services.embeddings import _database_engine
 
 @dataclass(frozen=True)
 class InitialDiscoveryRunLimits:
-    """The non-negotiable user-facing bounds for an activation discovery run."""
+    """User-facing bounds for an asynchronous activation discovery run."""
 
     target_ready_for_review: int
     minimum_seconds: int
     maximum_seconds: int
     poll_seconds: int
+    rematch_after_seconds: int = 120
 
 
 def _int_env(name: str, default: int) -> int:
@@ -30,11 +31,16 @@ def _int_env(name: str, default: int) -> int:
 
 
 def initial_discovery_run_limits() -> InitialDiscoveryRunLimits:
-    """Return limits clamped to the promised 3-find, 2-5 minute contract."""
+    """Return a fast-preview window and a bounded background completion window.
+
+    A public search cannot honestly promise a number of buyer conversations.
+    One verified signal is enough to make the first result visible after a
+    minute; otherwise discovery continues in the background for up to five.
+    """
 
     minimum_seconds = max(
-        120,
-        _int_env("ARCLI_INITIAL_PUBLIC_DISCOVERY_MIN_SECONDS", 120),
+        60,
+        _int_env("ARCLI_INITIAL_PUBLIC_DISCOVERY_MIN_SECONDS", 60),
     )
     maximum_seconds = min(
         300,
@@ -45,11 +51,21 @@ def initial_discovery_run_limits() -> InitialDiscoveryRunLimits:
     )
     return InitialDiscoveryRunLimits(
         target_ready_for_review=max(
-            3,
-            _int_env("ARCLI_INITIAL_PUBLIC_DISCOVERY_TARGET_READY", 3),
+            1,
+            _int_env("ARCLI_INITIAL_PUBLIC_DISCOVERY_TARGET_READY", 1),
         ),
         minimum_seconds=minimum_seconds,
         maximum_seconds=maximum_seconds,
+        rematch_after_seconds=min(
+            maximum_seconds,
+            max(
+                minimum_seconds,
+                _int_env(
+                    "ARCLI_INITIAL_PUBLIC_REMATCH_AFTER_SECONDS",
+                    120,
+                ),
+            ),
+        ),
         poll_seconds=max(
             5,
             min(
@@ -79,11 +95,12 @@ def next_monitor_delay_seconds(
 
     if elapsed_seconds >= limits.maximum_seconds:
         return None
-    boundary = (
-        limits.minimum_seconds
-        if elapsed_seconds < limits.minimum_seconds
-        else limits.maximum_seconds
-    )
+    boundaries = [limits.maximum_seconds]
+    if elapsed_seconds < limits.minimum_seconds:
+        boundaries.append(limits.minimum_seconds)
+    if elapsed_seconds < limits.rematch_after_seconds:
+        boundaries.append(limits.rematch_after_seconds)
+    boundary = min(boundaries)
     remaining = max(1.0, boundary - elapsed_seconds)
     return max(1, min(limits.poll_seconds, math.ceil(remaining)))
 
@@ -93,11 +110,7 @@ def ready_for_review_count_since(
     service_profile_id: str,
     started_at: str,
 ) -> int:
-    """Count new user-visible finds created during this activation run.
-
-    ``created_at`` is intentional: an old item that remains in the review
-    queue must not make a new run appear to have found three new posts.
-    """
+    """Count new user-visible finds created during this activation run."""
 
     with _database_engine().begin() as conn:
         result = conn.execute(

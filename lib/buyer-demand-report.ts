@@ -289,7 +289,9 @@ export function deriveDiscoverySourceProgress(
   const progress = new Map<string, MutableProgress>();
   const ensure = (source: string) => {
     const key = normalizedSourceName(source);
-    if (!key || key === "public_sources") return null;
+    // Cost-control events belong to the operational audit trail, not the
+    // public-source progress list shown to a customer.
+    if (!key || key === "public_sources" || key === "cost_control") return null;
 
     const existing = progress.get(key);
     if (existing) return existing;

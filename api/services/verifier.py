@@ -51,9 +51,10 @@ VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 # Persist this alongside a verdict. Bump it only when verifier instructions
 # materially change lead eligibility, so cached decisions cannot survive a
 # policy change while preserving normal tenant-scoped cache reuse.
-# v8 keeps the established eligibility rules, but refreshes cached output so
-# reviewers receive the more context-aware reply draft below.
-VERIFIER_POLICY_VERSION = "buyer_outcome_v8_contextual_reply_and_switching"
+# v9 widens the review-only opportunity lane. It keeps the high-confidence
+# threshold for strong signals, but lets a match at the 0.20 relevance floor
+# remain visible for human judgment instead of treating it as a rejection.
+VERIFIER_POLICY_VERSION = "buyer_outcome_v9_broader_review_opportunities"
 DEFAULT_VERIFIER_MAX_POST_CHARS = 12_000
 DEFAULT_VERIFIER_MAX_PROFILE_FIELD_CHARS = 750
 DEFAULT_VERIFIER_MAX_PROFILE_LIST_ITEMS = 12
@@ -175,14 +176,14 @@ class VerifierService(OpenAIClientOwner):
         "audience, problem solved, pain points, buying triggers, urgency signals, "
         "search_terms, named competitors, negative keywords, and excluded audiences as weighted "
         "relevance signals, not a checklist or hard requirements. Similar words or "
-        "a product category alone are not evidence. A main lead must show a clear, "
+        "a product category alone are not evidence. A strong signal must show a clear, "
         "real buyer problem that the service could plausibly solve. Return "
         "`strong_match` only for that direct evidence: a specific request, urgency, "
         "evaluation, tool/category search, switching signal, or concrete problem. "
-        "A Potential buyer can be an earlier but still credible buyer signal: a relevant "
+        "A relevant opportunity can be an earlier but still credible buyer signal: a relevant "
         "question, investigation, workflow frustration, failed outcome, or request from "
         "a person or team that the service could plausibly help. Return `match: true` and "
-        "`weak_match` for a Potential buyer, even if the writer is not an exact target "
+        "`weak_match` for a relevant opportunity, even if the writer is not an exact target "
         "persona, does not mention every profile field, or does not explicitly say they "
         "are shopping for a solution. Do not require the writer to use the vendor's product-category, "
         "internal workflow, or operator terminology when they clearly describe the "
@@ -190,8 +191,9 @@ class VerifierService(OpenAIClientOwner):
         "software team find customers, an in-context team explicitly needing more "
         "signups or customers, asking how to reach customers, or struggling with "
         "manual outreach can be a match even without words such as prospect, lead, "
-        "account matching, or buyer intent. Calibrate confidence so 0.30-0.54 represents a plausible "
-        "Potential buyer and 0.55+ represents a clear main lead ready for human review. "
+        "account matching, or buyer intent. Calibrate confidence so 0.20-0.54 represents a plausible "
+        "relevant opportunity and 0.55+ represents a clear strong signal ready for human review. "
+        "Confidence is a relative relevance ranking, not a prediction that the author will buy. "
         "Treat a complaint about an existing tool, an architecture or best-practice "
         "question, and frustration with a manual workflow as potentially commercial "
         "signals when they describe an outcome this service can plausibly improve. "
@@ -252,6 +254,7 @@ class VerifierService(OpenAIClientOwner):
         *,
         tenant_id: str | None = None,
         service_profile_id: str | None = None,
+        discovery_run_id: str | None = None,
         enforce_similarity_gate: bool = True,
     ) -> VerificationResult:
         resolved_tenant_id = tenant_id or str(candidate_post.metadata.get("tenant_id", "unknown"))
@@ -286,6 +289,40 @@ class VerifierService(OpenAIClientOwner):
                 result.rejection_reason,
             )
             return result
+
+        # A lead-result quota would not contain model spend: rejected and
+        # zero-result searches still require verification. Reserve this call
+        # against the workspace's rolling discovery budget immediately before
+        # the provider request instead.
+        if resolved_tenant_id != "unknown":
+            from api.services.social.usage_meter import claim_discovery_usage
+
+            monthly_claim = claim_discovery_usage(
+                resolved_tenant_id,
+                "verifier_call",
+                discovery_run_id=discovery_run_id,
+            )
+            if not monthly_claim.allowed:
+                result = VerificationResult(
+                    match=False,
+                    decision_label="not_a_match",
+                    confidence=0.0,
+                    pain_detected="",
+                    why_this_matches="Verification is deferred because this workspace has reached its current discovery budget.",
+                    rejection_reason=monthly_claim.reason,
+                    verifier_executed=False,
+                )
+                logger.warning(
+                    "llm_verifier_skipped tenant_id=%s service_profile_id=%s source_post_id=%s similarity_score=%.3f rejection_reason=%s current_count=%s limit=%s",
+                    resolved_tenant_id,
+                    resolved_service_profile_id,
+                    candidate_post.post_id,
+                    candidate_post.similarity_score,
+                    result.rejection_reason,
+                    monthly_claim.current,
+                    monthly_claim.limit,
+                )
+                return result
 
         quota = self.quota_guard.check_and_increment(
             tenant_id=resolved_tenant_id,
@@ -604,6 +641,7 @@ def verify_candidate_safely(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
 ) -> VerificationResult:
     """Return a normal rejected verdict when one candidate cannot be evaluated.
 
@@ -618,6 +656,7 @@ def verify_candidate_safely(
             service_profile,
             tenant_id=tenant_id,
             service_profile_id=service_profile_id,
+            discovery_run_id=discovery_run_id,
         )
     except Exception as exc:
         logger.exception(

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { fetchBuyerDemandReport } from "../app/(dashboard)/dashboard/data";
 import {
+  deriveDiscoverySourceProgress,
   deriveBuyerDemandPatterns,
   isTerminalDiscoveryRunStatus,
   parseDiscoveryRunSummary,
@@ -126,6 +127,30 @@ test("treats completed, degraded, skipped, and failed reports as terminal", () =
   assert.equal(isTerminalDiscoveryRunStatus("skipped"), true);
   assert.equal(isTerminalDiscoveryRunStatus("failed"), true);
   assert.equal(isTerminalDiscoveryRunStatus("running"), false);
+});
+
+test("keeps internal cost-control events out of customer source progress", () => {
+  const progress = deriveDiscoverySourceProgress(
+    parseDiscoveryRunSummary({}),
+    [
+      {
+        source: "cost_control",
+        phase: "budget",
+        outcome: "limited",
+        details: { reason: "monthly_cost_budget_reached" },
+        occurredAt: "2026-09-19T00:00:00.000Z",
+      },
+      {
+        source: "github",
+        phase: "source",
+        outcome: "completed",
+        details: { hits_found: 1, plausible_hits: 1, new_inserts: 1 },
+        occurredAt: "2026-09-19T00:00:01.000Z",
+      },
+    ],
+  );
+
+  assert.deepEqual(progress.map((item) => item.source), ["github"]);
 });
 
 test("keeps refreshing briefly while terminal scan verification is pending", () => {

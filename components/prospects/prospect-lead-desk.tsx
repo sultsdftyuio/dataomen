@@ -50,7 +50,6 @@ type ProspectLeadDeskProps = {
   potentialBuyers: QualifiedLeadView[];
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
-  verificationThreshold: number;
   reviewedConversationCount: number;
   screenedMatches: QualifiedLeadView[];
   filteredQueueItems: QualifiedLeadView[];
@@ -227,15 +226,15 @@ function leadStatus(lead: QualifiedLeadView) {
   if (lead.matchStatus === "qualified") {
     return {
       label: "Qualified",
-      description: "This signal meets your qualification criteria.",
+      description: "You marked this opportunity qualified.",
       color: C.green,
       background: C.greenPale,
     };
   }
   if (isPotentialBuyer(lead)) {
     return {
-      label: "Potential",
-      description: "This signal is related to your brief but is not lead-ready yet.",
+      label: "Relevant",
+      description: "A plausible public conversation to review, not a confirmed buyer.",
       color: C.amber,
       background: C.amberPale,
     };
@@ -243,14 +242,14 @@ function leadStatus(lead: QualifiedLeadView) {
   if (isScreenedMatch(lead)) {
     return {
       label: "Screened out",
-      description: "This signal did not meet the verification criteria for the lead queue.",
+      description: "Automated review did not find a plausible enough fit for the opportunity inbox.",
       color: C.muted,
       background: C.offWhite,
     };
   }
   return {
-    label: "Review",
-    description: "This signal is ready for your review.",
+    label: "Strong",
+    description: "A clear public buyer problem worth reviewing, not a confirmed customer.",
     color: C.blue,
     background: C.bluePale,
   };
@@ -282,7 +281,6 @@ export function ProspectLeadDesk({
   potentialBuyers,
   buyerGroupSuggestions,
   activateBuyerGroup,
-  verificationThreshold,
   reviewedConversationCount,
   screenedMatches,
   filteredQueueItems,
@@ -382,10 +380,10 @@ export function ProspectLeadDesk({
       <header className="flex shrink-0 flex-col gap-2 border-b pb-2 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
         <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
           <h1 className="pfd shrink-0 text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
-            Leads
+            Opportunities
           </h1>
           <p className="max-w-4xl text-[12px] leading-5" style={{ color: C.navySoft }}>
-            Start with a website-derived direction, then review public buyer signals with the clearest evidence and closest fit first.
+            Arcli ranks public conversations worth your time, not guaranteed customers. Match strength measures relevance to your website—not purchase likelihood.
           </p>
         </div>
 
@@ -422,16 +420,16 @@ export function ProspectLeadDesk({
         </label>
 
         <LeadControlSelect label="View" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
-          <option value="all">Lead inbox</option>
-          <option value="leads">Ready to review</option>
-          <option value="potential">Potential buyers</option>
+          <option value="all">Opportunity inbox</option>
+          <option value="leads">Strong signals</option>
+          <option value="potential">Relevant signals</option>
           <option value="screened">Screened-out audit</option>
         </LeadControlSelect>
 
-        <LeadControlSelect label="Confidence" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
+        <LeadControlSelect label="Match strength" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
           <option value="all">All levels</option>
           <option value="high">High (80%+)</option>
-          <option value="sixty_plus">60%+</option>
+          <option value="sixty_plus">60%+ strength</option>
         </LeadControlSelect>
 
         <LeadControlSelect label="Source" value={queueSource} onChange={onSourceChange}>
@@ -444,7 +442,7 @@ export function ProspectLeadDesk({
         <LeadControlSelect label="Sort" value={queueSort} onChange={(value) => onSortChange(value as QueueSort)}>
           <option value="priority">Most relevant</option>
           <option value="newest">Newest first</option>
-          <option value="confidence">Confidence</option>
+          <option value="confidence">Match strength</option>
         </LeadControlSelect>
 
         <div className="flex items-center gap-1.5 xl:justify-end">
@@ -471,13 +469,13 @@ export function ProspectLeadDesk({
         className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Reviewed conversations" value={metricValue(reviewedConversationCount)} icon={<Radar className="size-5" />} />
-        <Metric label="Lead-ready signals" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} />
-        <Metric label="Potential buyers" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} />
+        <Metric label="Conversations assessed" value={metricValue(reviewedConversationCount)} icon={<Radar className="size-5" />} />
+        <Metric label="Strong signals" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} />
+        <Metric label="Relevant opportunities" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} />
         <Metric
           label="Screened out"
           value={metricValue(screenedMatches.length)}
-          detail="Not lead-ready"
+          detail="Not a fit"
           icon={<Network className="size-5" />}
           tone="quiet"
         />
@@ -534,7 +532,7 @@ export function ProspectLeadDesk({
             <span>Source &amp; conversation</span>
             <span>Signal</span>
             <span>Latest evidence</span>
-            <span>Confidence</span>
+            <span>Match strength</span>
             <span>Age</span>
             <span>Status</span>
           </div>
@@ -587,8 +585,8 @@ export function ProspectLeadDesk({
                   </div>
                   <p className="mt-1 text-xs" style={{ color: C.muted }}>
                     {isScreenedMatch(selectedLead)
-                      ? "Semantically related, but not verified as a buyer opportunity."
-                      : "Public-source evidence, not a verified company record."}
+                      ? "Semantically related, but not a reviewable opportunity."
+                      : "Public-source evidence, not a confirmed customer."}
                   </p>
                 </div>
               </div>
@@ -612,7 +610,7 @@ export function ProspectLeadDesk({
                 </div>
 
                 {isScreenedMatch(selectedLead) ? (
-                  <ScreenedMatchOutcome lead={selectedLead} verificationThreshold={verificationThreshold} />
+                  <ScreenedMatchOutcome lead={selectedLead} />
                 ) : null}
 
                 <div className="grid grid-cols-2 gap-3">
@@ -627,7 +625,11 @@ export function ProspectLeadDesk({
                     </>
                   ) : (
                     <>
-                      <DetailStat label="Confidence" value={formatScore(selectedLead.verifierScore)} />
+                      <DetailStat
+                        label="Match strength"
+                        value={formatScore(selectedLead.verifierScore)}
+                        title="Ranks relevance to your website; it is not a likelihood of purchase."
+                      />
                       <DetailStat
                         label="Observed"
                         value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
@@ -963,7 +965,14 @@ function LeadRow({
         <span className="block line-clamp-2 text-[13px] lg:truncate" title={evidencePreview(lead)} style={{ color: C.navySoft }}>{evidencePreview(lead)}</span>
         <span className="block truncate text-[11px]" title={lead.matchReason} style={{ color: C.muted }}>{lead.matchReason}</span>
       </span>
-      <span className="text-sm font-semibold" style={{ color: C.navy }}>{formatScore(lead.verifierScore)}</span>
+      <span
+        className="text-sm font-semibold"
+        title="Match strength ranks relevance to your website; it is not purchase likelihood."
+        aria-label={`Match strength ${formatScore(lead.verifierScore)}`}
+        style={{ color: C.navy }}
+      >
+        {formatScore(lead.verifierScore)}
+      </span>
       <span className="text-xs" title={exactDateTime(lead.sourcePost.publishedAt ?? lead.matchedAt)} aria-label={`Observed ${exactDateTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}`} style={{ color: C.muted }}>{relativeTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}</span>
       <span className="justify-self-start rounded-full px-2 py-1 text-[10px] font-semibold" title={status.description} aria-label={`${status.label}. ${status.description}`} style={{ backgroundColor: status.background, color: status.color }}>{status.label}</span>
     </button>
@@ -988,15 +997,7 @@ function DetailStat({ label, value, title }: { label: string; value: string; tit
   );
 }
 
-function ScreenedMatchOutcome({
-  lead,
-  verificationThreshold,
-}: {
-  lead: QualifiedLeadView;
-  verificationThreshold: number;
-}) {
-  const scoreGap = Math.max(0, verificationThreshold - lead.verifierScore);
-  const isBelowQueueThreshold = scoreGap > 0;
+function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
 
   return (
     <section className="overflow-hidden rounded-xl border" aria-label="Verification review" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
@@ -1006,27 +1007,25 @@ function ScreenedMatchOutcome({
         </span>
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Verification review</p>
-          <h3 className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>Screened out of the lead queue</h3>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>The record is available for inspection, but it did not meet the rules to become a lead.</p>
+          <h3 className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>Screened out of the opportunity inbox</h3>
+          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>The record is available for inspection, but automated review found no plausible enough fit.</p>
         </div>
       </div>
 
       <dl className="grid grid-cols-3 divide-x border-y" style={{ borderColor: C.ruleDark }}>
         <VerificationMetric
-          label="Semantic relevance"
+          label="Semantic similarity"
           value={lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
         />
-        <VerificationMetric label="Buyer evidence" value={formatScore(lead.verifierScore)} />
+        <VerificationMetric label="Match strength" value={formatScore(lead.verifierScore)} />
         <VerificationMetric
-          label={isBelowQueueThreshold ? "Gap to qualify" : "Review result"}
-          value={isBelowQueueThreshold ? formatScore(scoreGap) : "Screened"}
+          label="Review result"
+          value="Screened"
         />
       </dl>
 
       <p className="px-3 py-2.5 text-[11px] leading-4" style={{ color: C.muted }}>
-        {isBelowQueueThreshold
-          ? `A score of ${formatScore(verificationThreshold)} is required to enter the lead queue. Keep this record for source inspection or feedback.`
-          : "This record did not pass the automated verification review. Keep it for source inspection or feedback."}
+        Match strength ranks relevance to the website; it does not predict whether someone will buy. Keep this record for source inspection or feedback.
       </p>
     </section>
   );
@@ -1057,14 +1056,14 @@ function EmptyQueue({
   const title = showingScreenedAudit
     ? "No screened-out records match these filters"
     : hasProfile && hasScreenedMatches
-      ? "No lead-ready signals match these filters"
+      ? "No strong signals match these filters"
       : hasProfile
         ? "No signals match these filters"
         : "Your matching brief needs a little more detail";
   const detail = showingScreenedAudit
     ? "Try clearing a filter, or refresh after the next public-source scan completes."
     : hasProfile && hasScreenedMatches
-      ? `${screenedMatchCount} screened-out ${screenedRecordLabel} remain available in the audit, separate from leads and potential buyers.`
+      ? `${screenedMatchCount} screened-out ${screenedRecordLabel} remain available in the audit, separate from strong and relevant opportunities.`
       : hasProfile
         ? "Try clearing a filter, or refresh after the next public-source scan completes."
         : "Add the buyer, problem, and value proposition you want discovery to look for.";

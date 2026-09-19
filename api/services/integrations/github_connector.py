@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -26,6 +27,7 @@ from api.services.integrations.public_source import (
 
 
 GITHUB_ISSUES_SEARCH_URL = "https://api.github.com/search/issues"
+_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
 
 
 class GitHubIssueSourcePost(PublicSourcePost):
@@ -54,6 +56,7 @@ class GitHubIssuesConnector:
         max_attempts: int | None = None,
         max_pages: int | None = None,
         requests_per_minute: int | None = None,
+        repository: str | None = None,
     ) -> None:
         self.token = (
             token
@@ -91,6 +94,10 @@ class GitHubIssuesConnector:
             if requests_per_minute is not None
             else self._default_requests_per_minute(),
         )
+        normalized_repository = (repository or "").strip()
+        if normalized_repository and not _REPOSITORY_PATTERN.fullmatch(normalized_repository):
+            raise ValueError("repository must be an owner/repository selector")
+        self.repository = normalized_repository.casefold() or None
 
     def _default_max_pages(self) -> int:
         return env_positive_int(
@@ -122,7 +129,11 @@ class GitHubIssuesConnector:
         *,
         max_pages: int | None = None,
     ) -> list[GitHubIssueSourcePost]:
-        search_query = self._search_query(query, since_timestamp)
+        search_query = self._search_query(
+            query,
+            since_timestamp,
+            repository=self.repository,
+        )
         if limit < 1:
             return []
         if max_pages is not None and max_pages < 1:
@@ -200,7 +211,12 @@ class GitHubIssuesConnector:
         )
 
     @staticmethod
-    def _search_query(query: str, since_timestamp: int) -> str:
+    def _search_query(
+        query: str,
+        since_timestamp: int,
+        *,
+        repository: str | None = None,
+    ) -> str:
         phrase = compact_discovery_search_query(
             query,
             max_terms=env_positive_int("ARCLI_GITHUB_DISCOVERY_QUERY_TERMS", 2),
@@ -210,7 +226,11 @@ class GitHubIssuesConnector:
         if since_timestamp < 0:
             raise ValueError("since_timestamp must be a Unix timestamp")
         date = datetime.fromtimestamp(since_timestamp, tz=timezone.utc).date().isoformat()
-        return f"{clip_text(phrase, 200)} in:title,body is:issue is:public created:>={date}"
+        repository_filter = f" repo:{repository}" if repository else ""
+        return (
+            f"{clip_text(phrase, 200)} in:title,body is:issue is:public"
+            f"{repository_filter} created:>={date}"
+        )
 
     @staticmethod
     def _to_source_post(

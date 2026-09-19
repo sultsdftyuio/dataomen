@@ -413,6 +413,7 @@ def ingest_initial_public_sources_fast_job(
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
     discovery_run_id: str | None = None,
+    community_targets: Sequence[dict[str, str]] | None = None,
     run_completion_managed: bool = False,
 ) -> None:
     """Fan out public sources and close the discovery run only after all finish.
@@ -514,12 +515,36 @@ def ingest_initial_public_sources_fast_job(
         if not selected_refs:
             return 0
 
+        if tenant_id:
+            from api.services.social.usage_meter import claim_discovery_usage
+
+            embedding_claim = claim_discovery_usage(
+                tenant_id,
+                "fresh_embedding_post",
+                amount=len(selected_refs),
+                discovery_run_id=discovery_run_id,
+            )
+            if not embedding_claim.allowed:
+                embedding_posts_excluded += len(selected_refs)
+                logger.info(
+                    "initial_public_embedding_handoff_skipped tenant_id=%s service_profile_id=%s discovery_run_id=%s skip_reason=%s current=%s limit=%s selected_posts=%s",
+                    tenant_id,
+                    service_profile_id,
+                    discovery_run_id,
+                    embedding_claim.reason,
+                    embedding_claim.current,
+                    embedding_claim.limit,
+                    len(selected_refs),
+                )
+                return 0
+
         from api.services.social_ingestion import trigger_embedding_jobs
 
         return trigger_embedding_jobs(
             list(selected_refs),
             tenant_id=tenant_id,
             service_profile_id=service_profile_id,
+            discovery_run_id=discovery_run_id,
         )
 
     def on_source_completed(result: Any) -> None:
@@ -551,7 +576,11 @@ def ingest_initial_public_sources_fast_job(
 
             pool_entries: list[dict[str, Any]] = []
             for query_result in result.query_outcomes:
-                if query_result.outcome != "completed":
+                # A future cache implementation may replay post references
+                # for another tenant. Preserve that evidence exactly as a
+                # fresh source result; otherwise the UI can report a cached
+                # search while the candidate pool remains empty.
+                if query_result.outcome not in {"completed", "cached"}:
                     continue
                 for ref in query_result.source_post_refs:
                     ref_source = str(getattr(ref, "source", "") or source).strip()
@@ -673,6 +702,7 @@ def ingest_initial_public_sources_fast_job(
                 6,
                 _int_env("ARCLI_FAST_CHECK_SOURCE_CONCURRENCY", 4, minimum=1),
             ),
+            community_targets=community_targets,
             on_source_completed=on_source_completed,
         )
 
@@ -696,64 +726,84 @@ def ingest_initial_public_sources_fast_job(
             elif not _claim_tenant_x_fallback_budget(tenant_id):
                 x_fallback_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
             else:
-                from api.services.social_ingestion import (
-                    _result_source_post_refs,
-                    ingest_x_posts,
-                )
+                from api.services.social.usage_meter import claim_discovery_usage
 
-                x_fallback_outcome = "completed"
-                x_fallback_reason = "insufficient_diverse_free_evidence"
-                try:
-                    x_result = ingest_x_posts(
-                        x_fallback_query or normalized_queries[0]["phrase"],
-                        since_hours_ago,
-                        posts_per_query,
-                        max_pages=1,
+                paid_source_claim = claim_discovery_usage(
+                    tenant_id,
+                    "paid_source_request",
+                    discovery_run_id=discovery_run_id,
+                )
+                if not paid_source_claim.allowed:
+                    x_fallback_reason = paid_source_claim.reason or "monthly_cost_budget_reached"
+                    _record_discovery_event(
+                        discovery_run_id=discovery_run_id,
+                        tenant_id=tenant_id,
+                        source="x",
+                        query_type="fallback",
+                        query=x_fallback_query or normalized_queries[0]["phrase"],
+                        phase="search",
+                        outcome="skipped",
+                        details={"reason": x_fallback_reason},
                     )
-                    x_refs = _result_source_post_refs(x_result, source="x")
-                    source_counts["x"] = x_result.hits_found
-                    total_hits += x_result.hits_found
-                    total_new_inserts += x_result.inserted_count
-                    total_matching_source_posts += len(x_refs)
-                    if x_refs:
-                        embedding_jobs += enqueue_initial_embedding_refs(
-                            "x",
-                            x_refs,
+                else:
+                    from api.services.social_ingestion import (
+                        _result_source_post_refs,
+                        ingest_x_posts,
+                    )
+
+                    x_fallback_outcome = "completed"
+                    x_fallback_reason = "insufficient_diverse_free_evidence"
+                    try:
+                        x_result = ingest_x_posts(
+                            x_fallback_query or normalized_queries[0]["phrase"],
+                            since_hours_ago,
+                            posts_per_query,
+                            max_pages=1,
                         )
-                    _record_discovery_event(
-                        discovery_run_id=discovery_run_id,
-                        tenant_id=tenant_id,
-                        source="x",
-                        query_type="fallback",
-                        query=x_fallback_query or normalized_queries[0]["phrase"],
-                        phase="search",
-                        outcome="completed",
-                        details={
-                            "hits_found": x_result.hits_found,
-                            "new_inserts": x_result.inserted_count,
-                            "matching_source_posts": len(x_refs),
-                        },
-                    )
-                except Exception as exc:
-                    response = getattr(exc, "response", None)
-                    status_code = getattr(response, "status_code", None)
-                    source_counts.setdefault("x", 0)
-                    source_failure_details["x"] = {
-                        "error_type": exc.__class__.__name__,
-                        "status_code": status_code if isinstance(status_code, int) else None,
-                    }
-                    x_fallback_outcome = "failed"
-                    x_fallback_reason = "provider_error"
-                    _record_discovery_event(
-                        discovery_run_id=discovery_run_id,
-                        tenant_id=tenant_id,
-                        source="x",
-                        query_type="fallback",
-                        query=x_fallback_query or normalized_queries[0]["phrase"],
-                        phase="search",
-                        outcome="failed",
-                        details=source_failure_details["x"],
-                    )
+                        x_refs = _result_source_post_refs(x_result, source="x")
+                        source_counts["x"] = x_result.hits_found
+                        total_hits += x_result.hits_found
+                        total_new_inserts += x_result.inserted_count
+                        total_matching_source_posts += len(x_refs)
+                        if x_refs:
+                            embedding_jobs += enqueue_initial_embedding_refs(
+                                "x",
+                                x_refs,
+                            )
+                        _record_discovery_event(
+                            discovery_run_id=discovery_run_id,
+                            tenant_id=tenant_id,
+                            source="x",
+                            query_type="fallback",
+                            query=x_fallback_query or normalized_queries[0]["phrase"],
+                            phase="search",
+                            outcome="completed",
+                            details={
+                                "hits_found": x_result.hits_found,
+                                "new_inserts": x_result.inserted_count,
+                                "matching_source_posts": len(x_refs),
+                            },
+                        )
+                    except Exception as exc:
+                        response = getattr(exc, "response", None)
+                        status_code = getattr(response, "status_code", None)
+                        source_counts.setdefault("x", 0)
+                        source_failure_details["x"] = {
+                            "error_type": exc.__class__.__name__,
+                            "status_code": status_code if isinstance(status_code, int) else None,
+                        }
+                        x_fallback_outcome = "failed"
+                        x_fallback_reason = "provider_error"
+                        _record_discovery_event(
+                            discovery_run_id=discovery_run_id,
+                            tenant_id=tenant_id,
+                            source="x",
+                            query_type="fallback",
+                            query=x_fallback_query or normalized_queries[0]["phrase"],
+                            phase="search",
+                            outcome="failed",
+                            details=source_failure_details["x"],
+                        )
 
         source_failures = len(source_failure_details)
         _record_discovery_event(
@@ -961,12 +1011,12 @@ def monitor_initial_public_discovery_run(
     *,
     rematch_attempted: bool = False,
 ) -> None:
-    """Keep an activation run open for 2-5 minutes and target three finds.
+    """Make a first verified signal visible quickly, then finish in background.
 
-    The source and embedding actors are intentionally asynchronous.  This
-    small delayed coordinator never blocks a worker thread while they run; it
-    polls only the tenant's newly-created review queue and starts one bounded
-    cached-corpus rematch at the two-minute mark when more evidence is needed.
+    The source and embedding actors are intentionally asynchronous. This
+    delayed coordinator never blocks a worker thread while they run. It gives
+    fresh retrieval a one-minute head start, then uses one bounded corpus
+    rematch only if the first pass has not produced a reviewable signal.
     """
 
     from api.services.social.run_control import (
@@ -1090,7 +1140,11 @@ def monitor_initial_public_discovery_run(
 
     from api.services.social.discovery_budget import initial_public_rematch_enabled
 
-    if not rematch_attempted and initial_public_rematch_enabled():
+    if (
+        elapsed_seconds >= limits.rematch_after_seconds
+        and not rematch_attempted
+        and initial_public_rematch_enabled()
+    ):
         try:
             from api.services.social_ingestion import enqueue_existing_public_source_rematch
 
@@ -1119,7 +1173,7 @@ def monitor_initial_public_discovery_run(
         schedule_next(next_rematch_attempted=True)
         return
 
-    if not rematch_attempted:
+    if elapsed_seconds >= limits.rematch_after_seconds and not rematch_attempted:
         _record_discovery_event(
             discovery_run_id=discovery_run_id,
             tenant_id=tenant_id,
@@ -2247,6 +2301,7 @@ def enqueue_source_post_embedding_batch_job(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
     visibility_retry_attempt: int = 0,
 ) -> None:
     """Embed a small public-post batch before applying normal lead matching.
@@ -2307,13 +2362,16 @@ def enqueue_source_post_embedding_batch_job(
                 env_int("ARCLI_PUBLIC_SOURCE_EMBEDDING_DEFER_SECONDS", 10),
             ),
         )
+        deferred_kwargs: dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "service_profile_id": service_profile_id,
+            "visibility_retry_attempt": normalized_visibility_retry_attempt,
+        }
+        if discovery_run_id:
+            deferred_kwargs["discovery_run_id"] = discovery_run_id
         message = enqueue_source_post_embedding_batch_job.send_with_options(
             args=(refs,),
-            kwargs={
-                "tenant_id": tenant_id,
-                "service_profile_id": service_profile_id,
-                "visibility_retry_attempt": normalized_visibility_retry_attempt,
-            },
+            kwargs=deferred_kwargs,
             delay=delay_seconds * 1_000,
         )
         logger.info(
@@ -2366,11 +2424,16 @@ def enqueue_source_post_embedding_batch_job(
             process_public_source_post_embedding_batch,
         )
 
+        matching_kwargs: dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "service_profile_id": service_profile_id,
+            "retry_on_not_found": True,
+        }
+        if discovery_run_id:
+            matching_kwargs["discovery_run_id"] = discovery_run_id
         result = process_public_source_post_embedding_batch(
             refs,
-            tenant_id=tenant_id,
-            service_profile_id=service_profile_id,
-            retry_on_not_found=True,
+            **matching_kwargs,
         )
         watchlist_candidates, watchlist_ready_for_review = process_watchlists(refs)
     except Exception as exc:
@@ -2405,14 +2468,16 @@ def enqueue_source_post_embedding_batch_job(
                     60,
                     10 * (2 ** normalized_visibility_retry_attempt),
                 )
+                retry_kwargs: dict[str, Any] = {
+                    "tenant_id": tenant_id,
+                    "service_profile_id": service_profile_id,
+                    "visibility_retry_attempt": normalized_visibility_retry_attempt + 1,
+                }
+                if discovery_run_id:
+                    retry_kwargs["discovery_run_id"] = discovery_run_id
                 message = enqueue_source_post_embedding_batch_job.send_with_options(
                     args=(missing_refs,),
-                    kwargs={
-                        "tenant_id": tenant_id,
-                        "service_profile_id": service_profile_id,
-                        "visibility_retry_attempt": normalized_visibility_retry_attempt
-                        + 1,
-                    },
+                    kwargs=retry_kwargs,
                     delay=retry_delay_seconds * 1_000,
                 )
                 logger.info(
@@ -2475,6 +2540,7 @@ def enqueue_source_post_embedding_jobs(
     *,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
 ) -> int:
     """Publish small source-qualified embedding batches for public rows.
 
@@ -2519,6 +2585,8 @@ def enqueue_source_post_embedding_jobs(
             "tenant_id": tenant_id,
             "service_profile_id": service_profile_id,
         }
+        if discovery_run_id:
+            batch_kwargs["discovery_run_id"] = discovery_run_id
     messages_sent = 0
     for offset in range(0, len(refs), batch_size):
         enqueue_source_post_embedding_batch_job.send(

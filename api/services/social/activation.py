@@ -58,6 +58,7 @@ def enqueue_initial_public_source_ingestion(
     *,
     discovery_queries_override: Sequence[DiscoveryQuery] | None = None,
     allowed_sources: frozenset[str] | set[str] | None = None,
+    community_targets: Sequence[dict[str, str]] | None = None,
 ) -> InitialPublicSourceIngestionPlan:
     """Queue a parallel Fast check from a completed service profile.
 
@@ -234,6 +235,83 @@ def enqueue_initial_public_source_ingestion(
     x_fallback_query = _x_fallback_query(discovery_queries) if x_fallback_group_id else None
     discovery_query_payloads = [query.to_payload() for query in discovery_queries]
     free_sources = (("hackernews",) if hn_enabled else ()) + tuple(additional_sources)
+    normalized_community_targets = tuple(
+        {
+            "source": str(target.get("source") or "").strip().casefold(),
+            "selector": str(target.get("selector") or "").strip().casefold(),
+            "label": str(target.get("label") or "").strip()[:250],
+        }
+        for target in (community_targets or ())
+        if isinstance(target, dict)
+        and str(target.get("source") or "").strip()
+        and str(target.get("selector") or "").strip()
+    )
+    # Reserve free-provider searches before publishing any work. A result cap
+    # would not control cost: an empty market can still consume every source
+    # request. The paid X fallback is claimed separately at the point it is
+    # actually needed.
+    if free_sources:
+        from api.services.social.usage_meter import claim_discovery_usage
+
+        source_request_claim = claim_discovery_usage(
+            tenant_id,
+            "source_request",
+            amount=len(discovery_queries)
+            * sum(
+                max(
+                    1,
+                    sum(
+                        1
+                        for target in normalized_community_targets
+                        if target["source"] == source
+                    ),
+                )
+                for source in free_sources
+            ),
+            discovery_run_id=discovery_run_id,
+        )
+        if not source_request_claim.allowed:
+            if discovery_run_id:
+                try:
+                    from api.services.social.discovery_telemetry import complete_discovery_run
+
+                    complete_discovery_run(
+                        discovery_run_id,
+                        tenant_id,
+                        status="skipped",
+                        summary={
+                            "cost_control": {
+                                "reason": source_request_claim.reason,
+                                "metric": source_request_claim.metric,
+                                "limit": source_request_claim.limit,
+                            },
+                            "verification_pending": False,
+                        },
+                    )
+                except Exception as exc:
+                    logger.info(
+                        "initial_public_source_ingestion_budget_completion_skipped tenant_id=%s service_profile_id=%s error_type=%s",
+                        tenant_id,
+                        service_profile_id,
+                        exc.__class__.__name__,
+                    )
+            logger.info(
+                "initial_public_source_ingestion_skipped tenant_id=%s service_profile_id=%s skip_reason=%s metric=%s current=%s limit=%s",
+                tenant_id,
+                service_profile_id,
+                source_request_claim.reason,
+                source_request_claim.metric,
+                source_request_claim.current,
+                source_request_claim.limit,
+            )
+            return InitialPublicSourceIngestionPlan(
+                discovery_queries,
+                0,
+                0,
+                source_request_claim.reason,
+                0,
+                discovery_run_id,
+            )
     if free_sources:
         # The parent Fast check fans out each free provider concurrently. It
         # hands early source results to matching as they arrive, but keeps the
@@ -244,6 +322,8 @@ def enqueue_initial_public_source_ingestion(
             "tenant_id": tenant_id,
             "service_profile_id": service_profile_id,
         }
+        if normalized_community_targets:
+            fast_job_kwargs["community_targets"] = list(normalized_community_targets)
         run_completion_managed = False
         if discovery_run_id and discovery_run_started_at:
             try:
