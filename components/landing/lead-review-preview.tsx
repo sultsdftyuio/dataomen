@@ -1,9 +1,15 @@
-import { ArrowRight, FileSearch } from "lucide-react";
+import { FileSearch } from "lucide-react";
 
 import { C } from "@/lib/tokens";
 
 const surfaceBorder = "1px solid rgba(15, 23, 42, 0.10)";
-const surfaceShadow = "0 16px 38px rgba(15, 23, 42, 0.08)";
+const surfaceShadow = "0 20px 54px rgba(15, 23, 42, 0.14)";
+
+const walkthroughSteps = [
+  "Find the original public signal.",
+  "Understand why it matches your product.",
+  "Review a context-aware first reply.",
+];
 
 export function LeadReviewPreview() {
   return (
@@ -14,14 +20,11 @@ export function LeadReviewPreview() {
         borderTop: surfaceBorder,
         borderBottom: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",
-        padding: "68px 24px",
+        padding: "84px 24px",
       }}
     >
-      <div
-        className="grid-2 lead-review-layout"
-        style={{ alignItems: "center", gap: 48, margin: "0 auto", maxWidth: 1200 }}
-      >
-        <div>
+      <div style={{ margin: "0 auto", maxWidth: 1200 }}>
+        <div style={{ margin: "0 auto", maxWidth: 760, textAlign: "center" }}>
           <div
             style={{
               alignItems: "center",
@@ -35,67 +38,88 @@ export function LeadReviewPreview() {
               textTransform: "uppercase",
             }}
           >
-            <FileSearch size={15} /> Reviewable, not a black box
+            <FileSearch size={15} /> 20-second product walkthrough
           </div>
           <h2
             className="pfd"
             id="lead-review-heading"
             style={{
               color: C.navy,
-              fontSize: "clamp(30px, 3.5vw, 38px)",
+              fontSize: "clamp(32px, 4vw, 42px)",
               fontWeight: 600,
-              letterSpacing: "-0.02em",
+              letterSpacing: "-0.025em",
               lineHeight: 1.08,
               margin: "0 0 18px",
             }}
           >
-            See the reason before you reach out.
+            Watch a buyer signal become a review-ready lead.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            Each lead keeps the original conversation, the buyer signal Arcli found, and a
-            suggested first reply. You decide whether it deserves action.
+            Follow one public conversation from source evidence to a clear match explanation and
+            a thoughtful first reply—so you can decide what deserves action before reaching out.
           </p>
-          <a
-            href="#pipeline"
-            style={{
-              alignItems: "center",
-              color: C.navy,
-              display: "inline-flex",
-              fontSize: 14,
-              fontWeight: 700,
-              gap: 8,
-              marginTop: 22,
-              textDecoration: "underline",
-              textDecorationColor: "rgba(37, 99, 235, 0.45)",
-              textUnderlineOffset: 5,
-            }}
-          >
-            See the review flow <ArrowRight size={16} />
-          </a>
         </div>
 
         <figure
-          aria-label="Lead review walkthrough"
+          aria-describedby="lead-review-caption"
+          aria-label="Arcli lead review walkthrough"
           style={{
             background: "#FFFFFF",
             border: surfaceBorder,
-            borderRadius: 14,
+            borderRadius: 18,
             boxShadow: surfaceShadow,
-            margin: 0,
+            margin: "42px 0 0",
             overflow: "hidden",
           }}
         >
           <video
             autoPlay
+            controls
             loop
             muted
             playsInline
             preload="metadata"
-            style={{ display: "block", height: "auto", width: "100%" }}
+            style={{ aspectRatio: "8 / 5", background: C.navy, display: "block", height: "auto", width: "100%" }}
           >
             <source src="/video/landing/lead-review-demo.mp4" type="video/mp4" />
             Your browser does not support embedded video.
           </video>
+          <figcaption
+            id="lead-review-caption"
+            style={{
+              alignItems: "center",
+              color: C.navySoft,
+              display: "flex",
+              flexWrap: "wrap",
+              fontSize: 14,
+              gap: "10px 22px",
+              justifyContent: "center",
+              padding: "18px 24px",
+            }}
+          >
+            {walkthroughSteps.map((step, index) => (
+              <span key={step} style={{ alignItems: "center", display: "inline-flex", gap: 8 }}>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    alignItems: "center",
+                    background: C.bluePale,
+                    borderRadius: "50%",
+                    color: C.blue,
+                    display: "inline-flex",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    height: 22,
+                    justifyContent: "center",
+                    width: 22,
+                  }}
+                >
+                  {index + 1}
+                </span>
+                {step}
+              </span>
+            ))}
+          </figcaption>
         </figure>
       </div>
     </section>

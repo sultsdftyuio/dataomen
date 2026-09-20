@@ -224,7 +224,6 @@
 
 /* ── Layout & Responsiveness ─────────────────────────── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
-.lead-review-layout { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr); }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .bento-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
 
