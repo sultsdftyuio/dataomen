@@ -81,7 +81,7 @@ export function Hero() {
             Learn how buyer-intent signals work
           </Link>
         </div>
-        <div style={{ margin: "40px auto 0", maxWidth: 540, width: "100%" }}>
+        <div style={{ margin: "40px auto 0", maxWidth: 760, width: "100%" }}>
           <ProductDemo />
         </div>
       </div>

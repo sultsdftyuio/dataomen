@@ -17,7 +17,10 @@ export function LeadReviewPreview() {
         padding: "68px 24px",
       }}
     >
-      <div className="grid-2" style={{ alignItems: "center", gap: 36, margin: "0 auto", maxWidth: 1040 }}>
+      <div
+        className="grid-2 lead-review-layout"
+        style={{ alignItems: "center", gap: 48, margin: "0 auto", maxWidth: 1200 }}
+      >
         <div>
           <div
             style={{
