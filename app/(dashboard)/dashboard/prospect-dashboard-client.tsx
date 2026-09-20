@@ -1489,7 +1489,10 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
   const isPartial = report.status === "partial";
   const isSkipped = report.status === "skipped";
   const isFailed = report.status === "failed";
-  const title = isPartial
+  const profileRefreshRequired = summary.stopReason === "profile_refresh_required";
+  const title = profileRefreshRequired
+    ? "Refresh your website profile"
+    : isPartial
     ? "Partially completed discovery scan"
     : isSkipped
       ? "Discovery scan skipped"
@@ -1498,7 +1501,9 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
         : "Completed discovery scan";
   const detail = summary.verifierPending
     ? "Source collection is complete; remaining evidence is still being verified."
-    : isPartial
+    : profileRefreshRequired
+      ? "We did not run this discovery scan because its matching profile belongs to an older website setup. Start a fresh website scan to rebuild the profile before looking for leads."
+      : isPartial
       ? "Some source coverage was unavailable. No conversations reached the strong-signal lane in the available results."
       : isSkipped
         ? "This scan did not run. Review the matching brief and source configuration before trying again."
@@ -1570,7 +1575,7 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
               {detail}
             </p>
 
-            {summary.totalHits === 0 ? (
+            {summary.totalHits === 0 && !profileRefreshRequired ? (
               <p className="text-xs leading-5" style={{ color: C.navySoft }}>
                 No public items matched this brief and time window. Refine the buyer-language phrases before the next daily scan.
               </p>
@@ -1627,7 +1632,9 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
               className="h-7 px-2 text-[10px]"
               style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
             >
-              <Link href="/dashboard/brief">Improve brief</Link>
+              <Link href={profileRefreshRequired ? "/dashboard" : "/dashboard/brief"}>
+                {profileRefreshRequired ? "Refresh website profile" : "Improve brief"}
+              </Link>
             </Button>
           </div>
         </details>

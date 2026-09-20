@@ -25,6 +25,8 @@ export type DiscoveryRunSummaryView = {
   plausibleHits: number | null;
   sourceFailures: number | null;
   verifierPending: boolean;
+  /** A bounded worker-provided terminal reason; never raw operational errors. */
+  stopReason: string | null;
   caveat: string | null;
   xFallback: DiscoveryFallbackSummary | null;
 };
@@ -204,6 +206,7 @@ function fallbackSummary(record: UnknownRecord): DiscoveryFallbackSummary | null
  */
 export function parseDiscoveryRunSummary(value: unknown): DiscoveryRunSummaryView {
   const summary = asRecord(value) ?? {};
+  const runControl = asRecord(summary.run_control) ?? {};
   const sourceValue =
     summary.source_counts ?? summary.source_results ?? summary.sources ?? [];
   const failedSourceNames = new Set(
@@ -241,6 +244,7 @@ export function parseDiscoveryRunSummary(value: unknown): DiscoveryRunSummaryVie
       verificationStatus === "pending_or_running" ||
       verificationStatus === "pending" ||
       verificationStatus === "running",
+    stopReason: firstString(runControl, ["stop_reason"]),
     caveat: firstString(summary, ["caveat", "note", "message"]),
     xFallback: fallbackSummary(summary),
   };

@@ -112,8 +112,9 @@ def ingest_x_posts(
         )
         return result
 
+    governed_posts = _governed_public_source_posts(posts)
     inserted_source_post_ids = _persist_new_public_source_posts(
-        posts,
+        governed_posts,
         batch_size=_x_batch_size(),
     )
     result = XIngestionResult(
@@ -122,8 +123,8 @@ def ingest_x_posts(
         hits_found=len(posts),
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
-        matchable_source_post_ids=_matchable_source_post_ids(posts),
-        matchable_source_post_refs=prioritized_source_post_refs(posts),
+        matchable_source_post_ids=_matchable_source_post_ids(governed_posts),
+        matchable_source_post_refs=prioritized_source_post_refs(governed_posts),
     )
     logger.info(
         "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -414,12 +415,13 @@ def ingest_additional_public_source_posts(
             admission_reasons_by_ref[(post.source.casefold(), post.source_post_id)] = (
                 admission.reasons
             )
+        governed_posts = _governed_public_source_posts(plausible_posts)
         inserted_source_post_ids = (
             _persist_new_public_source_posts(
-                plausible_posts,
+                governed_posts,
                 batch_size=_additional_public_source_batch_size(),
             )
-            if plausible_posts
+            if governed_posts
             else []
         )
         result = AdditionalPublicSourceIngestionResult(
@@ -430,7 +432,7 @@ def ingest_additional_public_source_posts(
             inserted_count=len(inserted_source_post_ids),
             inserted_source_post_ids=inserted_source_post_ids,
             matchable_source_post_refs=prioritized_source_post_refs(
-                plausible_posts,
+                governed_posts,
                 admission_reasons_by_ref=admission_reasons_by_ref,
             ),
             plausible_hits=len(plausible_posts),
@@ -462,6 +464,7 @@ from .models import (
     logger,
 )
 from .public_storage import (
+    _governed_public_source_posts,
     _matchable_source_post_ids,
     _persist_new_public_source_posts,
 )

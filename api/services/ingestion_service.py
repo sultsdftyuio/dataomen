@@ -120,13 +120,14 @@ def process_initial_public_ingestion_job(
         raise
 
     logger.info(
-        "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s query_count=%s hn_jobs=%s additional_source_jobs=%s x_jobs=%s",
+        "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s query_count=%s hn_jobs=%s additional_source_jobs=%s x_jobs=%s skip_reason=%s",
         tenant_id,
         service_profile_id,
         len(result.query_terms),
         result.hn_jobs,
         result.additional_source_jobs,
         result.x_jobs,
+        result.skip_reason,
     )
 
 

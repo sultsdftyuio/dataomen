@@ -119,6 +119,16 @@ class PublicPostPreparationTests(unittest.TestCase):
 
         self.assertEqual(inserted_ids, [])
 
+    def test_matching_handoff_uses_the_same_governed_post_set_as_storage(self) -> None:
+        from api.services.social import public_storage
+
+        with patch.dict(os.environ, {}, clear=True):
+            governed_posts = public_storage._governed_public_source_posts(
+                [_post(body="This is a product for minors.")]
+            )
+
+        self.assertEqual(governed_posts, [])
+
 
 class PublicDataRetentionTests(unittest.TestCase):
     def test_retention_deletes_lead_snapshots_before_global_source_rows(self) -> None:

@@ -68,6 +68,7 @@ def enqueue_initial_public_source_ingestion(
     retaining one final, tenant-owned completion state for the full check.
     """
     engine = _database_engine()
+    profile_readiness: str | None = None
     with engine.begin() as conn:
         columns = _service_profile_columns(conn)
         profile_row = _load_service_profile(
@@ -76,6 +77,26 @@ def enqueue_initial_public_source_ingestion(
             service_profile_id,
             columns,
         )
+        if profile_row:
+            try:
+                active_website_url = _active_tenant_website_url(conn, tenant_id)
+                profile_readiness = profile_public_matching_readiness(
+                    {
+                        **profile_row,
+                        "active_website_url": active_website_url,
+                    }
+                )
+            except Exception as exc:
+                # The worker-side matcher performs the same guard. Do not turn
+                # a temporary diagnostics-read failure into a failed customer
+                # activation; record it and let the authoritative matcher make
+                # the final decision.
+                logger.warning(
+                    "initial_public_source_profile_preflight_skipped tenant_id=%s service_profile_id=%s error_type=%s",
+                    tenant_id,
+                    service_profile_id,
+                    exc.__class__.__name__,
+                )
 
     if not profile_row:
         logger.warning(
@@ -85,6 +106,56 @@ def enqueue_initial_public_source_ingestion(
             "service_profile_not_found",
         )
         return InitialPublicSourceIngestionPlan([], 0, 0, "service_profile_not_found")
+
+    if profile_readiness and profile_readiness not in _PROFILE_MATCH_READY_REASONS:
+        logger.warning(
+            "initial_public_source_ingestion_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            profile_readiness,
+        )
+        blocked_discovery_run_id: str | None = None
+        try:
+            from api.services.social.discovery_telemetry import (
+                complete_discovery_run,
+                create_discovery_run,
+            )
+
+            blocked_discovery_run_id = create_discovery_run(
+                tenant_id,
+                service_profile_id,
+                [],
+            )
+            if blocked_discovery_run_id:
+                complete_discovery_run(
+                    blocked_discovery_run_id,
+                    tenant_id,
+                    status="skipped",
+                    summary={
+                        "run_control": {
+                            "stop_reason": "profile_refresh_required",
+                            "profile_readiness": profile_readiness,
+                        },
+                        "verification_pending": False,
+                    },
+                )
+        except Exception as exc:
+            # Discovery diagnostics are additive. A migration that has not
+            # reached this worker must not hide the actionable skip reason
+            # from the actor log or turn it into a source-ingestion failure.
+            logger.info(
+                "initial_public_source_profile_preflight_telemetry_skipped tenant_id=%s service_profile_id=%s error_type=%s",
+                tenant_id,
+                service_profile_id,
+                exc.__class__.__name__,
+            )
+        return InitialPublicSourceIngestionPlan(
+            [],
+            0,
+            0,
+            discovery_run_id=blocked_discovery_run_id,
+            skip_reason=f"profile_refresh_required:{profile_readiness}",
+        )
 
     profile = _service_profile_from_row(profile_row)
     discovery_queries = public_source_search_queries(
@@ -850,12 +921,13 @@ def ingest_hn_posts(
     # provider matches that fail this inexpensive buyer-evidence guard would
     # otherwise be re-embedded and re-verified for every newly activated
     # profile despite having no connection to the query that found them.
+    governed_posts = _governed_public_source_posts(plausible_posts)
     inserted_source_post_ids = (
         _persist_new_public_source_posts(
-            plausible_posts,
+            governed_posts,
             batch_size=_hn_batch_size(),
         )
-        if plausible_posts
+        if governed_posts
         else []
     )
     result = HnIngestionResult(
@@ -864,10 +936,10 @@ def ingest_hn_posts(
         hits_found=len(posts),
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
-        matchable_source_post_ids=_matchable_source_post_ids(plausible_posts),
+        matchable_source_post_ids=_matchable_source_post_ids(governed_posts),
         plausible_hits=len(plausible_posts),
         matchable_source_post_refs=prioritized_source_post_refs(
-            plausible_posts,
+            governed_posts,
             admission_reasons_by_ref=admission_reasons_by_ref,
         ),
     )
@@ -901,8 +973,14 @@ from .models import (
 from .content_roles import assess_public_post_content_role
 from .lead_signals import has_buying_trigger, prioritized_source_post_refs
 from .public_storage import (
+    _governed_public_source_posts,
     _matchable_source_post_ids,
     _persist_new_public_source_posts,
+)
+from .public_matching import (
+    _PROFILE_MATCH_READY_REASONS,
+    _active_tenant_website_url,
+    profile_public_matching_readiness,
 )
 from .queries import (
     _claim_initial_x_fallback_budget,

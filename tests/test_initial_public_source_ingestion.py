@@ -102,6 +102,50 @@ def _profile_row() -> dict[str, object]:
 
 
 class InitialPublicSourceIngestionTests(unittest.TestCase):
+    def test_profile_preflight_stops_a_known_stale_website_profile(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        stale_profile = _profile_row()
+        stale_profile["profile_json"] = {
+            **stale_profile["profile_json"],
+            "service_profile_identity_version": "website-scoped-v2",
+            "website_url": "https://old.example/",
+        }
+        with (
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=stale_profile),
+            patch.object(
+                ingestion,
+                "_active_tenant_website_url",
+                return_value="https://current.example/",
+            ),
+            patch(
+                "api.services.social.discovery_telemetry.create_discovery_run",
+                return_value="blocked-run-id",
+            ) as create_run,
+            patch(
+                "api.services.social.discovery_telemetry.complete_discovery_run"
+            ) as complete_run,
+        ):
+            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
+
+        self.assertEqual(plan.skip_reason, "profile_refresh_required:versioned_document_website_mismatch")
+        self.assertEqual(plan.discovery_run_id, "blocked-run-id")
+        self.assertEqual(plan.hn_jobs, 0)
+        self.assertEqual(plan.additional_source_jobs, 0)
+        create_run.assert_called_once_with("tenant-1", "profile-1", [])
+        complete_run.assert_called_once()
+        self.assertEqual(complete_run.call_args.kwargs["status"], "skipped")
+        self.assertEqual(
+            complete_run.call_args.kwargs["summary"]["run_control"]["stop_reason"],
+            "profile_refresh_required",
+        )
+
     def test_typed_discovery_queries_are_preserved_and_default_to_six(self) -> None:
         row = _profile_row()
         typed_queries = _profile_discovery_queries(row)

@@ -46,9 +46,16 @@ _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _MAX_EVENT_KEY_LENGTH = 160
 _MAX_HOST_LENGTH = 253
 
-
 class RetryableCrawlNotificationError(RuntimeError):
     """Raise from a worker only when the email provider can be retried safely."""
+
+
+class NotificationConfigurationError(ValueError):
+    """A safe, actionable configuration error for durable mail delivery."""
+
+    def __init__(self, error_code: str) -> None:
+        super().__init__(error_code)
+        self.error_code = error_code
 
 
 @dataclass(frozen=True)
@@ -206,32 +213,49 @@ def _safe_event_key(value: str) -> str:
 
 
 def _notification_email_config() -> EmailConfig:
+    mock = _env_bool("ARCLI_CRAWL_RESULT_EMAIL_MOCK", default=False)
     api_key = (
         os.getenv("ARCLI_CRAWL_RESULT_EMAIL_API_KEY")
         or os.getenv("RESEND_API_KEY")
         or ""
     ).strip()
     sender = os.getenv("ARCLI_CRAWL_RESULT_EMAIL_SENDER", "").strip()
-    return EmailConfig(
-        provider_url=os.getenv(
-            "ARCLI_CRAWL_RESULT_EMAIL_PROVIDER_URL", "https://api.resend.com/emails"
-        ).strip(),
-        api_key=api_key,
-        sender=sender,
-        timeout_connect=float(
-            _env_int("ARCLI_CRAWL_RESULT_EMAIL_CONNECT_TIMEOUT_SECONDS", 5, minimum=1)
-        ),
-        timeout_read=float(
-            _env_int("ARCLI_CRAWL_RESULT_EMAIL_READ_TIMEOUT_SECONDS", 10, minimum=1)
-        ),
-        timeout_write=float(
-            _env_int("ARCLI_CRAWL_RESULT_EMAIL_WRITE_TIMEOUT_SECONDS", 5, minimum=1)
-        ),
-        timeout_pool=float(
-            _env_int("ARCLI_CRAWL_RESULT_EMAIL_POOL_TIMEOUT_SECONDS", 5, minimum=1)
-        ),
-        mock=_env_bool("ARCLI_CRAWL_RESULT_EMAIL_MOCK", default=False),
-    )
+    provider_url = os.getenv(
+        "ARCLI_CRAWL_RESULT_EMAIL_PROVIDER_URL", "https://api.resend.com/emails"
+    ).strip()
+
+    if not api_key and not mock:
+        raise NotificationConfigurationError("configuration_api_key_missing")
+    if not sender:
+        raise NotificationConfigurationError("configuration_sender_missing")
+    parsed_provider_url = urlparse(provider_url)
+    if parsed_provider_url.scheme not in {"https", "http"} or not parsed_provider_url.netloc:
+        raise NotificationConfigurationError("configuration_provider_url_invalid")
+
+    try:
+        return EmailConfig(
+            provider_url=provider_url,
+            # Mock delivery intentionally works without a provider key so a
+            # staging smoke test cannot accidentally require production mail
+            # credentials.
+            api_key=api_key or "mock",
+            sender=sender,
+            timeout_connect=float(
+                _env_int("ARCLI_CRAWL_RESULT_EMAIL_CONNECT_TIMEOUT_SECONDS", 5, minimum=1)
+            ),
+            timeout_read=float(
+                _env_int("ARCLI_CRAWL_RESULT_EMAIL_READ_TIMEOUT_SECONDS", 10, minimum=1)
+            ),
+            timeout_write=float(
+                _env_int("ARCLI_CRAWL_RESULT_EMAIL_WRITE_TIMEOUT_SECONDS", 5, minimum=1)
+            ),
+            timeout_pool=float(
+                _env_int("ARCLI_CRAWL_RESULT_EMAIL_POOL_TIMEOUT_SECONDS", 5, minimum=1)
+            ),
+            mock=mock,
+        )
+    except Exception as exc:
+        raise NotificationConfigurationError("configuration_sender_invalid") from exc
 
 
 def _email_copy(
@@ -695,6 +719,16 @@ def _claim_outbox_record(
                        outbox.status = 'dispatching'
                        AND outbox.claimed_at < NOW() - (:claim_timeout_seconds * interval '1 second')
                    )
+                   OR (
+                       outbox.status = 'failed'
+                       AND outbox.error_code IN (
+                           'configuration_api_key_missing',
+                           'configuration_provider_url_invalid',
+                           'configuration_sender_missing',
+                           'configuration_sender_invalid',
+                           'configuration_or_payload_invalid'
+                       )
+                   )
                )
                AND NOT EXISTS (
                    SELECT 1
@@ -834,21 +868,36 @@ def deliver_crawl_result_notification(outbox_id: str) -> str:
             text_body=text_body,
             html_body=html_body,
         )
-    except Exception as exc:
+    except NotificationConfigurationError as exc:
         _finish_delivery(
             outbox_id=record.id,
             claim_token=claim_token,
             status="failed",
-            error_code="configuration_or_payload_invalid",
+            error_code=exc.error_code,
         )
         logger.error(
             "crawl_result_notification_delivery_failed outbox_id=%s error_type=%s recipient=%s reason=%s",
             record.id,
             exc.__class__.__name__,
             _masked_email(record.recipient_email),
-            "configuration_or_payload_invalid",
+            exc.error_code,
         )
-        return "configuration_or_payload_invalid"
+        return exc.error_code
+    except Exception as exc:
+        _finish_delivery(
+            outbox_id=record.id,
+            claim_token=claim_token,
+            status="failed",
+            error_code="payload_invalid",
+        )
+        logger.error(
+            "crawl_result_notification_delivery_failed outbox_id=%s error_type=%s recipient=%s reason=%s",
+            record.id,
+            exc.__class__.__name__,
+            _masked_email(record.recipient_email),
+            "payload_invalid",
+        )
+        return "payload_invalid"
 
     # The provider sees the exact same key for every actor retry, protecting
     # against the timeout-after-acceptance case.
@@ -941,7 +990,19 @@ def recover_pending_crawl_result_notifications() -> int:
                 """
                 SELECT id::text
                   FROM public.crawl_notification_outbox
-                 WHERE status = 'pending'
+                 WHERE (
+                       status = 'pending'
+                       OR (
+                           status = 'failed'
+                           AND error_code IN (
+                               'configuration_api_key_missing',
+                               'configuration_provider_url_invalid',
+                               'configuration_sender_missing',
+                               'configuration_sender_invalid',
+                               'configuration_or_payload_invalid'
+                           )
+                       )
+                 )
                    AND expires_at > NOW()
                    AND (
                        last_attempt_at IS NULL

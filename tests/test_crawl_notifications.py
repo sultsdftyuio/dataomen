@@ -105,3 +105,27 @@ def test_disabled_delivery_does_not_open_database(monkeypatch):
     monkeypatch.setattr(notifications, "_database_engine", unexpected_database_access)
 
     assert notifications.deliver_crawl_result_notification("outbox-id") == "disabled"
+
+
+def test_email_configuration_reports_a_missing_sender_without_exposing_secrets(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "secret-key")
+    monkeypatch.delenv("ARCLI_CRAWL_RESULT_EMAIL_SENDER", raising=False)
+
+    try:
+        notifications._notification_email_config()
+    except notifications.NotificationConfigurationError as exc:
+        assert exc.error_code == "configuration_sender_missing"
+    else:
+        raise AssertionError("missing sender must be rejected before delivery")
+
+
+def test_mock_email_configuration_does_not_require_a_provider_key(monkeypatch):
+    monkeypatch.setenv("ARCLI_CRAWL_RESULT_EMAIL_MOCK", "true")
+    monkeypatch.setenv("ARCLI_CRAWL_RESULT_EMAIL_SENDER", "Arcli <mail@example.com>")
+    monkeypatch.delenv("ARCLI_CRAWL_RESULT_EMAIL_API_KEY", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+
+    config = notifications._notification_email_config()
+
+    assert config.mock is True
+    assert config.api_key == "mock"

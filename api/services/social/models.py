@@ -285,6 +285,10 @@ class InitialPublicSourceIngestionPlan:
     # A tenant-owned diagnostics row. It is optional while the additive
     # discovery telemetry contract is being rolled out.
     discovery_run_id: str | None = None
+    # A discovery-wide blocker. This is intentionally separate from
+    # ``x_skip_reason`` so callers never mistake a profile problem for a
+    # source-connector decision.
+    skip_reason: str | None = None
 
     @property
     def query_terms(self) -> list[str]:

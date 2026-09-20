@@ -58,6 +58,14 @@ from api.services.verifier import (
 _CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION = "website-scoped-v2"
 DEFAULT_PUBLIC_SOURCE_REMATCH_VERIFICATION_BUDGET_SECONDS = 120
 
+_PROFILE_MATCH_READY_REASONS = frozenset(
+    {
+        "ready",
+        "legacy_document_identity_compatible",
+        "legacy_flat_identity_compatible",
+    }
+)
+
 
 class RetryablePublicSourcePostNotFound(RuntimeError):
     """Tell a source-qualified worker handoff to retry a visibility race.
@@ -122,51 +130,81 @@ def _normalized_website_identity(value: Any) -> str | None:
     return f"{host}{port}{path}"
 
 
-def _profile_matches_active_website(row: dict[str, Any]) -> bool:
-    """Accept only the current, website-scoped profile for a tenant.
+def profile_public_matching_readiness(row: dict[str, Any]) -> str:
+    """Return whether a profile can safely match the tenant's active website.
 
     A public post is global, but profile matches must target the one website a
-    tenant currently selected. Older rows may carry a stale brief after a site
-    replacement; their document lacks the current identity marker and must not
-    spend embeddings or verifier calls.
+    tenant currently selected. The first release of website-scoped identities
+    added a version marker to the JSON document. Profiles written before that
+    release are still safe when their persisted document URL (or, for an older
+    flat row, their persisted URL) agrees with the active website. Treating
+    every unversioned document as stale silently prevented those customers from
+    ever being matched.
+
+    A versioned document remains strict: an explicit, conflicting document URL
+    is never revived from a flat column. That preserves the protection against
+    matching an old brief after a customer changes websites.
     """
     active_website = _normalized_website_identity(row.get("active_website_url"))
     if not active_website:
-        return False
+        return "active_website_missing"
 
     document = _first_document(row)
+    flat_website = _normalized_website_identity(row.get("website_url") or row.get("url"))
     if document:
+        document_website = _normalized_website_identity(document.get("website_url"))
+        identity_version = _string_value(document.get("service_profile_identity_version"))
+        if identity_version == _CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION:
+            return (
+                "ready"
+                if document_website == active_website
+                else "versioned_document_website_mismatch"
+            )
+        if document_website:
+            return (
+                "legacy_document_identity_compatible"
+                if document_website == active_website
+                else "legacy_document_website_mismatch"
+            )
         return (
-            document.get("service_profile_identity_version")
-            == _CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION
-            and _normalized_website_identity(document.get("website_url"))
-            == active_website
+            "legacy_flat_identity_compatible"
+            if flat_website == active_website
+            else "legacy_profile_website_missing_or_mismatch"
         )
 
-    # Keep flat-column-only deployments working. JSON-backed rows fail closed
-    # above, because they have enough information to prove they are stale.
-    return _normalized_website_identity(
-        row.get("website_url") or row.get("url")
-    ) == active_website
+    return "ready" if flat_website == active_website else "profile_website_mismatch"
+
+
+def _profile_matches_active_website(row: dict[str, Any]) -> bool:
+    return profile_public_matching_readiness(row) in _PROFILE_MATCH_READY_REASONS
 
 
 def _current_profile_rows_for_active_websites(
     rows: Sequence[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Choose at most one current profile per tenant from newest-first rows."""
-    selected_tenants: set[str] = set()
-    active_rows: list[dict[str, Any]] = []
+    """Choose at most one current profile per tenant from newest-first rows.
+
+    A versioned profile is authoritative when it exists. A same-website legacy
+    profile is a compatibility fallback only; otherwise a stale legacy row can
+    shadow a newer, explicitly website-scoped profile in a broad global scan.
+    """
+    selected_by_tenant: dict[str, tuple[int, dict[str, Any]]] = {}
+    tenant_order: list[str] = []
     for row in rows:
         tenant_id = _string_value(row.get("tenant_id"))
-        if (
-            not tenant_id
-            or tenant_id in selected_tenants
-            or not _profile_matches_active_website(row)
-        ):
+        if not tenant_id:
             continue
-        selected_tenants.add(tenant_id)
-        active_rows.append(row)
-    return active_rows
+        readiness = profile_public_matching_readiness(row)
+        if readiness not in _PROFILE_MATCH_READY_REASONS:
+            continue
+        priority = 2 if readiness == "ready" else 1
+        existing = selected_by_tenant.get(tenant_id)
+        if existing is None:
+            tenant_order.append(tenant_id)
+            selected_by_tenant[tenant_id] = (priority, row)
+        elif priority > existing[0]:
+            selected_by_tenant[tenant_id] = (priority, row)
+    return [selected_by_tenant[tenant_id][1] for tenant_id in tenant_order]
 
 
 def _active_tenant_website_url(conn: Connection, tenant_id: str) -> str | None:
@@ -255,14 +293,22 @@ def _profile_rows_for_requested_profile(
         **profile_row,
         "active_website_url": _active_tenant_website_url(conn, normalized_tenant_id),
     }
-    if not _profile_matches_active_website(candidate_row):
+    profile_readiness = profile_public_matching_readiness(candidate_row)
+    if profile_readiness not in _PROFILE_MATCH_READY_REASONS:
         logger.warning(
             "public_source_profile_match_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
             normalized_tenant_id,
             normalized_profile_id,
-            "profile_not_current_for_active_website",
+            profile_readiness,
         )
         return []
+    if profile_readiness != "ready":
+        logger.info(
+            "public_source_profile_identity_legacy_compatible tenant_id=%s service_profile_id=%s compatibility_reason=%s",
+            normalized_tenant_id,
+            normalized_profile_id,
+            profile_readiness,
+        )
     if not _profile_embedding_from_row(candidate_row):
         logger.warning(
             "public_source_profile_match_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",

@@ -113,12 +113,26 @@ test("normalizes only known aggregate discovery summary fields", () => {
     plausibleHits: 4,
     sourceFailures: 1,
     verifierPending: true,
+    stopReason: null,
     caveat: null,
     xFallback: {
       outcome: "skipped",
       reason: "free_coverage_sufficient",
     },
   });
+});
+
+test("keeps an actionable profile-refresh stop reason without exposing worker details", () => {
+  const summary = parseDiscoveryRunSummary({
+    run_control: {
+      stop_reason: "profile_refresh_required",
+      profile_readiness: "versioned_document_website_mismatch",
+      internal_error: "must not reach the browser",
+    },
+  });
+
+  assert.equal(summary.stopReason, "profile_refresh_required");
+  assert.equal(summary.caveat, null);
 });
 
 test("treats completed, degraded, skipped, and failed reports as terminal", () => {

@@ -80,6 +80,26 @@ class PublicSourceMatchingTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in selected], ["legacy-current"])
 
+    def test_legacy_document_with_the_same_website_remains_matchable(self) -> None:
+        from api.services.social.public_matching import (
+            profile_public_matching_readiness,
+        )
+
+        readiness = profile_public_matching_readiness(
+            {
+                "website_url": "https://example.com/",
+                "active_website_url": "https://www.example.com/",
+                "profile_json": {
+                    # This is the shape stored before website-scoped-v2 was
+                    # introduced. Its URL still proves the profile's scope.
+                    "website_url": "https://example.com/",
+                    "one_liner": "A valid legacy profile",
+                },
+            }
+        )
+
+        self.assertEqual(readiness, "legacy_document_identity_compatible")
+
     def test_source_qualified_embedding_load_never_blends_equal_external_ids(self) -> None:
         import api.services.social_ingestion as ingestion
 

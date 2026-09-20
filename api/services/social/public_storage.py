@@ -148,20 +148,30 @@ def _upsert_public_source_post_payloads(
 
 
 
+def _governed_public_source_posts(posts: Sequence[Any]) -> list[Any]:
+    """Return exactly the records eligible for both storage and matching.
+
+    The queue used to receive the pre-governance provider list, while storage
+    correctly removed sensitive or opted-out records. Those removed references
+    could never be found by the embedding worker and were retried until they
+    expired. Keeping the handoff set identical to the storage set avoids that
+    false visibility race and never reintroduces excluded content downstream.
+    """
+    from api.services.social.data_governance import (
+        filter_approved_removals,
+        prepare_public_posts_for_storage,
+    )
+
+    return filter_approved_removals(prepare_public_posts_for_storage(posts))
+
+
 def _persist_new_public_source_posts(
     posts: Sequence[Any],
     *,
     batch_size: int,
 ) -> list[str]:
     """Insert only governed, new public source rows and return their IDs."""
-    from api.services.social.data_governance import (
-        filter_approved_removals,
-        prepare_public_posts_for_storage,
-    )
-
-    governed_posts = filter_approved_removals(
-        prepare_public_posts_for_storage(posts)
-    )
+    governed_posts = _governed_public_source_posts(posts)
     if not governed_posts:
         return []
 
