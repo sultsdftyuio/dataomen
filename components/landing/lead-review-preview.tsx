@@ -68,7 +68,8 @@ export function LeadReviewPreview() {
             border: surfaceBorder,
             borderRadius: 18,
             boxShadow: surfaceShadow,
-            margin: "42px 0 0",
+            margin: "36px auto 0",
+            maxWidth: 860,
             overflow: "hidden",
           }}
         >
