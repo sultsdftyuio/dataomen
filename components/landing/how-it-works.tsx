@@ -70,7 +70,8 @@ export function HowItWorks() {
               textTransform: "uppercase",
             }}
           >
-            <SearchCheck size={14} /> <span className="pulse-indicator" aria-hidden="true" /> The workflow
+            <span className="section-heading-icon" aria-hidden="true"><SearchCheck size={14} /></span>
+            The workflow
           </div>
           <h2
             className="pfd"

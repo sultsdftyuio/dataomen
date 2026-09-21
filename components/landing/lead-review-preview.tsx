@@ -39,7 +39,8 @@ export function LeadReviewPreview() {
               textTransform: "uppercase",
             }}
           >
-            <FileSearch size={15} /> <span className="pulse-indicator" aria-hidden="true" /> A review-ready lead
+            <span className="section-heading-icon" aria-hidden="true"><FileSearch size={15} /></span>
+            A review-ready lead
           </div>
           <h2
             className="pfd"

@@ -56,7 +56,8 @@ export function DeepDiveFeatures() {
               textTransform: "uppercase",
             }}
           >
-            <CheckCircle2 size={14} /> <span className="pulse-indicator" aria-hidden="true" /> Qualification standards
+            <span className="section-heading-icon" aria-hidden="true"><CheckCircle2 size={14} /></span>
+            Qualification standards
           </div>
           <h2
             className="pfd"

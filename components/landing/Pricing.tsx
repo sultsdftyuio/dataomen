@@ -62,7 +62,8 @@ export default function ArcliPricingCards() {
               marginBottom: 14,
             }}
           >
-            <Activity size={14} /> <span className="pulse-indicator" aria-hidden="true" /> SIMPLE PRICING
+            <span className="section-heading-icon" aria-hidden="true"><Activity size={14} /></span>
+            SIMPLE PRICING
           </div>
           <h2
             className="pfd"
