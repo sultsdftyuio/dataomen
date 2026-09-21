@@ -396,7 +396,7 @@ export function ProspectLeadDesk({
             <Globe2 className="size-3.5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Matching brief</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Targeting</p>
             <p className="truncate text-[13px] font-semibold" style={{ color: C.navy }}>{profileDomain}</p>
           </div>
         </section>
@@ -459,7 +459,7 @@ export function ProspectLeadDesk({
             </Button>
           ) : null}
           <Button asChild variant="outline" className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
-            <Link href="/dashboard/brief">Edit matching brief</Link>
+            <Link href="/dashboard/brief">Edit targeting</Link>
           </Button>
         </div>
       </section>
@@ -1091,7 +1091,7 @@ function EmptyQueue({
         </Button>
       ) : (
         <Button asChild variant="outline" size="sm" className="mt-4 border-[#C8D9E8]">
-          <Link href="/dashboard/brief">Edit matching brief</Link>
+          <Link href="/dashboard/brief">Edit targeting</Link>
         </Button>
       )}
     </div>

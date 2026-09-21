@@ -66,7 +66,7 @@ export default function WorkspaceTab({
                       {websiteUrl ? websiteDomain(websiteUrl) : "Website needed"}
                     </p>
                     <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                      Change the website from the matching brief when your source context changes.
+                      Change the website from Targeting when your source context changes.
                     </p>
                   </div>
                 </div>
@@ -82,7 +82,7 @@ export default function WorkspaceTab({
                   </div>
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                      Matching brief
+                      Targeting
                     </p>
                     <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
                       {isBriefActive ? "Active and shaping scans" : "Updating in the background"}
@@ -93,7 +93,7 @@ export default function WorkspaceTab({
                   </div>
                 </div>
                 <Button asChild size="sm" variant="outline" className="shrink-0" style={{ borderColor: C.blueLight, color: C.blue }}>
-                  <Link href="/dashboard/brief">Edit matching brief</Link>
+                  <Link href="/dashboard/brief">Edit targeting</Link>
                 </Button>
               </div>
             </div>

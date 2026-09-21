@@ -21,8 +21,8 @@ export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
   },
   {
     href: "/dashboard/brief",
-    label: "Matching brief",
-    description: "Refine who you want to reach and what they need.",
+    label: "Targeting",
+    description: "Define who to look for and the signals that matter.",
   },
   {
     href: "/settings",

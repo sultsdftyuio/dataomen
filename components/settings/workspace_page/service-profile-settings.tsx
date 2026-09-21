@@ -1,30 +1,19 @@
 "use client";
 
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useState,
-  useTransition,
-} from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   CircleDotDashed,
-  ChevronDown,
   FileSearch,
   Globe2,
   Loader2,
-  Plus,
   Radar,
   Save,
   Target,
-  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   DiscoveryQueryEditor,
   EMPTY_FIELDS,
@@ -32,6 +21,7 @@ import {
 } from "@/components/onboarding/workspace-provisioning-profile";
 import { ResultText } from "@/components/onboarding/workspace-provisioning-states";
 import type {
+  BuyerDemandReportView,
   CrawlJobView,
   ProspectActionResult,
   ServiceProfileFields,
@@ -41,18 +31,14 @@ import {
   DISCOVERY_QUERY_TYPES,
   type DiscoveryQuery,
 } from "@/lib/discovery-queries";
-import type { SourceFeedbackInsight } from "@/lib/source-feedback-insights";
 import { C } from "@/lib/tokens";
+import { TargetingEditor } from "./targeting-editor";
 import {
-  ProductBuyerMap,
-  type ProductBuyerMapSection,
-} from "./product-buyer-map";
-import { CommunitySourcePlan } from "./community-source-plan";
-import { WorkspaceRefreshCenter } from "./workspace-refresh-center";
+  normalizeSignals,
+  SignalField,
+  TextProfileField,
+} from "./targeting-fields";
 import { normalizeWebsiteUrl, websiteDomain } from "./website-url";
-
-const MAX_SIGNAL_LENGTH = 100;
-const MAX_TEXT_LENGTH = 1_000;
 
 type SignalFieldKey =
   | "target_audience"
@@ -72,7 +58,10 @@ type ServiceProfileSettingsProps = {
   crawlJob: CrawlJobView | null;
   websiteUrl: string;
   isPro: boolean;
-  sourceFeedbackInsights?: SourceFeedbackInsight[];
+  latestScan?: Pick<
+    BuyerDemandReportView,
+    "status" | "updatedAt" | "isTerminal" | "summary"
+  > | null;
   onFieldsChange?: (fields: ServiceProfileFields) => void;
   layout?: "standard" | "progressive";
 };
@@ -178,34 +167,6 @@ const TEXT_FIELDS: Array<{
   },
 ];
 
-function normalizeSignal(value: string) {
-  return value.trim().replace(/\s+/g, " ").slice(0, MAX_SIGNAL_LENGTH);
-}
-
-function normalizeSignals(values: readonly string[]) {
-  const seen = new Set<string>();
-  const normalizedValues: string[] = [];
-
-  for (const value of values) {
-    const normalized = normalizeSignal(value);
-    const key = normalized.toLowerCase();
-
-    if (!normalized || seen.has(key)) continue;
-
-    seen.add(key);
-    normalizedValues.push(normalized);
-  }
-
-  return normalizedValues;
-}
-
-function signalDraftItems(value: string) {
-  return value
-    .split(/[\n,;]+/)
-    .map(normalizeSignal)
-    .filter(Boolean);
-}
-
 async function readSettingsProfileResult(
   response: Response,
 ): Promise<ProspectActionResult> {
@@ -235,224 +196,12 @@ async function readSettingsProfileResult(
   };
 }
 
-function SignalField({
-  label,
-  description,
-  value,
-  placeholder,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  value: string[];
-  placeholder: string;
-  disabled: boolean;
-  onChange: (value: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const signals = useMemo(() => normalizeSignals(value), [value]);
-  const canAdd = normalizeSignal(draft).length > 0;
-
-  const commitDraft = () => {
-    const draftItems = signalDraftItems(draft);
-    if (draftItems.length === 0) return;
-
-    onChange(normalizeSignals([...signals, ...draftItems]));
-    setDraft("");
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
-
-    event.preventDefault();
-    commitDraft();
-  };
-
-  const removeSignal = (signal: string) => {
-    onChange(
-      signals.filter(
-        (item) => item.toLowerCase() !== signal.toLowerCase(),
-      ),
-    );
-  };
-
-  return (
-    <div className="rounded-lg border bg-background p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <label className="text-sm font-semibold" style={{ color: C.navy }}>
-            {label}
-          </label>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {description}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-          {signals.length}
-        </span>
-      </div>
-
-      {signals.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {signals.map((signal) => (
-            <span
-              key={signal.toLowerCase()}
-              className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs font-medium"
-              style={{ color: C.navy }}
-            >
-              <span className="truncate">{signal}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${signal}`}
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-black/5"
-                disabled={disabled}
-                onClick={() => removeSignal(signal)}
-              >
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="mt-3 flex min-w-0 gap-2">
-        <input
-          value={draft}
-          maxLength={MAX_SIGNAL_LENGTH * 4}
-          placeholder={placeholder}
-          disabled={disabled}
-          className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={(event) => {
-            const text = event.clipboardData.getData("text");
-            if (!/[\n,;]/.test(text)) return;
-
-            event.preventDefault();
-            const pastedItems = signalDraftItems(text);
-            if (pastedItems.length === 0) return;
-
-            onChange(normalizeSignals([...signals, ...pastedItems]));
-            setDraft("");
-          }}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || !canAdd}
-          className="h-9 shrink-0 rounded-md"
-          onClick={commitDraft}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          Add
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function TextProfileField({
-  label,
-  description,
-  value,
-  placeholder,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  value: string;
-  placeholder: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="rounded-lg border bg-background p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <label className="text-sm font-semibold" style={{ color: C.navy }}>
-            {label}
-          </label>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {description}
-          </p>
-        </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {value.length}/{MAX_TEXT_LENGTH}
-        </span>
-      </div>
-      <Textarea
-        maxLength={MAX_TEXT_LENGTH}
-        rows={3}
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="mt-3 min-h-24 resize-y rounded-md text-sm leading-6 disabled:opacity-60"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
-function BriefEditorSection({
-  section,
-  title,
-  description,
-  open,
-  onToggle,
-  children,
-}: {
-  section: ProductBuyerMapSection;
-  title: string;
-  description: string;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      id={`matching-brief-${section}`}
-      className="scroll-mt-4 overflow-hidden rounded-xl border bg-white"
-      style={{ borderColor: C.rule }}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
-        <div>
-          <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>
-            {title}
-          </h2>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {description}
-          </p>
-        </div>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          aria-expanded={open}
-          onClick={onToggle}
-          style={{ borderColor: C.ruleDark, color: C.navySoft }}
-        >
-          {open ? "Hide" : "Open"}
-          <ChevronDown className={open ? "size-3 rotate-180" : "size-3"} />
-        </Button>
-      </div>
-      {open ? (
-        <div className="border-t p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-          {children}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 export function ServiceProfileSettings({
   serviceProfile,
   crawlJob,
   websiteUrl,
   isPro,
-  sourceFeedbackInsights,
+  latestScan = null,
   onFieldsChange,
   layout = "standard",
 }: ServiceProfileSettingsProps) {
@@ -466,9 +215,6 @@ export function ServiceProfileSettings({
   );
   const [profileResult, setProfileResult] =
     useState<ProspectActionResult | null>(null);
-  const [openBriefSection, setOpenBriefSection] = useState<
-    "match" | "signals" | "guardrails" | null
-  >("match");
 
   useEffect(() => {
     setProfileFields(serviceProfile.fields ?? EMPTY_FIELDS);
@@ -512,15 +258,6 @@ export function ServiceProfileSettings({
         normalizeSignals(value.map((query) => query.phrase)),
       );
     }
-  };
-
-  const openMapEditor = (section: ProductBuyerMapSection) => {
-    setOpenBriefSection(section);
-    window.setTimeout(() => {
-      document
-        .getElementById(`matching-brief-${section}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
   };
 
   const persistProfile = (_intent: ProfilePersistIntent) => {
@@ -615,8 +352,30 @@ export function ServiceProfileSettings({
     }
   })();
 
+  if (layout === "progressive") {
+    return (
+      <TargetingEditor
+        serviceProfile={serviceProfile}
+        fields={profileFields}
+        isPro={isPro}
+        changedFieldCount={changedFieldCount}
+        isPending={isPending}
+        isWebsitePending={isWebsitePending}
+        result={profileResult}
+        websiteDraft={websiteDraft}
+        websiteChanged={websiteChanged}
+        latestScan={latestScan}
+        onFieldChange={updateField}
+        onDiscoveryQueriesChange={updateDiscoveryQueries}
+        onSave={() => persistProfile("save")}
+        onWebsiteDraftChange={setWebsiteDraft}
+        onWebsiteSave={refreshWebsiteContext}
+      />
+    );
+  }
+
   if (!serviceProfile.hasProfile) {
-    const gettingReady = (
+    return (
       <section
         className="rounded-md border bg-white p-3 shadow-sm"
         style={{ borderColor: C.rule }}
@@ -640,28 +399,6 @@ export function ServiceProfileSettings({
         </div>
       </section>
     );
-
-    if (layout !== "progressive") return gettingReady;
-
-    return (
-      <div className="space-y-4">
-        <WorkspaceRefreshCenter
-          serviceProfile={serviceProfile}
-          briefFields={profileFields}
-          crawlJob={crawlJob}
-          websiteDraft={websiteDraft}
-          websiteChanged={websiteChanged}
-          isPro={isPro}
-          isWebsitePending={isWebsitePending}
-          isBriefPending={isPending}
-          result={profileResult}
-          onWebsiteDraftChange={setWebsiteDraft}
-          onRecrawlWebsite={refreshWebsiteContext}
-          onRefreshBrief={() => persistProfile("save")}
-        />
-        {gettingReady}
-      </div>
-    );
   }
 
   const statusLabel = !isPro
@@ -671,155 +408,6 @@ export function ServiceProfileSettings({
       : "Regenerating";
   const activeWebsiteDomain = websiteDomain(resolvedWebsiteUrl);
   const draftedWebsiteDomain = websiteDomain(websiteDraft);
-  if (layout === "progressive") {
-    return (
-      <div className="space-y-4">
-        <WorkspaceRefreshCenter
-          serviceProfile={serviceProfile}
-          briefFields={profileFields}
-          crawlJob={crawlJob}
-          websiteDraft={websiteDraft}
-          websiteChanged={websiteChanged}
-          isPro={isPro}
-          isWebsitePending={isWebsitePending}
-          isBriefPending={isPending}
-          result={profileResult}
-          onWebsiteDraftChange={setWebsiteDraft}
-          onRecrawlWebsite={refreshWebsiteContext}
-          onRefreshBrief={() => persistProfile("save")}
-        />
-
-        {!hasProfileContent ? (
-          <div
-            className="rounded-lg border px-4 py-3 text-sm leading-6"
-            style={{
-              borderColor: C.blueLight,
-              backgroundColor: C.bluePale,
-              color: C.navySoft,
-            }}
-          >
-            No matching signals have been extracted yet. Start with the match below, or wait for regeneration to finish.
-          </div>
-        ) : null}
-
-        <ProductBuyerMap fields={profileFields} onEdit={openMapEditor} />
-
-        <CommunitySourcePlan
-          fields={profileFields}
-          sourceFeedbackInsights={sourceFeedbackInsights}
-        />
-
-        <BriefEditorSection
-          section="match"
-          title="The match"
-          description="Who should Arcli recognise, what are they trying to solve, and why are you the right fit?"
-          open={openBriefSection === "match"}
-          onToggle={() => setOpenBriefSection((current) => current === "match" ? null : "match")}
-        >
-          <div className="space-y-4">
-            <SignalField
-              label="Target audience"
-              description="Roles, teams, and company types most likely to buy."
-              value={profileFields.target_audience}
-              placeholder="RevOps leaders, B2B SaaS founders"
-              disabled={isPending}
-              onChange={(value) => updateField("target_audience", value)}
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              {TEXT_FIELDS.map((field) => (
-                <TextProfileField
-                  key={field.key}
-                  label={field.label}
-                  description={field.description}
-                  value={profileFields[field.key]}
-                  placeholder={field.placeholder}
-                  disabled={isPending}
-                  onChange={(value) => updateField(field.key, value)}
-                />
-              ))}
-            </div>
-          </div>
-        </BriefEditorSection>
-
-        <BriefEditorSection
-          section="signals"
-          title="Signals to look for"
-          description="Add the outcomes, frustrations, urgency, and buyer language that make a public conversation relevant."
-          open={openBriefSection === "signals"}
-          onToggle={() => setOpenBriefSection((current) => current === "signals" ? null : "signals")}
-        >
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              {SIGNAL_FIELDS.filter((field) =>
-                ["use_cases", "pain_points", "buying_triggers", "urgency_signals", "search_terms"].includes(field.key),
-              )
-                .filter(
-                  (field) =>
-                    field.key !== "search_terms" ||
-                    profileFields.discovery_queries.length === 0,
-                )
-                .map((field) => (
-                  <SignalField
-                    key={field.key}
-                    label={field.label}
-                    description={field.description}
-                    value={profileFields[field.key]}
-                    placeholder={field.placeholder}
-                    disabled={isPending}
-                    onChange={(value) => updateField(field.key, value)}
-                  />
-                ))}
-            </div>
-            <DiscoveryQueryEditor
-              value={profileFields.discovery_queries}
-              disabled={isPending}
-              onChange={updateDiscoveryQueries}
-            />
-          </div>
-        </BriefEditorSection>
-
-        <BriefEditorSection
-          section="guardrails"
-          title="Matching rules"
-          description="Keep weak matches out without changing the website source."
-          open={openBriefSection === "guardrails"}
-          onToggle={() => setOpenBriefSection((current) => current === "guardrails" ? null : "guardrails")}
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            {SIGNAL_FIELDS.filter((field) =>
-              ["negative_keywords", "excluded_audiences"].includes(field.key),
-            ).map((field) => (
-              <SignalField
-                key={field.key}
-                label={field.label}
-                description={field.description}
-                value={profileFields[field.key]}
-                placeholder={field.placeholder}
-                disabled={isPending}
-                onChange={(value) => updateField(field.key, value)}
-              />
-            ))}
-          </div>
-        </BriefEditorSection>
-
-        <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: C.rule }}>
-          <div className="min-w-0" aria-live="polite">
-            <ResultText result={profileResult} />
-            <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-              {changedFieldCount > 0
-                ? `${changedFieldCount} ${changedFieldCount === 1 ? "change" : "changes"} ready to update matching.`
-                : "Save brief changes to update matching without re-crawling the website."}
-            </p>
-          </div>
-          <Button type="button" disabled={isPending} className="h-9 shrink-0" onClick={() => persistProfile("save")}>
-            {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
-            {isPending ? "Saving..." : "Save brief changes"}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-5">
       <section

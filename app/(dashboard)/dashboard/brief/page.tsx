@@ -3,22 +3,21 @@ import { redirect } from "next/navigation";
 import { Target } from "lucide-react";
 
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MatchingBriefGuide } from "@/components/settings/workspace_page/matching-brief-guide";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
-import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import {
+  fetchBuyerDemandReport,
   fetchLatestCrawlJob,
   fetchServiceProfile,
-  fetchSourceFeedbackInsights,
   fetchTenantWebsiteUrl,
+  isBuyerDemandReportCurrent,
+  verifierScoreThreshold,
 } from "../data";
 
 export const metadata: Metadata = {
-  title: "Product & Buyer Map | Arcli",
-  description: "Review the product, buyer, and public demand signals Arcli should match.",
+  title: "Targeting | Arcli",
+  description: "Tell Arcli who to look for and what public signals matter.",
 };
 
 export const dynamic = "force-dynamic";
@@ -52,61 +51,33 @@ export default async function MatchingBriefPage() {
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
     getWorkspaceEntitlements(supabase, tenantId),
   ]);
-  const sourceFeedbackInsights = await fetchSourceFeedbackInsights(
+  const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,
     tenantId,
     serviceProfile.id,
+    verifierScoreThreshold(),
   );
-  const isActive = !entitlements.isPro || serviceProfile.embeddingStatus === "completed";
+  const latestScan = isBuyerDemandReportCurrent(crawlJob, buyerDemandReport)
+    ? buyerDemandReport
+    : null;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col gap-3 overflow-y-auto pr-1">
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Discovery setup"
-        title="Product & buyer map"
-        description="Review what your website says you sell, who buys it, and the conversations worth your attention."
+        title="Targeting"
+        description="Define the buyer, problem, and public signals that make a conversation worth reviewing."
         icon={Target}
-        visual={
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
-              Match state
-            </p>
-            <p className="mt-1.5 text-sm font-semibold" style={{ color: isActive ? C.green : C.blue }}>
-              {isActive ? "Active" : "Updating"}
-            </p>
-            <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>
-              {isActive
-                ? entitlements.isPro
-                  ? "This brief is shaping the signals in Prospects."
-                  : "Your website profile is ready. Upgrade to Pro to collect and review prospect signals."
-                : "Your last active brief remains in use while this one refreshes."}
-            </p>
-          </div>
-        }
       />
 
-      <MatchingBriefGuide />
-
-      <Card className="rounded-xl bg-white shadow-sm" style={{ borderColor: C.rule }}>
-        <CardHeader className="border-b p-3" style={{ borderColor: C.rule }}>
-          <CardTitle className="pfd text-xl leading-none" style={{ color: C.navy }}>
-            Your product & buyer map
-          </CardTitle>
-          <p className="text-xs leading-5" style={{ color: C.muted }}>
-            Refine the website-derived hypothesis that guides every prospect match.
-          </p>
-        </CardHeader>
-        <CardContent className="p-3 pt-4">
-          <ServiceProfileSettings
-            serviceProfile={serviceProfile}
-            crawlJob={crawlJob}
-            websiteUrl={websiteUrl}
-            isPro={entitlements.isPro}
-            layout="progressive"
-            sourceFeedbackInsights={sourceFeedbackInsights}
-          />
-        </CardContent>
-      </Card>
+      <ServiceProfileSettings
+        serviceProfile={serviceProfile}
+        crawlJob={crawlJob}
+        websiteUrl={websiteUrl}
+        isPro={entitlements.isPro}
+        latestScan={latestScan}
+        layout="progressive"
+      />
     </div>
   );
 }

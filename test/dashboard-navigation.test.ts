@@ -18,6 +18,11 @@ test("exposes the four primary dashboard workflows", () => {
       "/settings",
     ],
   );
+  assert.equal(
+    dashboardNavigationItems.find((item) => item.href === "/dashboard/brief")
+      ?.label,
+    "Targeting",
+  );
 });
 
 test("marks only the current navigation workflow as active", () => {
