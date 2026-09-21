@@ -36,15 +36,13 @@ export function Hero() {
               margin: "0 0 18px",
             }}
           >
-            Find buyers already describing
+            Find public buyer conversations
             <br />
-            <span style={{ color: C.blue }}>
-              the problem your SaaS solves.
-            </span>
+            <span style={{ color: C.blue }}>worth acting on.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.navySoft, lineHeight: 1.62, maxWidth: 550, margin: "0 auto 30px" }}>
-            Arcli turns your website into a reviewable queue of relevant public conversations, with the original source, match reasoning, and a suggested first reply.
+            Arcli turns your website into a review-ready queue of relevant public conversations, with the original source, match reasoning, and a suggested first reply.
           </p>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginBottom: 18 }}>

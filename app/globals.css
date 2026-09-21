@@ -299,11 +299,13 @@
 .anim-float-2 { animation: float2 7s ease-in-out infinite reverse; }
 
 .pulse-indicator {
+  display: inline-block;
+  flex: 0 0 6px;
   width: 6px; /* Scaled down */
   height: 6px;
   border-radius: 50%;
   background: #1B6EBF;
-  animation: pulse-glow 2s infinite;
+  animation: pulse-glow 2.4s ease-out infinite;
 }
 
 .fu {

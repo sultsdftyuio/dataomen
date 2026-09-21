@@ -24,12 +24,12 @@ export function CTA() {
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: 640, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(34px, 4vw, 46px)", marginBottom: 12, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
-          <RevealWords text="See whether your buyers" />
+          <RevealWords text="Start with a free" />
           <br />
-          <RevealWords text="are already talking." delay={160} />
+          <RevealWords text="market check." delay={160} />
         </h2>
         <p style={{ fontSize: 16, marginBottom: 26, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-          Start with your website, then review the evidence before you decide what deserves action.
+          Add your website and see whether relevant buyer conversations are already happening.
         </p>
 
 

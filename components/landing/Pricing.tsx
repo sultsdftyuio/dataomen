@@ -62,7 +62,7 @@ export default function ArcliPricingCards() {
               marginBottom: 14,
             }}
           >
-            <Activity size={14} /> SIMPLE PRICING
+            <Activity size={14} /> <span className="pulse-indicator" aria-hidden="true" /> SIMPLE PRICING
           </div>
           <h2
             className="pfd"
@@ -99,7 +99,8 @@ export default function ArcliPricingCards() {
               Validate the signal.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              Let Arcli learn your offer and show whether relevant public conversations are out there.
+              See whether buyer conversations exist in your market. Free shows the live match
+              count; it does not unlock the underlying queue.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.rule }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$0</span>
@@ -132,7 +133,8 @@ export default function ArcliPricingCards() {
               Turn signal into pipeline.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              Review qualified people, original evidence, and match reasoning as new conversations surface.
+              Unlock matched conversations, source evidence, and ongoing discovery as new buyer
+              signals surface.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.blueLight }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>

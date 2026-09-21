@@ -18,7 +18,7 @@ const steps: Array<{
   {
     icon: Globe2,
     label: "01 / Understand",
-    title: "Start with your website.",
+    title: "Understand your offer.",
     copy: "Arcli builds a focused picture of what you sell, who it is for, and the buyer problems you solve.",
     signal: "Product context ready",
     detail: "Audience · problems · buyer language",
@@ -26,7 +26,7 @@ const steps: Array<{
   {
     icon: SearchCheck,
     label: "02 / Find",
-    title: "Scan relevant conversations.",
+    title: "Find buyer language.",
     copy: "It looks for public discussions where people are actively describing a problem your product could genuinely help solve.",
     signal: "Buyer signal found",
     detail: "Conversation · context · intent",
@@ -34,7 +34,7 @@ const steps: Array<{
   {
     icon: BadgeCheck,
     label: "03 / Review",
-    title: "Decide with evidence.",
+    title: "Review the evidence.",
     copy: "You receive the original post, the reason it matches, and a suggested way to start a useful conversation.",
     signal: "Ready to review",
     detail: "Source · why it fits · reply",
@@ -70,7 +70,7 @@ export function HowItWorks() {
               textTransform: "uppercase",
             }}
           >
-            <SearchCheck size={14} /> The workflow
+            <SearchCheck size={14} /> <span className="pulse-indicator" aria-hidden="true" /> The workflow
           </div>
           <h2
             className="pfd"
@@ -84,7 +84,7 @@ export function HowItWorks() {
               margin: "0 0 16px",
             }}
           >
-            <RevealWords text="From your website to a qualified conversation." />
+            <RevealWords text="Turn public conversations into review-ready opportunities." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
             One clear workflow: define what matters, find the right public conversations, then

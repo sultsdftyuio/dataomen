@@ -56,7 +56,7 @@ export function DeepDiveFeatures() {
               textTransform: "uppercase",
             }}
           >
-            <CheckCircle2 size={14} /> Qualification standards
+            <CheckCircle2 size={14} /> <span className="pulse-indicator" aria-hidden="true" /> Qualification standards
           </div>
           <h2
             className="pfd"
@@ -73,8 +73,8 @@ export function DeepDiveFeatures() {
             <RevealWords text="A lead is more than a matching word." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            Arcli prioritizes conversations with a credible buyer problem and preserves the
-            evidence for human review. Your feedback improves priority over time.
+            Arcli surfaces conversations with a credible buyer problem—not generic mentions—and
+            keeps source evidence visible for human review.
           </p>
         </Reveal>
 

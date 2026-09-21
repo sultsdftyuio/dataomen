@@ -6,9 +6,9 @@ const surfaceBorder = "1px solid rgba(15, 23, 42, 0.10)";
 const surfaceShadow = "0 20px 54px rgba(15, 23, 42, 0.14)";
 
 const walkthroughSteps = [
-  "Find the original public signal.",
-  "Understand why it matches your product.",
-  "Review a context-aware first reply.",
+  "The original buyer conversation.",
+  "Why this is a real fit.",
+  "A thoughtful way to respond.",
 ];
 
 export function LeadReviewPreview() {
@@ -39,7 +39,7 @@ export function LeadReviewPreview() {
               textTransform: "uppercase",
             }}
           >
-            <FileSearch size={15} /> A review-ready lead
+            <FileSearch size={15} /> <span className="pulse-indicator" aria-hidden="true" /> A review-ready lead
           </div>
           <h2
             className="pfd"

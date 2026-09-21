@@ -26,8 +26,8 @@ const items = [
     a: "No. Arcli helps you find and understand useful opportunities. It does not send mass messages, read your inbox, or make outreach decisions for you.",
   },
   {
-    q: "How does pricing scale? Do we pay per team member?",
-    a: "No per-seat licenses. Solo founders and small SaaS teams can invite collaborators to review prospects together without arbitrary user fees.",
+    q: "What changes when I upgrade to Pro?",
+    a: "Free lets you validate market signal with a live count of matched conversations. Pro unlocks the review-ready queue, match evidence, and ongoing discovery.",
   },
 ];
 
