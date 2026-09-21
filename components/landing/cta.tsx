@@ -24,12 +24,12 @@ export function CTA() {
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: 640, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(34px, 4vw, 46px)", marginBottom: 12, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
-          <RevealWords text="Skip the noise." />
+          <RevealWords text="See whether your buyers" />
           <br />
-          <RevealWords text="Find real prospects." delay={160} />
+          <RevealWords text="are already talking." delay={160} />
         </h2>
         <p style={{ fontSize: 16, marginBottom: 26, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-          Add your website. Arcli finds people already asking for help with the problem you solve.
+          Start with your website, then review the evidence before you decide what deserves action.
         </p>
 
 
@@ -55,7 +55,7 @@ export function CTA() {
                 letterSpacing: "0.02em",
               }}
             >
-              Find Prospects <ArrowRight size={14} />
+              Start Free Scan <ArrowRight size={14} />
             </a>
           </div>
         </Reveal>
@@ -63,7 +63,7 @@ export function CTA() {
         {/* Trust nudges */}
         <Reveal delay={260}>
           <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: "0.03em", textTransform: "uppercase", flexWrap: "wrap", justifyContent: "center" }}>
-          {["Simple $35/month Pro", "Cancel anytime", "Start from your website"].map((t, i) => (
+          {["Simple $35/month Pro", "Cancel anytime", "No per-seat fees"].map((t, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <CheckCircle2 size={14} /> {t}
             </span>

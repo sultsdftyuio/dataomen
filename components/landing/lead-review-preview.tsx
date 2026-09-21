@@ -14,6 +14,7 @@ const walkthroughSteps = [
 export function LeadReviewPreview() {
   return (
     <section
+      id="proof"
       aria-labelledby="lead-review-heading"
       style={{
         background: "#F4F8FF",
@@ -38,7 +39,7 @@ export function LeadReviewPreview() {
               textTransform: "uppercase",
             }}
           >
-            <FileSearch size={15} /> 20-second product walkthrough
+            <FileSearch size={15} /> A review-ready lead
           </div>
           <h2
             className="pfd"
@@ -52,11 +53,11 @@ export function LeadReviewPreview() {
               margin: "0 0 18px",
             }}
           >
-            Watch a buyer signal become a review-ready lead.
+            See the evidence before you decide to reach out.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            Follow one public conversation from source evidence to a clear match explanation and
-            a thoughtful first reply—so you can decide what deserves action before reaching out.
+            Follow one public conversation from the original source to a clear match explanation
+            and thoughtful first reply—so you can decide what deserves action.
           </p>
         </div>
 

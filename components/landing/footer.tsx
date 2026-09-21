@@ -28,7 +28,7 @@ export default function Footer() {
               <Logo className="h-7 w-auto group-hover:scale-[1.02] transition-transform" />
             </Link>
             <p className="text-slate-600 mb-6 max-w-md text-[14px] leading-relaxed">
-              Arcli helps SaaS founders find people already talking about the problem they solve. It learns from your website, checks each match, and sends only useful opportunities.
+              Buyer-intent discovery for SaaS founders, grounded in original public conversations and human review.
             </p>
           </div>
 
@@ -40,8 +40,8 @@ export default function Footer() {
               <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Platform</h3>
               <ul className="space-y-3">
                 <li>
-                  <Link href="/#sources" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Public Sources
+                  <Link href="/#proof" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    See a Review-Ready Lead
                   </Link>
                 </li>
                 <li>
@@ -51,7 +51,7 @@ export default function Footer() {
                 </li>
                 <li>
                   <Link href="/#quality" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Why Matches Fit
+                    How Matches Qualify
                   </Link>
                 </li>
                 <li>

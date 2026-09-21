@@ -23,10 +23,9 @@ export function Navbar() {
   }, []);
 
   const navLinks = [
-    { name: "Sources", href: "/#sources" },
+    { name: "See a lead", href: "/#proof" },
     { name: "How it works", href: "/#pipeline" },
-    { name: "Why it fits", href: "/#quality" },
-    { name: "Resources", href: "/resources" },
+    { name: "How it qualifies", href: "/#quality" },
     { name: "Pricing", href: "/#pricing" },
   ];
 
@@ -142,7 +141,7 @@ export function Navbar() {
               (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 6px 14px rgba(27,110,191,0.22)";
             }}
           >
-            Find Prospects
+            Start Free Scan
           </Link>
         </div>
       </div>

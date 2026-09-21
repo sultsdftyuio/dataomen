@@ -17,23 +17,23 @@ const steps: Array<{
 }> = [
   {
     icon: Globe2,
-    label: "01 · Understand",
+    label: "01 / Understand",
     title: "Start with your website.",
-    copy: "Arcli builds a focused picture of what you sell, who it is for, and the problems it solves.",
+    copy: "Arcli builds a focused picture of what you sell, who it is for, and the buyer problems you solve.",
     signal: "Product context ready",
     detail: "Audience · problems · buyer language",
   },
   {
     icon: SearchCheck,
-    label: "02 · Find",
-    title: "Check relevant conversations.",
-    copy: "It looks for public discussions where people describe a problem your product could genuinely help solve.",
+    label: "02 / Find",
+    title: "Scan relevant conversations.",
+    copy: "It looks for public discussions where people are actively describing a problem your product could genuinely help solve.",
     signal: "Buyer signal found",
     detail: "Conversation · context · intent",
   },
   {
     icon: BadgeCheck,
-    label: "03 · Review",
+    label: "03 / Review",
     title: "Decide with evidence.",
     copy: "You receive the original post, the reason it matches, and a suggested way to start a useful conversation.",
     signal: "Ready to review",
@@ -84,11 +84,11 @@ export function HowItWorks() {
               margin: "0 0 16px",
             }}
           >
-            <RevealWords text="From your website to a reviewable lead." />
+            <RevealWords text="From your website to a qualified conversation." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            A concise process that keeps product context and source evidence together from the
-            first search to your final decision.
+            One clear workflow: define what matters, find the right public conversations, then
+            review the evidence before you act.
           </p>
         </Reveal>
 
@@ -102,6 +102,21 @@ export function HowItWorks() {
             </Fragment>
           ))}
         </div>
+        <p
+          style={{
+            borderTop: surfaceBorder,
+            color: C.muted,
+            fontSize: 13,
+            lineHeight: 1.6,
+            margin: "34px auto 0",
+            maxWidth: 760,
+            paddingTop: 20,
+            textAlign: "center",
+          }}
+        >
+          Core coverage begins with Hacker News and Bluesky. Arcli adds technical or community
+          sources only when they fit your product and audience.
+        </p>
       </div>
     </section>
   );

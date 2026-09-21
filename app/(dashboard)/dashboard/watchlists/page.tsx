@@ -5,7 +5,6 @@ import { UsersRound } from "lucide-react";
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import { deriveBuyerGroupSuggestions } from "@/lib/buyer-group-suggestions";
-import { C } from "@/lib/tokens";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import {
@@ -77,60 +76,19 @@ export default async function WatchlistsPage() {
     watchlists,
     threshold,
   );
-  const activeWatchlistCount = watchlists.filter((watchlist) => watchlist.isActive).length;
-  const sourceCount = new Set(
-    watchlists.flatMap((watchlist) =>
-      watchlist.sourcePreferences.filter((source) => source.trim().toLowerCase() !== "x"),
-    ),
-  ).size;
-
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col gap-3 overflow-y-auto pr-1">
+    <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Focused search"
         title="Buyer groups"
-        description={
-          watchlists.length === 0
-            ? "Start with a website-derived direction on Prospects, then use Buyer Groups to manage and refine the focused scans you keep."
-            : "Watch the audiences that matter most, one real problem at a time."
-        }
+        description="Keep a small number of audience-and-problem hypotheses, then review the public conversations they surface."
         icon={UsersRound}
-        visual={
-          watchlists.length === 0 ? (
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
-                First step
-              </p>
-              <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
-                Start from the website demand map.
-              </p>
-              <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                Choose a suggested direction to start a focused scan, or add a custom market here.
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
-                Your coverage
-              </p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
-                  <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{activeWatchlistCount}</p>
-                  <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Active groups</p>
-                </div>
-                <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
-                  <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{sourceCount}</p>
-                  <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Sources picked</p>
-                </div>
-              </div>
-            </div>
-          )
-        }
       />
 
       <WebsiteDemandMap
         suggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateSuggestedBuyerGroup}
+        collapsible
       />
 
       <WatchlistsPanel
@@ -139,6 +97,7 @@ export default async function WatchlistsPage() {
         createWatchlist={createWatchlist}
         runWatchlistDiscovery={runWatchlistDiscovery}
         setWatchlistActive={setWatchlistActive}
+        hasSuggestedBuyerGroups={buyerGroupSuggestions.length > 0}
       />
     </div>
   );

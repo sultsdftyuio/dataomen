@@ -4,7 +4,6 @@ import "../styles/globals.css";
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { LeadReviewPreview } from "@/components/landing/lead-review-preview";
-import { PublicSources } from "@/components/landing/public-sources";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
 import Pricing from "@/components/landing/Pricing"; 
@@ -98,9 +97,8 @@ export default function Page() {
         {/* Page Content Flow */}
         <div className="relative z-10 flex flex-col">
           <Hero />
-          <HowItWorks />
           <LeadReviewPreview />
-          <PublicSources />
+          <HowItWorks />
           <DeepDiveFeatures />
           <Pricing />
           <FAQ />

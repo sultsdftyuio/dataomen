@@ -75,10 +75,11 @@ export default function ArcliPricingCards() {
               marginBottom: 18,
             }}
           >
-            <RevealWords text="Start free. Upgrade when a prospect is worth acting on." />
+            <RevealWords text="Validate the signal first. Upgrade when you are ready to act." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62 }}>
-            One straightforward plan for turning public conversations into a focused prospect queue.
+            Start with a free market check. Pro turns that signal into ongoing discovery and a
+            review-ready prospect queue.
           </p>
         </Reveal>
 
@@ -95,10 +96,10 @@ export default function ArcliPricingCards() {
               Free
             </span>
             <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
-              See the signal.
+              Validate the signal.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              Let Arcli learn your offer and show you whether the right conversations are out there.
+              Let Arcli learn your offer and show whether relevant public conversations are out there.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.rule }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$0</span>
@@ -128,10 +129,10 @@ export default function ArcliPricingCards() {
               <Sparkles className="size-3" aria-hidden="true" /> Pro
             </span>
             <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
-              Act on the signal.
+              Turn signal into pipeline.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              Review the people, evidence, and matching reasons behind every prospect Arcli finds.
+              Review qualified people, original evidence, and match reasoning as new conversations surface.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.blueLight }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>

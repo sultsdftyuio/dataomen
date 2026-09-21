@@ -1,16 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   BookOpen,
-  ExternalLink,
-  Pause,
-  Play,
   Plus,
-  Radar,
   Search,
   SlidersHorizontal,
   Users,
@@ -37,6 +32,7 @@ import type {
   WatchlistResultsView,
   WatchlistView,
 } from "./prospect-types";
+import { WatchlistDetail, scanLabel } from "./watchlist-detail";
 
 const SOURCE_OPTIONS = [
   { value: "hackernews", label: "Hacker News", detail: "Founder and builder discussions" },
@@ -59,119 +55,6 @@ function splitLines(value: string) {
       seen.add(key);
       return true;
     });
-}
-
-function formatDate(value: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
-}
-
-function sourceLabel(value: string) {
-  if (value.trim().toLowerCase() === "x") return "Public conversation";
-  return SOURCE_OPTIONS.find((source) => source.value === value)?.label ?? value;
-}
-
-function visibleSources(sources: string[]) {
-  return sources.filter((source) => source.trim().toLowerCase() !== "x");
-}
-
-function scanLabel(status: string | null) {
-  switch (status?.toLowerCase()) {
-    case "queued":
-      return "Scanning";
-    case "running":
-      return "Preparing";
-    case "completed":
-      return "Checked";
-    case "partial":
-      return "Partial coverage";
-    case "failed":
-      return "Needs attention";
-    default:
-      return "Not scanned";
-  }
-}
-
-function WatchlistResultCards({ result }: { result: WatchlistResultsView | undefined }) {
-  const ready = result?.readyToAct ?? [];
-  const watch = result?.discoveryCandidates ?? [];
-  const signals = [...ready, ...watch];
-  if (signals.length === 0) {
-    return (
-      <p className="text-sm leading-6" style={{ color: C.muted }}>
-        No verifier-confirmed conversations for this group yet. A scan can still
-        surface review-only evidence when the fit is plausible but incomplete.
-      </p>
-    );
-  }
-
-  return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      {signals.slice(0, 4).map((lead) => {
-        const isReady = lead.matchStatus === "ready_for_review";
-        return (
-          <div
-            key={lead.id}
-            className="rounded-md border p-3"
-            style={{
-              borderColor: isReady ? C.green : C.amber,
-              backgroundColor: C.white,
-            }}
-          >
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge
-                variant="outline"
-                className="rounded-md"
-                style={{
-                  borderColor: isReady ? C.green : C.amber,
-                  backgroundColor: isReady ? C.greenPale : C.amberPale,
-                  color: isReady ? C.green : C.amber,
-                }}
-              >
-                {isReady ? "Ready to review" : "Review signal"}
-              </Badge>
-              <span style={{ color: C.muted }}>
-                {sourceLabel(lead.sourcePost.source)} · verifier {Math.round(lead.verifierScore * 100)}%
-              </span>
-            </div>
-            <p className="mt-2 text-sm font-semibold leading-6" style={{ color: C.navy }}>
-              {lead.sourcePost.title}
-            </p>
-            <p className="mt-2 line-clamp-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              {lead.painDetected || lead.matchReason}
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              {lead.sourcePost.url ? (
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  style={{ borderColor: C.blueLight, color: C.blue }}
-                >
-                  <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-3.5" />
-                    View source
-                  </a>
-                </Button>
-              ) : null}
-              {!isReady ? (
-                <span className="text-xs" style={{ color: C.muted }}>
-                  Review-only; not sent to CRM.
-                </span>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
-      {signals.length > 4 ? (
-        <p className="text-xs" style={{ color: C.muted }}>
-          Showing the latest 4 signals. Open Prospects to work through the full queue.
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 function WatchlistForm({
@@ -353,8 +236,10 @@ function WatchlistForm({
 
 function FirstBuyerGroupSetup({
   onCreate,
+  hasSuggestedBuyerGroups,
 }: {
   onCreate: WatchlistAction;
+  hasSuggestedBuyerGroups: boolean;
 }) {
   const [hasStarted, setHasStarted] = useState(false);
   const [step, setStep] = useState(1);
@@ -423,63 +308,32 @@ function FirstBuyerGroupSetup({
 
   if (!hasStarted) {
     return (
-      <div className="grid gap-4">
-        <section
-          aria-labelledby="first-buyer-group-heading"
-          className="overflow-hidden rounded-xl border bg-white"
-          style={{ borderColor: C.blueLight, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
+      <section
+        aria-labelledby="first-buyer-group-heading"
+        className="rounded-xl border bg-white p-5 sm:p-6"
+        style={{ borderColor: C.blueLight, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
+      >
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+          First buyer group
+        </p>
+        <h2 id="first-buyer-group-heading" className="mt-2 text-xl font-semibold leading-tight" style={{ color: C.navy }}>
+          Start with one audience and one real problem.
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+          {hasSuggestedBuyerGroups
+            ? "Open the website ideas card above to test a suggested direction, or create a group for a market you already know."
+            : "Create a focused group for the audience and problem you want Arcli to watch."}
+        </p>
+        <Button
+          type="button"
+          className="mt-4"
+          onClick={() => setHasStarted(true)}
+          style={{ backgroundColor: C.blue, color: C.white }}
         >
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="p-5 sm:p-7">
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                First buyer group
-              </p>
-              <h2 id="first-buyer-group-heading" className="pfd mt-2 text-2xl leading-tight" style={{ color: C.navy }}>
-                Start from the demand map on your website.
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
-                Arcli proposes focused buyer directions from your website on the Prospects page. Test one there, or create a custom group when you already know the market you want to watch.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button asChild style={{ backgroundColor: C.blue, color: C.white }}>
-                  <Link href="/dashboard">
-                    See website demand map
-                    <ArrowRight className="size-4" />
-                  </Link>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setHasStarted(true)}
-                  style={{ borderColor: C.blueLight, color: C.blue }}
-                >
-                  Create custom group
-                </Button>
-              </div>
-            </div>
-            <div className="border-t p-5 lg:border-l lg:border-t-0" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
-                Use this when needed
-              </p>
-              <ol className="mt-4 space-y-4">
-                {[
-                  ["1", "Choose a website-derived direction first."],
-                  ["2", "Check the evidence and refine it if needed."],
-                  ["3", "Create a custom group only for a new market."],
-                ].map(([number, label]) => (
-                  <li key={number} className="flex items-start gap-3 text-sm" style={{ color: C.navySoft }}>
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold" style={{ backgroundColor: C.blueTint, color: C.blue }}>
-                      {number}
-                    </span>
-                    <span className="pt-0.5">{label}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
-        </section>
-
-      </div>
+          Create custom buyer group
+          <ArrowRight className="size-4" />
+        </Button>
+      </section>
     );
   }
 
@@ -645,189 +499,6 @@ function FirstBuyerGroupSetup({
   );
 }
 
-function WatchlistDetail({
-  watchlist,
-  result,
-  busy,
-  onRun,
-  onSetActive,
-}: {
-  watchlist: WatchlistView;
-  result: WatchlistResultsView | undefined;
-  busy: boolean;
-  onRun: (watchlistId: string) => void;
-  onSetActive: (watchlistId: string, isActive: boolean) => void;
-}) {
-  const [showCoverage, setShowCoverage] = useState(false);
-  const [showSignals, setShowSignals] = useState(false);
-  const readyCount = result?.readyToAct.length ?? 0;
-  const reviewCount = result?.discoveryCandidates.length ?? 0;
-  const signalCount = readyCount + reviewCount;
-  const lastScan = formatDate(watchlist.lastScanAt);
-  const displayedSources = visibleSources(watchlist.sourcePreferences);
-
-  useEffect(() => {
-    setShowCoverage(false);
-    setShowSignals(false);
-  }, [watchlist.id]);
-
-  return (
-    <section
-      aria-labelledby={`watchlist-brief-${watchlist.id}`}
-      className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[#F6FAFE]"
-      style={{ borderColor: C.rule, backgroundColor: C.offWhite, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
-    >
-      <div className="border-b px-4 py-4" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-              Buyer group
-            </p>
-            <h2 id={`watchlist-brief-${watchlist.id}`} className="pfd mt-1 text-2xl leading-none" style={{ color: C.navy }}>
-              {watchlist.name}
-            </h2>
-          </div>
-          <Badge
-            variant="outline"
-            className="h-6 rounded px-2 text-[10px]"
-            style={{
-              borderColor: watchlist.isActive ? C.green : C.ruleDark,
-              backgroundColor: watchlist.isActive ? C.greenPale : C.white,
-              color: watchlist.isActive ? C.green : C.muted,
-            }}
-          >
-            <Radar className="size-3" />
-            {watchlist.isActive ? scanLabel(watchlist.scanStatus) : "Paused"}
-          </Badge>
-        </div>
-        <p className="mt-3 text-xs" style={{ color: C.muted }}>
-          {lastScan ? `Last scanned ${lastScan}` : "No scan has run yet"}
-        </p>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        <section className="rounded-lg border bg-white p-3.5" style={{ borderColor: C.rule }}>
-          <p className="pfd text-lg leading-none" style={{ color: C.navy }}>
-            The brief
-          </p>
-          <dl className="mt-3 space-y-3 text-sm">
-            <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
-                Looking for
-              </dt>
-              <dd className="mt-1 leading-5" style={{ color: C.navy }}>
-                {watchlist.targetBuyer}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
-                Their problem
-              </dt>
-              <dd className="mt-1 leading-5" style={{ color: C.navy }}>
-                {watchlist.problemToSolve}
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="rounded-lg border bg-white p-3.5" style={{ borderColor: C.rule }}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="pfd text-lg leading-none" style={{ color: C.navy }}>
-                Coverage
-              </p>
-              <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                {displayedSources.length} public {displayedSources.length === 1 ? "source" : "sources"} enabled
-              </p>
-            </div>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              aria-expanded={showCoverage}
-              onClick={() => setShowCoverage((current) => !current)}
-              style={{ borderColor: C.ruleDark, color: C.navySoft }}
-            >
-              {showCoverage ? "Hide sources" : "See sources"}
-            </Button>
-          </div>
-          {showCoverage ? (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {displayedSources.map((source) => (
-                <Badge key={source} variant="outline" className="h-5 rounded px-1.5 text-[10px]" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-                  {sourceLabel(source)}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="rounded-lg border bg-white p-3.5" style={{ borderColor: C.rule }}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="pfd text-lg leading-none" style={{ color: C.navy }}>
-                Latest signals
-              </p>
-              <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                {readyCount} ready · {reviewCount} for review
-              </p>
-            </div>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              aria-expanded={showSignals}
-              onClick={() => setShowSignals((current) => !current)}
-              style={{ borderColor: C.ruleDark, color: C.navySoft }}
-            >
-              {showSignals ? "Hide signals" : signalCount ? "View signals" : "Explain status"}
-            </Button>
-          </div>
-          {showSignals ? (
-            <div className="mt-3 space-y-3">
-              <WatchlistResultCards result={result} />
-              {signalCount > 0 ? (
-                <Button asChild size="sm" variant="outline" style={{ borderColor: C.blueLight, color: C.blue }}>
-                  <Link href="/dashboard">
-                    Open Prospects
-                    <ArrowRight className="size-3.5" />
-                  </Link>
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
-
-        {watchlist.lastScanError ? (
-          <p className="rounded-md border p-3 text-xs leading-5" style={{ borderColor: C.red, backgroundColor: C.redPale, color: C.red }}>
-            {watchlist.lastScanError}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-t bg-white p-3" style={{ borderColor: C.rule }}>
-        {watchlist.isActive ? (
-          <>
-            <Button type="button" size="sm" disabled={busy} onClick={() => onRun(watchlist.id)} style={{ backgroundColor: C.blue, color: C.white }}>
-              <Search className="size-3.5" />
-              {busy ? "Starting…" : lastScan ? "Scan again" : "Start scan"}
-            </Button>
-            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => onSetActive(watchlist.id, false)} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-              <Pause className="size-3.5" />
-              Pause group
-            </Button>
-          </>
-        ) : (
-          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => onSetActive(watchlist.id, true)} style={{ borderColor: C.blueLight, color: C.blue }}>
-            <Play className="size-3.5" />
-            Resume group
-          </Button>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function BuyerGroupsGuide() {
   return (
     <Sheet>
@@ -928,12 +599,14 @@ export default function WatchlistsPanel({
   createWatchlist,
   runWatchlistDiscovery,
   setWatchlistActive,
+  hasSuggestedBuyerGroups,
 }: {
   watchlists: WatchlistView[];
   results: WatchlistResultsView[];
   createWatchlist: WatchlistAction;
   runWatchlistDiscovery: (watchlistId: string) => Promise<ProspectActionResult>;
   setWatchlistActive: (watchlistId: string, isActive: boolean) => Promise<ProspectActionResult>;
+  hasSuggestedBuyerGroups: boolean;
 }) {
   const router = useRouter();
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(
@@ -992,7 +665,10 @@ export default function WatchlistsPanel({
   if (watchlists.length === 0) {
     return (
       <section id="watchlists" className="space-y-3">
-        <FirstBuyerGroupSetup onCreate={create} />
+        <FirstBuyerGroupSetup
+          onCreate={create}
+          hasSuggestedBuyerGroups={hasSuggestedBuyerGroups}
+        />
         {notice ? (
           <p role="status" className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: C.rule, backgroundColor: C.white, color: C.navySoft }}>
             {notice}

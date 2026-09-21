@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronRight, Compass, Radar } from "lucide-react";
+import { ChevronDown, ChevronRight, Compass, Radar } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ export function WebsiteDemandMap({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   if (suggestions.length === 0) return null;
@@ -119,10 +120,17 @@ export function WebsiteDemandMap({
     return (
       <section
         aria-labelledby="website-demand-map-heading"
-        className="shrink-0 rounded-lg border px-3 py-2.5 sm:px-4"
+        className="shrink-0 overflow-hidden rounded-xl border"
         style={{ borderColor: C.ruleDark, backgroundColor: C.white }}
       >
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <button
+          type="button"
+          className="flex w-full flex-col gap-3 p-3 text-left transition-colors hover:bg-[#F8FBFD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-4 lg:flex-row lg:items-center lg:justify-between"
+          aria-label="Buyer groups from your website"
+          aria-expanded={isExpanded}
+          aria-controls="website-demand-map-suggestions"
+          onClick={() => setIsExpanded((current) => !current)}
+        >
           <div className="flex min-w-0 items-center gap-2.5">
             <span
               className="flex size-8 shrink-0 items-center justify-center rounded-md"
@@ -153,15 +161,21 @@ export function WebsiteDemandMap({
             ))}
           </div>
 
-          <Link
-            href="/dashboard/watchlists"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold hover:bg-[#F0F7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-            style={{ color: C.blue }}
-          >
-            Buyer groups
-            <ChevronRight className="size-3.5" aria-hidden="true" />
-          </Link>
-        </div>
+          <ChevronDown
+            className={isExpanded ? "size-4 shrink-0 rotate-180" : "size-4 shrink-0"}
+            style={{ color: C.muted }}
+            aria-hidden="true"
+          />
+        </button>
+        {isExpanded ? (
+          <div id="website-demand-map-suggestions" className="border-t" style={{ borderColor: C.rule }}>
+            <p className="px-4 py-3 text-xs leading-5" style={{ color: C.navySoft }}>
+              These are hypotheses, not leads. Start a focused scan for one direction worth testing.
+            </p>
+            {suggestionCards}
+            {activationNotice}
+          </div>
+        ) : activationNotice}
       </section>
     );
   }

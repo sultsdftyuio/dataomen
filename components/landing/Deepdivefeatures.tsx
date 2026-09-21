@@ -9,21 +9,21 @@ import { C } from "@/lib/tokens";
 const trustSteps = [
   {
     icon: Radar,
-    label: "01 · Product context",
-    title: "Learns what matters to your buyer.",
-    copy: "Your website gives Arcli the product, audience, problem, and language to look for.",
+    label: "01 / Buyer intent",
+    title: "Looks for a real problem in context.",
+    copy: "A useful lead is someone describing a problem your product can help solve—not merely using a familiar word.",
   },
   {
     icon: FileCheck2,
-    label: "02 · Evidence check",
-    title: "Shows the context behind a match.",
-    copy: "A lead includes the public conversation, the buyer signal, and why it may be worth a reply.",
+    label: "02 / Reviewable evidence",
+    title: "Shows you why it surfaced.",
+    copy: "Each review-ready lead keeps the original public conversation and the specific buyer signal alongside the match.",
   },
   {
     icon: SlidersHorizontal,
-    label: "03 · Helpful feedback",
-    title: "Prioritizes what has been useful.",
-    copy: "Your feedback helps similar signals surface sooner without shutting off broad discovery.",
+    label: "03 / Feedback loop",
+    title: "Improves priority without narrowing discovery.",
+    copy: "Your feedback helps similar signals surface sooner without turning discovery into a rigid keyword filter.",
   },
 ];
 
@@ -56,7 +56,7 @@ export function DeepDiveFeatures() {
               textTransform: "uppercase",
             }}
           >
-            <CheckCircle2 size={14} /> Why the queue stays useful
+            <CheckCircle2 size={14} /> Qualification standards
           </div>
           <h2
             className="pfd"
@@ -73,8 +73,8 @@ export function DeepDiveFeatures() {
             <RevealWords text="A lead is more than a matching word." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            Arcli connects your product context to the full conversation, then lets your
-            feedback influence priority without making discovery narrow.
+            Arcli prioritizes conversations with a credible buyer problem and preserves the
+            evidence for human review. Your feedback improves priority over time.
           </p>
         </Reveal>
 
