@@ -21,6 +21,9 @@ test("keeps the targeting workflow focused on buyer, problem, and public signals
   assert.match(editor, /Advanced targeting/);
   assert.match(editor, /Change website/);
   assert.match(editor, /Latest discovery/);
+  assert.match(editor, /TargetingStepCard/);
+  assert.match(editor, /activeStep/);
+  assert.match(editor, /aria-expanded=\{isOpen\}/);
 });
 
 test("does not load source-planning or guide content into targeting setup", () => {

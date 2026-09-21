@@ -62,7 +62,7 @@ export default async function MatchingBriefPage() {
     : null;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto pr-1">
+    <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Discovery setup"
         title="Targeting"

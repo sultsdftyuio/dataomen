@@ -224,32 +224,66 @@ function WebsiteSourceControl({
   );
 }
 
-function SectionIntro({
+type TargetingStep = "buyer" | "problem" | "signals";
+
+const targetingStepPanelId: Record<TargetingStep, string> = {
+  buyer: "targeting-buyer-panel",
+  problem: "targeting-problem-panel",
+  signals: "targeting-signals-panel",
+};
+
+function TargetingStepCard({
   step,
   title,
   description,
+  summary,
+  isOpen,
+  onClick,
+  panelId,
 }: {
   step: number;
   title: string;
   description: string;
+  summary: string;
+  isOpen: boolean;
+  onClick: () => void;
+  panelId: string;
 }) {
   return (
-    <div className="mb-3 flex items-start gap-3">
-      <span
-        className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-        style={{ backgroundColor: C.bluePale, color: C.blue }}
-      >
-        {step}
-      </span>
-      <div>
-        <h2 className="text-base font-semibold" style={{ color: C.navy }}>
-          {title}
-        </h2>
-        <p className="mt-0.5 text-xs leading-5" style={{ color: C.muted }}>
-          {description}
-        </p>
+    <button
+      type="button"
+      className="flex min-h-44 w-full flex-col rounded-xl border bg-white p-4 text-left transition-colors hover:bg-[#F8FBFD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{ borderColor: isOpen ? C.blue : C.rule }}
+      aria-expanded={isOpen}
+      aria-controls={panelId}
+      onClick={onClick}
+    >
+      <div className="flex w-full items-start justify-between gap-3">
+        <span
+          className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+          style={{ backgroundColor: C.bluePale, color: C.blue }}
+        >
+          {step}
+        </span>
+        <ChevronDown
+          className={isOpen ? "size-4 rotate-180" : "size-4"}
+          style={{ color: C.muted }}
+          aria-hidden="true"
+        />
       </div>
-    </div>
+      <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>
+        {title}
+      </h2>
+      <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+        {description}
+      </p>
+      <p
+        className="mt-auto line-clamp-2 pt-3 text-xs font-semibold leading-5"
+        style={{ color: C.blue }}
+      >
+        {summary}
+      </p>
+    </button>
   );
 }
 
@@ -295,6 +329,7 @@ export function TargetingEditor({
   onWebsiteSave,
 }: TargetingEditorProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeStep, setActiveStep] = useState<TargetingStep | null>(null);
   const readiness = targetingReadiness(serviceProfile, isPro);
   const hasCategorizedQueries = fields.discovery_queries.length > 0;
   const requiresProfileRefresh =
@@ -309,6 +344,16 @@ export function TargetingEditor({
     : changedFieldCount > 0
       ? "Save & update targeting"
       : "Refresh targeting";
+  const buyerSummary =
+    fields.target_audience.length > 0
+      ? `${fields.target_audience.length} buyer ${fields.target_audience.length === 1 ? "group" : "groups"} defined`
+      : "Add target buyers";
+  const problemSummary = fields.core_problem.trim() || "Describe the problem";
+  const signalCount = fields.pain_points.length + fields.buying_triggers.length;
+  const signalSummary =
+    signalCount > 0
+      ? `${signalCount} public ${signalCount === 1 ? "signal" : "signals"} defined`
+      : "Add public signals";
 
   return (
     <div className="space-y-4">
@@ -380,63 +425,96 @@ export function TargetingEditor({
         </section>
       ) : (
         <>
-          <section className="rounded-xl border bg-white p-4" style={{ borderColor: C.rule }}>
-            <SectionIntro
+          <div className="grid gap-4 lg:grid-cols-3">
+            <TargetingStepCard
               step={1}
               title="Who has the problem?"
               description="Name the people, teams, or company situations most likely to act."
+              summary={buyerSummary}
+              isOpen={activeStep === "buyer"}
+              onClick={() => setActiveStep((current) => current === "buyer" ? null : "buyer")}
+              panelId={targetingStepPanelId.buyer}
             />
-            <SignalField
-              label="Target buyers"
-              description="Use roles, teams, company types, or situations—not a long list of job titles."
-              value={fields.target_audience}
-              placeholder="RevOps leaders, B2B SaaS founders"
-              disabled={isPending}
-              onChange={(value) => onFieldChange("target_audience", value)}
-            />
-          </section>
-
-          <section className="rounded-xl border bg-white p-4" style={{ borderColor: C.rule }}>
-            <SectionIntro
+            <TargetingStepCard
               step={2}
               title="What are they trying to solve?"
               description="Describe the costly or frustrating situation in the buyer's own terms."
+              summary={problemSummary}
+              isOpen={activeStep === "problem"}
+              onClick={() => setActiveStep((current) => current === "problem" ? null : "problem")}
+              panelId={targetingStepPanelId.problem}
             />
-            <TextProfileField
-              label="Core problem"
-              description="Focus on the delay, risk, cost, or manual work that makes someone look for help."
-              value={fields.core_problem}
-              placeholder="Teams spend hours sorting noisy conversations before they know who is worth contacting."
-              disabled={isPending}
-              onChange={(value) => onFieldChange("core_problem", value)}
-            />
-          </section>
-
-          <section className="rounded-xl border bg-white p-4" style={{ borderColor: C.rule }}>
-            <SectionIntro
+            <TargetingStepCard
               step={3}
               title="What should Arcli recognise publicly?"
               description="Add the problems and moments that make a conversation worth a human review."
+              summary={signalSummary}
+              isOpen={activeStep === "signals"}
+              onClick={() => setActiveStep((current) => current === "signals" ? null : "signals")}
+              panelId={targetingStepPanelId.signals}
             />
-            <div className="grid gap-3 lg:grid-cols-2">
+          </div>
+
+          {activeStep === "buyer" ? (
+            <section
+              id={targetingStepPanelId.buyer}
+              className="rounded-xl border bg-white p-4"
+              style={{ borderColor: C.blue }}
+            >
               <SignalField
-                label="Problems buyers mention"
-                description="Frustrations or outcomes that appear before someone seeks a solution."
-                value={fields.pain_points}
-                placeholder="Manual lead research takes too long"
+                label="Target buyers"
+                description="Use roles, teams, company types, or situations—not a long list of job titles."
+                value={fields.target_audience}
+                placeholder="RevOps leaders, B2B SaaS founders"
                 disabled={isPending}
-                onChange={(value) => onFieldChange("pain_points", value)}
+                onChange={(value) => onFieldChange("target_audience", value)}
               />
-              <SignalField
-                label="Moments that make it urgent"
-                description="Events or wording that suggest the buyer may need help soon."
-                value={fields.buying_triggers}
-                placeholder="New growth target, evaluating a tool"
+            </section>
+          ) : null}
+
+          {activeStep === "problem" ? (
+            <section
+              id={targetingStepPanelId.problem}
+              className="rounded-xl border bg-white p-4"
+              style={{ borderColor: C.blue }}
+            >
+              <TextProfileField
+                label="Core problem"
+                description="Focus on the delay, risk, cost, or manual work that makes someone look for help."
+                value={fields.core_problem}
+                placeholder="Teams spend hours sorting noisy conversations before they know who is worth contacting."
                 disabled={isPending}
-                onChange={(value) => onFieldChange("buying_triggers", value)}
+                onChange={(value) => onFieldChange("core_problem", value)}
               />
-            </div>
-          </section>
+            </section>
+          ) : null}
+
+          {activeStep === "signals" ? (
+            <section
+              id={targetingStepPanelId.signals}
+              className="rounded-xl border bg-white p-4"
+              style={{ borderColor: C.blue }}
+            >
+              <div className="grid gap-3 lg:grid-cols-2">
+                <SignalField
+                  label="Problems buyers mention"
+                  description="Frustrations or outcomes that appear before someone seeks a solution."
+                  value={fields.pain_points}
+                  placeholder="Manual lead research takes too long"
+                  disabled={isPending}
+                  onChange={(value) => onFieldChange("pain_points", value)}
+                />
+                <SignalField
+                  label="Moments that make it urgent"
+                  description="Events or wording that suggest the buyer may need help soon."
+                  value={fields.buying_triggers}
+                  placeholder="New growth target, evaluating a tool"
+                  disabled={isPending}
+                  onChange={(value) => onFieldChange("buying_triggers", value)}
+                />
+              </div>
+            </section>
+          ) : null}
 
           <section className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
             <button
