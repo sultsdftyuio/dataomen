@@ -24,6 +24,7 @@ from api.services.social.candidate_privacy import redacted_text
 
 from .entity_first import ProspectEvidenceInput, normalize_public_url
 from .research_policy import EntityEvidenceResearchPlan
+from .target_fit import strong_evidence_definition_matches
 
 
 PublicAuthorLocatorSource = Literal["github", "bluesky", "hackernews"]
@@ -319,6 +320,7 @@ def propose_retained_public_evaluation_evidence(
     research_run_id: str,
     locator: RetainedPublicAuthorLocator,
     records: Iterable[RetainedPublicSourceRecord],
+    strong_evidence_definitions: tuple[str, ...] = (),
 ) -> RetainedEvidenceProposalBatch:
     """Create only pending direct-evaluation observations from retained rows.
 
@@ -331,6 +333,10 @@ def propose_retained_public_evaluation_evidence(
         raise ValueError("plan must be an EntityEvidenceResearchPlan")
     if not isinstance(locator, RetainedPublicAuthorLocator):
         raise ValueError("locator must be a RetainedPublicAuthorLocator")
+    if isinstance(strong_evidence_definitions, (str, bytes, bytearray)) or not all(
+        isinstance(item, str) for item in strong_evidence_definitions
+    ):
+        raise ValueError("strong_evidence_definitions must be a tuple of strings")
     if not plan.is_planned or not plan.allow_retained_public_author_locator_search:
         return RetainedEvidenceProposalBatch((), {"research_not_planned": 1})
     if locator.source not in plan.public_sources:
@@ -362,6 +368,14 @@ def propose_retained_public_evaluation_evidence(
             _increment(skipped, "no_direct_evaluation_language")
             continue
         excerpt, strength = detected
+        # A configured definition may tighten a platform-level `strong`
+        # estimate, but cannot elevate a moderate observation. This preserves
+        # the distinction between evidence strength and inferred buyer intent.
+        if strength == "strong" and not strong_evidence_definition_matches(
+            strong_evidence_definitions,
+            excerpt,
+        ):
+            strength = "moderate"
         evidence.append(
             ProspectEvidenceInput(
                 targeting_profile_id=targeting_profile_id,

@@ -63,6 +63,10 @@ def _profile_from_row(row: Mapping[str, Any]) -> ApprovedEvidenceTargetingProfil
         tenant_id=row.get("tenant_id"),
         service_profile_id=row.get("service_profile_id"),
         profile_version=row.get("profile_version"),
+        strong_evidence_definitions=_json_sequence(
+            row.get("strong_evidence_definitions", []),
+            field_name="strong_evidence_definitions",
+        ),
     )
 
 
@@ -104,7 +108,8 @@ def _load_approved_targeting_profile(
             SELECT profile.id,
                    profile.tenant_id,
                    profile.service_profile_id,
-                   profile.profile_version
+                   profile.profile_version,
+                   profile.strong_evidence_definitions
               FROM public.targeting_profiles AS profile
              WHERE {' AND '.join(conditions)}
              LIMIT 1
@@ -730,6 +735,7 @@ def current_evidence_collection_plan_for_claim(
             entity_limit=run.entity_limit,
             evidence_limit_total=sum(item.plan.evidence_limit for item in target_plans),
             input_fingerprint=_plan_fingerprint(snapshot, target_plans),
+            strong_evidence_definitions=snapshot.strong_evidence_definitions,
         )
     except ValueError:
         return None

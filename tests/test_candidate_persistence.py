@@ -78,6 +78,21 @@ def _run() -> CandidateGenerationRun:
     )
 
 
+def _active_profile_row(**overrides: Any) -> dict[str, Any]:
+    """Return the locked brief projection used by candidate persistence."""
+
+    row: dict[str, Any] = {
+        "target_types": ["account"],
+        "ideal_customer_traits": [],
+        "change_triggers": [],
+        "strong_evidence_definitions": [],
+        "exclusions": [],
+        "seed_urls": ["https://acme.example/about"],
+    }
+    row.update(overrides)
+    return row
+
+
 def _provider_proposal(*, tenant_id: str = TENANT_ID) -> EntityCandidateProposal:
     return EntityCandidateProposal(
         entity=ProspectEntityInput(
@@ -147,10 +162,10 @@ def _official_proposal():
 def test_provider_candidate_writes_an_entity_and_high_fit_assessment_without_evidence() -> None:
     connection = _Connection(
         [
-            _Result(scalar=RUN_ID),
+            _Result(mapping=_active_profile_row()),
             _Result(mapping={"id": ENTITY_ID, "entity_created": True}),
             _Result(scalar=ASSESSMENT_ID),
-            _Result(scalar=RUN_ID),
+            _Result(mapping=_active_profile_row()),
         ]
     )
 
@@ -176,6 +191,10 @@ def test_provider_candidate_writes_an_entity_and_high_fit_assessment_without_evi
     assert "provider-discovery-42" not in params
     assert all(params["tenant_id"] == TENANT_ID for _, params in connection.calls)
     assert all(params["claim_token"] == CLAIM_TOKEN for _, params in connection.calls)
+    assessment_params = connection.calls[2][1]
+    assert assessment_params["fit_score"] == 0.72
+    assert assessment_params["trigger_score"] == 0.0
+    assert assessment_params["priority_score"] == 61.2
 
 
 def test_official_candidate_creates_only_pending_weak_fit_evidence_with_a_citation(
@@ -183,11 +202,11 @@ def test_official_candidate_creates_only_pending_weak_fit_evidence_with_a_citati
 ) -> None:
     connection = _Connection(
         [
-            _Result(scalar=RUN_ID),
+            _Result(mapping=_active_profile_row()),
             _Result(mapping={"id": ENTITY_ID, "entity_created": True}),
             _Result(scalar=ASSESSMENT_ID),
             _Result(scalar=EVIDENCE_ID),
-            _Result(scalar=RUN_ID),
+            _Result(mapping=_active_profile_row()),
         ]
     )
 
@@ -209,11 +228,14 @@ def test_official_candidate_creates_only_pending_weak_fit_evidence_with_a_citati
     assert "'fit'" in evidence_sql
     assert "'official_site'" in evidence_sql
     assert "'pending'" in evidence_sql
-    assert "evaluation" not in evidence_sql
-    assert "trigger" not in evidence_sql
+    assert "'evaluation'" not in evidence_sql
+    assert "'trigger'" not in evidence_sql
     assert evidence_params["source_url"] == "https://acme.example/about"
     assert evidence_params["summary"] == "Official-site structured metadata identifies the target type as account."
     assert "Acme" not in repr(evidence_params)
+    assessment_params = connection.calls[2][1]
+    assert assessment_params["fit_score"] == 0.5
+    assert assessment_params["priority_score"] == 42.5
 
 
 def test_existing_assessment_is_not_enriched_by_an_official_site_retry(
@@ -221,10 +243,10 @@ def test_existing_assessment_is_not_enriched_by_an_official_site_retry(
 ) -> None:
     connection = _Connection(
         [
-            _Result(scalar=RUN_ID),
+            _Result(mapping=_active_profile_row()),
             _Result(mapping={"id": ENTITY_ID, "entity_created": False}),
             _Result(scalar=None),
-            _Result(scalar=RUN_ID),
+            _Result(mapping=_active_profile_row()),
         ]
     )
 
@@ -248,7 +270,7 @@ def test_existing_assessment_is_not_enriched_by_an_official_site_retry(
 def test_official_candidate_cannot_substitute_an_unplanned_seed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connection = _Connection([_Result(scalar=RUN_ID)])
+    connection = _Connection([_Result(mapping=_active_profile_row())])
     proposal = _official_proposal()
     proposal = replace(
         proposal,
@@ -269,6 +291,23 @@ def test_official_candidate_cannot_substitute_an_unplanned_seed(
         )
 
     assert len(connection.calls) == 1
+
+
+def test_generated_candidate_matching_a_brief_exclusion_is_not_persisted() -> None:
+    connection = _Connection([
+        _Result(mapping=_active_profile_row(exclusions=["acme"])),
+    ])
+
+    with pytest.raises(candidate_persistence.CandidateExcludedByTargetingBrief):
+        persist_phase2_candidate(
+            connection,  # type: ignore[arg-type]
+            run=_run(),
+            claim_token=CLAIM_TOKEN,
+            proposal=_provider_proposal(),
+        )
+
+    assert len(connection.calls) == 1
+    assert "FOR UPDATE OF run, profile" in connection.calls[0][0]
 
 
 def test_provider_provenance_must_stay_with_the_claimed_tenant() -> None:

@@ -192,6 +192,8 @@ def test_sql_contract_uses_rpcs_and_cascades_public_source_evidence() -> None:
     assert "strong buyer signal requires fit and fresh accepted direct evaluation evidence" in contract
     assert "CREATE OR REPLACE FUNCTION public.upsert_targeting_profile(" in contract
     assert "CREATE OR REPLACE FUNCTION public.create_manual_prospect_entity(" in contract
+    assert "manual_target_confirmed_fit" in contract
+    assert "fit_score = GREATEST(COALESCE(assessment.fit_score, 0), 0.5)" in contract
     assert "CREATE OR REPLACE FUNCTION public.list_prospect_evidence_for_profile(" in contract
     assert "CREATE OR REPLACE FUNCTION public.review_prospect_evidence(" in contract
     assert "CREATE OR REPLACE FUNCTION public.submit_prospect_feedback(" in contract

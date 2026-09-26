@@ -286,9 +286,9 @@ def strong_evidence_definition_matches(
         if not required:
             continue
         # One generic overlapping token (for example, "tools") is not enough
-        # to prove that a user's stronger definition is satisfied. A short
-        # two-word definition still requires both terms.
-        required_matches = min(2, len(required))
+        # to prove that a user's stronger definition is satisfied. Every
+        # meaningful term in that definition must be present.
+        required_matches = len(required)
         if len(required.intersection(candidate_tokens)) >= required_matches:
             return True
     return False

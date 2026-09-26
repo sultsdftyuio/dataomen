@@ -667,6 +667,35 @@ CREATE TABLE IF NOT EXISTS public.prospect_assessments (
 COMMENT ON TABLE public.prospect_assessments IS
     'Per-targeting-profile target classification. Strong buyer signal requires accepted direct evaluation evidence.';
 
+-- A deliberate manual addition is a human confirmation of *fit*, not buyer
+-- intent. Earlier revisions left this dimension NULL, which meant a manual
+-- target could never satisfy the fit half of the strong-evidence rule even
+-- after a reviewer accepted a cited direct-evaluation observation. Backfill
+-- only manual, non-rejected targets; generated/provider targets must keep
+-- their deterministic candidate-fit assessment.
+UPDATE public.prospect_assessments AS assessment
+   SET fit_score = GREATEST(COALESCE(assessment.fit_score, 0), 0.5),
+       priority_score = GREATEST(assessment.priority_score, 42.5),
+       reason_codes = CASE
+           WHEN assessment.reason_codes @> '["manual_target_confirmed_fit"]'::JSONB
+               THEN assessment.reason_codes
+           WHEN jsonb_array_length(assessment.reason_codes) < 16
+               THEN assessment.reason_codes || '["manual_target_confirmed_fit"]'::JSONB
+           ELSE assessment.reason_codes
+       END,
+       last_assessed_at = NOW(),
+       updated_at = NOW()
+  FROM public.prospect_entities AS entity
+ WHERE entity.tenant_id = assessment.tenant_id
+   AND entity.id = assessment.prospect_entity_id
+   AND entity.origin_kind = 'manual'
+   AND assessment.assessment_state <> 'rejected'
+   AND (
+       assessment.fit_score IS NULL
+       OR assessment.fit_score < 0.5
+       OR NOT assessment.reason_codes @> '["manual_target_confirmed_fit"]'::JSONB
+   );
+
 CREATE TABLE IF NOT EXISTS public.prospect_feedback (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
@@ -1837,13 +1866,17 @@ BEGIN
         targeting_profile_id,
         prospect_entity_id,
         assessment_state,
+        fit_score,
+        priority_score,
         reason_codes
     ) VALUES (
         resolved_tenant_id,
         resolved_targeting_profile_id,
         persisted_entity_id,
         'high_fit',
-        '["manual_seed"]'::JSONB
+        0.5,
+        42.5,
+        '["manual_seed", "manual_target_confirmed_fit"]'::JSONB
     )
     ON CONFLICT (tenant_id, targeting_profile_id, prospect_entity_id)
     DO UPDATE SET

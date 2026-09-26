@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { EvidenceReviewControls } from "@/components/prospects/evidence-review-controls";
 import { TargetFeedbackControls } from "@/components/prospects/target-feedback-controls";
 import { TargetMonitoringControls } from "@/components/prospects/target-monitoring-controls";
+import { TargetOpportunityControls } from "@/components/prospects/target-opportunity-controls";
 import { supportsRetainedPublicTargetMonitoring } from "@/lib/retained-public-monitoring";
 import { normalizeSeedUrl } from "@/lib/targeting-brief";
 import { C } from "@/lib/tokens";
@@ -34,6 +35,8 @@ import type {
   TargetEvidenceReviewAction,
   TargetEvidenceView,
   TargetMonitoringAction,
+  TargetOpportunityCreateAction,
+  TargetOpportunityQualifyAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 import {
   displayedAssessmentReasons,
@@ -58,6 +61,10 @@ export type TargetDeskProps = {
   onTargetFeedback?: TargetFeedbackAction | null;
   /** Explicit retained-corpus watch control; absent until the worker is deployed. */
   onTargetMonitoring?: TargetMonitoringAction | null;
+  /** Explicit evidence-to-opportunity handoff; absent until its contract is deployed. */
+  onCreateOpportunity?: TargetOpportunityCreateAction | null;
+  /** Separate explicit qualification and optional CRM-export handoff. */
+  onQualifyOpportunity?: TargetOpportunityQualifyAction | null;
   /** Aggregate workspace outcome counts, never individual reviewer data. */
   feedbackSummary?: readonly TargetFeedbackSummary[];
   className?: string;
@@ -353,9 +360,9 @@ function TargetDeskEmpty({ targetBriefHref }: { targetBriefHref: string | null |
 }
 
 /**
- * A human-review surface for entity-first discovery. It intentionally has no
- * CRM or outreach action: target fit and public evidence are separate from a
- * confirmed lead decision.
+ * A human-review surface for entity-first discovery. Fit and public evidence
+ * remain separate from an opportunity; the optional opportunity controls make
+ * both the promotion and CRM-export qualification explicit user decisions.
  */
 export function TargetDesk({
   targets,
@@ -364,6 +371,8 @@ export function TargetDesk({
   onReviewEvidence = null,
   onTargetFeedback = null,
   onTargetMonitoring = null,
+  onCreateOpportunity = null,
+  onQualifyOpportunity = null,
   feedbackSummary = [],
   className,
 }: TargetDeskProps) {
@@ -590,6 +599,17 @@ export function TargetDesk({
                 </div>
               )}
             </section>
+
+            {selectedTarget.assessmentId &&
+            (onCreateOpportunity || onQualifyOpportunity) ? (
+              <TargetOpportunityControls
+                assessmentId={selectedTarget.assessmentId}
+                evidence={evidence}
+                opportunity={selectedTarget.opportunity}
+                onCreate={onCreateOpportunity}
+                onQualify={onQualifyOpportunity}
+              />
+            ) : null}
 
             {selectedTarget.assessmentId && onTargetFeedback ? (
               <TargetFeedbackControls

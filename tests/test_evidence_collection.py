@@ -81,6 +81,31 @@ def test_explicit_selection_has_a_stable_fair_and_content_free_plan() -> None:
     assert "github.com" not in plan.input_fingerprint
 
 
+def test_strong_evidence_definitions_are_pinned_in_the_evidence_policy_digest() -> None:
+    first = ApprovedEvidenceTargetingProfileSnapshot(
+        id=TARGETING_PROFILE_ID,
+        tenant_id=TENANT_ID,
+        service_profile_id=SERVICE_PROFILE_ID,
+        profile_version=4,
+        strong_evidence_definitions=["actively comparing outbound tools"],
+    )
+    second = ApprovedEvidenceTargetingProfileSnapshot(
+        id=TARGETING_PROFILE_ID,
+        tenant_id=TENANT_ID,
+        service_profile_id=SERVICE_PROFILE_ID,
+        profile_version=4,
+        strong_evidence_definitions=["migrating from a competitor"],
+    )
+
+    first_plan = plan_evidence_collection(first, [_target(ENTITY_IDS[0])])
+    second_plan = plan_evidence_collection(second, [_target(ENTITY_IDS[0])])
+
+    assert first_plan is not None
+    assert second_plan is not None
+    assert first_plan.strong_evidence_definitions == ("actively comparing outbound tools",)
+    assert first_plan.input_fingerprint != second_plan.input_fingerprint
+
+
 def test_rejected_selection_creates_no_research_run_plan() -> None:
     assert plan_evidence_collection(_snapshot(), [_target(ENTITY_IDS[0], state="rejected")]) is None
 

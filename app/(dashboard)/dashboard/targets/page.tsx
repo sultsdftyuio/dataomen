@@ -7,6 +7,10 @@ import { EntityResearchControls } from "@/components/prospects/entity-research-c
 import { ManualTargetForm } from "@/components/prospects/manual-target-form";
 import { TargetDesk } from "@/components/prospects/target-desk";
 import {
+  createProspectOpportunity,
+  qualifyProspectOpportunity,
+} from "@/app/actions/prospect-opportunities";
+import {
   entityCandidateGenerationUiIsEnabled,
   retainedPublicEvidenceResearchUiIsEnabled,
 } from "@/lib/entity-research-server";
@@ -28,6 +32,7 @@ import {
   fetchEntityResearchRunStatuses,
   fetchProspectFeedbackSummary,
   fetchProspectTargetMonitoringStatuses,
+  fetchProspectTargetOpportunityStatuses,
   fetchProspectTargets,
   fetchTargetingBrief,
 } from "./data";
@@ -69,23 +74,31 @@ export default async function TargetsPage() {
   const evidenceResearchEnabled = retainedPublicEvidenceResearchUiIsEnabled();
   const targetMonitoringEnabled = retainedPublicTargetMonitoringUiIsEnabled();
   const entityResearchEnabled = candidateGenerationEnabled || evidenceResearchEnabled;
-  const [targets, feedbackSummary, monitoringStatuses, entityResearchRuns] = await Promise.all([
+  const [targets, feedbackSummary, monitoringStatuses, opportunityStatuses, entityResearchRuns] = await Promise.all([
     fetchProspectTargets(supabase, tenantId, targetingBrief.id),
     fetchProspectFeedbackSummary(supabase, targetingBrief.id),
     targetMonitoringEnabled
       ? fetchProspectTargetMonitoringStatuses(supabase, targetingBrief.id)
       : Promise.resolve(null),
+    fetchProspectTargetOpportunityStatuses(supabase, targetingBrief.id),
     entityResearchEnabled
       ? fetchEntityResearchRunStatuses(supabase, tenantId, targetingBrief.id)
-      : Promise.resolve({}),
+      : Promise.resolve<Awaited<ReturnType<typeof fetchEntityResearchRunStatuses>>>({}),
   ]);
   // An enabled flag alone is insufficient during an additive deployment: the
   // display-safe monitor RPC must be live before we expose an opt-in action.
   const targetMonitoringAvailable =
     targetMonitoringEnabled && monitoringStatuses !== null;
-  const targetsWithMonitoring = targets.map((target) => ({
+  // The opportunity migration is additive. Withhold all promotion/CRM
+  // controls if its status projection is not live, rather than offering an
+  // action that could fail after a partial deployment.
+  const targetOpportunitiesAvailable = opportunityStatuses !== null;
+  const targetsWithWorkflowState = targets.map((target) => ({
     ...target,
     monitoring: monitoringStatuses?.get(target.id) ?? null,
+    opportunity: target.assessmentId
+      ? opportunityStatuses?.get(target.assessmentId) ?? null
+      : null,
   }));
   const createTarget = createManualProspectTarget.bind(null, serviceProfile.id);
 
@@ -124,12 +137,18 @@ export default async function TargetsPage() {
       ) : null}
 
       <TargetDesk
-        targets={targetsWithMonitoring}
+        targets={targetsWithWorkflowState}
         targetBriefHref="/dashboard/brief"
         onReviewEvidence={reviewProspectEvidence}
         onTargetFeedback={submitProspectTargetFeedback}
         onTargetMonitoring={
           targetMonitoringAvailable ? setProspectTargetMonitoring : null
+        }
+        onCreateOpportunity={
+          targetOpportunitiesAvailable ? createProspectOpportunity : null
+        }
+        onQualifyOpportunity={
+          targetOpportunitiesAvailable ? qualifyProspectOpportunity : null
         }
         feedbackSummary={feedbackSummary}
       />

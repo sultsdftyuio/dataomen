@@ -151,7 +151,8 @@ export async function createProspectOpportunity(
  * Qualify a human-created opportunity through a second explicit action. The
  * database makes the ready_for_review -> qualified transition first; only the
  * request that successfully claims that transition may perform the optional,
- * SSRF-validated CRM delivery. No contact enrichment or outreach occurs here.
+ * SSRF-validated CRM delivery. No contact enrichment occurs, and it never
+ * sends outreach.
  */
 export async function qualifyProspectOpportunity(
   opportunityId: string,

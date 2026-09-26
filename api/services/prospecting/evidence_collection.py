@@ -25,6 +25,7 @@ from .entity_first import (
     AssessmentState,
     EntityKind,
     OriginKind,
+    TargetingProfileInput,
     normalize_public_url,
 )
 from .research_policy import (
@@ -209,12 +210,25 @@ class ApprovedEvidenceTargetingProfileSnapshot:
     tenant_id: str
     service_profile_id: str
     profile_version: int
+    strong_evidence_definitions: Sequence[str] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _uuid(self.id, field_name="targeting_profile_id"))
         object.__setattr__(self, "tenant_id", _required_string(self.tenant_id, field_name="tenant_id", maximum=MAX_TENANT_ID_CHARS))
         object.__setattr__(self, "service_profile_id", _uuid(self.service_profile_id, field_name="service_profile_id"))
         object.__setattr__(self, "profile_version", _profile_version(self.profile_version))
+        try:
+            # Reuse the primary brief boundary so this executor never accepts
+            # a broader or contact-bearing evidence definition than the saved
+            # targeting profile allows. The target type is a validation shim;
+            # it is not used for evidence selection.
+            definitions = TargetingProfileInput(
+                target_types=("account",),
+                strong_evidence_definitions=self.strong_evidence_definitions,
+            ).strong_evidence_definitions
+        except ValueError as error:
+            raise ValueError("strong_evidence_definitions is invalid") from error
+        object.__setattr__(self, "strong_evidence_definitions", definitions)
 
 
 @dataclass(frozen=True)
@@ -273,6 +287,9 @@ class EvidenceCollectionRunPlan:
     entity_limit: int
     evidence_limit_total: int
     input_fingerprint: str
+    # This is a policy snapshot used only while a pinned, approved brief is
+    # current. The durable run stores its digest, never these phrases.
+    strong_evidence_definitions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "targeting_profile_id", _uuid(self.targeting_profile_id, field_name="targeting_profile_id"))
@@ -294,6 +311,14 @@ class EvidenceCollectionRunPlan:
         if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
             raise ValueError("input_fingerprint must be a SHA-256 digest")
         object.__setattr__(self, "input_fingerprint", fingerprint)
+        try:
+            definitions = TargetingProfileInput(
+                target_types=("account",),
+                strong_evidence_definitions=self.strong_evidence_definitions,
+            ).strong_evidence_definitions
+        except ValueError as error:
+            raise ValueError("strong_evidence_definitions is invalid") from error
+        object.__setattr__(self, "strong_evidence_definitions", definitions)
 
     @property
     def planned_entity_count(self) -> int:
@@ -362,7 +387,7 @@ def _fingerprint_material(
     snapshot: ApprovedEvidenceTargetingProfileSnapshot,
     target_plans: Sequence[EvidenceCollectionTargetPlan],
 ) -> dict[str, object]:
-    return {
+    material: dict[str, object] = {
         "contract": "retained-public-evidence-collection-v1",
         "targeting_profile_id": snapshot.id,
         "targeting_profile_version": snapshot.profile_version,
@@ -383,6 +408,14 @@ def _fingerprint_material(
             for item in target_plans
         ],
     }
+    # Preserve hashes for already-queued v1 runs with no custom definitions.
+    # Once a customer adds a definition, the policy must be pinned in the run
+    # digest so an edit cannot silently change its evidence-strength rule.
+    if snapshot.strong_evidence_definitions:
+        material["strong_evidence_definitions"] = list(
+            snapshot.strong_evidence_definitions
+        )
+    return material
 
 
 def _plan_fingerprint(
@@ -447,6 +480,7 @@ def plan_evidence_collection(
         entity_limit=len(target_plans),
         evidence_limit_total=policy_plan.planned_evidence_limit,
         input_fingerprint=_plan_fingerprint(snapshot, target_plans),
+        strong_evidence_definitions=snapshot.strong_evidence_definitions,
     )
 
 

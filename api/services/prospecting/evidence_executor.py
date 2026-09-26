@@ -423,6 +423,7 @@ def run_evidence_collection(
                 research_run_id=run.id,
                 locator=locator,
                 records=records,
+                strong_evidence_definitions=plan.strong_evidence_definitions,
             )
             ownership_result = _persist_batch(
                 resolved_engine,

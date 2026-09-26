@@ -164,6 +164,22 @@ def test_direct_evaluation_language_becomes_pending_cited_evidence_not_a_buyer_c
     assert record.body not in repr(record)
 
 
+def test_configured_strong_definition_can_only_downgrade_an_evidence_label() -> None:
+    record = _record()
+
+    batch = propose_retained_public_evaluation_evidence(
+        _plan(),
+        targeting_profile_id=PROFILE_ID,
+        research_run_id=RUN_ID,
+        locator=RetainedPublicAuthorLocator("github", "indie-builder"),
+        records=[record],
+        strong_evidence_definitions=("migrating away from a competitor",),
+    )
+
+    assert len(batch.evidence) == 1
+    assert batch.evidence[0].evidence_strength == "moderate"
+
+
 def test_mismatched_or_non_evaluation_rows_cannot_create_evidence() -> None:
     mismatched = _record(author_locator="other-builder")
     no_evaluation = _record(

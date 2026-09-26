@@ -3,6 +3,7 @@
 -- Apply after:
 --   * scripts/RLS_updates.sql
 --   * scripts/entity_first_prospecting_contract.sql
+--   * scripts/enforce-free-plan-limits.sql
 --
 -- A target is not silently converted into a legacy ``lead_matches`` row:
 -- that table represents verifier-owned public-post matching. This additive
@@ -348,6 +349,29 @@ BEGIN
         RAISE EXCEPTION 'accepted target evidence is not available in this workspace'
             USING ERRCODE = '42501';
     END IF;
+    -- The server action makes the same check for a better UI message, but an
+    -- authenticated user can invoke this RPC directly. Keep the paid boundary
+    -- with the authoritative write instead of trusting the browser route.
+    IF NOT EXISTS (
+        SELECT 1
+          FROM public.tenants AS tenant
+         WHERE tenant.tenant_id = resolved_tenant_id
+           AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
+           AND (
+                (
+                    LOWER(COALESCE(tenant.subscription_status, '')) = 'active'
+                    AND (tenant.current_period_end IS NULL OR tenant.current_period_end > NOW())
+                )
+                OR (
+                    LOWER(COALESCE(tenant.subscription_status, '')) = 'canceling'
+                    AND tenant.current_period_end IS NOT NULL
+                    AND tenant.current_period_end > NOW()
+                )
+           )
+    ) THEN
+        RAISE EXCEPTION 'an active paid plan is required to create an opportunity'
+            USING ERRCODE = '42501';
+    END IF;
     IF resolved_assessment_state = 'rejected'
        OR resolved_evidence_status <> 'accepted'
        OR resolved_evidence_type NOT IN ('trigger', 'problem', 'evaluation')
@@ -389,7 +413,10 @@ BEGIN
 
     SELECT *
       INTO saved_opportunity
-      FROM public.prospect_opportunities AS opportunity
+     FROM public.prospect_opportunities AS opportunity
+     INNER JOIN public.prospect_assessments AS assessment
+             ON assessment.tenant_id = opportunity.tenant_id
+            AND assessment.id = opportunity.prospect_assessment_id
      WHERE opportunity.tenant_id = resolved_tenant_id
        AND opportunity.prospect_assessment_id = target_assessment_id;
     IF NOT FOUND THEN
@@ -454,7 +481,9 @@ BEGIN
       FROM public.prospect_opportunities AS opportunity
      WHERE opportunity.tenant_id = resolved_tenant_id
        AND opportunity.targeting_profile_id = target_profile_id
-     ORDER BY opportunity.updated_at DESC, opportunity.id ASC
+     -- The target desk is bounded by assessment recency. Keep this mapping in
+     -- the same window so an existing opportunity is never rendered as new.
+     ORDER BY assessment.last_assessed_at DESC, opportunity.id ASC
      LIMIT 100;
 END;
 $$;
@@ -514,6 +543,29 @@ BEGIN
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'prospect opportunity is not available in this workspace'
+            USING ERRCODE = '42501';
+    END IF;
+    -- See create_prospect_opportunity: this must be enforced in the RPC as
+    -- well as in the server action because RPC execution is directly available
+    -- to authenticated workspace members.
+    IF NOT EXISTS (
+        SELECT 1
+          FROM public.tenants AS tenant
+         WHERE tenant.tenant_id = saved_opportunity.tenant_id
+           AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
+           AND (
+                (
+                    LOWER(COALESCE(tenant.subscription_status, '')) = 'active'
+                    AND (tenant.current_period_end IS NULL OR tenant.current_period_end > NOW())
+                )
+                OR (
+                    LOWER(COALESCE(tenant.subscription_status, '')) = 'canceling'
+                    AND tenant.current_period_end IS NOT NULL
+                    AND tenant.current_period_end > NOW()
+                )
+           )
+    ) THEN
+        RAISE EXCEPTION 'an active paid plan is required to qualify an opportunity'
             USING ERRCODE = '42501';
     END IF;
 
