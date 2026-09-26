@@ -703,12 +703,15 @@ def _additional_source_query_cache_key(
 
 
 def _additional_public_source_query_cache_is_enabled() -> bool:
-    return os.getenv("ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    """Return whether a tenant-safe query-result replay cache exists.
+
+    A Redis claim key cannot safely stand in for a search: each tenant still
+    needs the returned source-post references to run its own embedding and
+    verification steps.  Keep the legacy flag inert until cache entries can
+    replay those references to every tenant.  Repeating a bounded public
+    search is preferable to silently dropping a discovery run.
+    """
+    return False
 
 
 def claim_additional_public_source_query(

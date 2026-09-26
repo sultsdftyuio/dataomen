@@ -27,15 +27,70 @@ because it exists.
     become verified leads.
 12. `scripts/buyer_language_research_contract.sql`
 13. `scripts/watchlists_contract.sql`
-14. `scripts/service_profile_website_scope.sql`
-15. `scripts/enforce-free-plan-limits.sql`
-16. `scripts/stripe.sql` — only when Stripe Connect is enabled.
-17. `scripts/public_data_compliance_contract.sql`
-18. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
+14. `scripts/entity_first_prospecting_contract.sql` — tenant-scoped target
+    briefs, accounts, builders, projects, evidence, assessments, feedback, and
+    lease-safe candidate-generation and retained-public evidence runs pinned to
+    an approved brief revision. It also defines the immutable
+    `prospect_research_run_entities` selection mapping and tenant-scoped
+    evidence listing/review RPCs.
+15. `scripts/service_profile_website_scope.sql`
+16. `scripts/enforce-free-plan-limits.sql`
+17. `scripts/stripe.sql` — only when Stripe Connect is enabled.
+18. `scripts/public_data_compliance_contract.sql`
+19. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
     recovery-unsubscribe route remains enabled.
 
-The detailed dependency order for steps 8–13 is also in
+The detailed dependency order for steps 8–14 is also in
 [`prospect-intelligence-production.md`](prospect-intelligence-production.md).
+
+The optional target-monitoring contract follows the entity-first contract; it
+is not needed for manual targets, candidate generation, or one-off
+retained-evidence review.
+
+## Entity-first retained-public evidence migration
+
+Apply `entity_first_prospecting_contract.sql` through the normal production
+migration path before enabling retained-public target evidence. The script
+depends on the global `source_posts` contract, extends the shared research-run
+lease invariant to `evidence_collection`, and creates the durable selected
+target mapping. That mapping is service-only: it stores target IDs, immutable
+policy caps, and source names, but no canonical URL, author locator, query,
+source text, or contact field.
+
+The same migration exposes narrow browser-facing evidence functions:
+`list_prospect_evidence_for_profile(UUID)` returns the tenant's reviewable
+projection, `review_prospect_evidence(UUID, TEXT)` records an
+`accepted`/`rejected` human decision, and
+`list_prospect_feedback_summary_for_profile(UUID)` returns aggregate outcome
+counts only. They do not grant browser access to the global source corpus, the
+mapping table, reviewer identities, or per-target feedback history.
+
+The migration makes legacy running entity-first generation/evidence jobs
+reclaimable rather than preserving an unsafe pre-token claim. Deploy the
+lease-aware API and worker with it, leave
+`ARCLI_RETAINED_PUBLIC_EVIDENCE_RESEARCH_ENABLED` disabled during a partial
+rollout, and do not run the retained-evidence consumer against a database that
+has not applied the full contract.
+
+## Opt-in retained-public target monitoring
+
+prospect_target_monitoring_contract.sql is a separate additive migration. Apply
+it only after the entity-first retained-evidence contract and before enabling
+target monitoring. It creates an opt-in monitor table, a singleton
+scheduler-state table, a display-safe monitoring-status RPC, and a narrow
+enable/disable RPC that accepts only an assessment ID plus a boolean.
+
+Only exact GitHub, Bluesky, and Hacker News builder profile locators are
+eligible. The contract stores target IDs and scheduler state, never URLs,
+handles, queries, source text, contacts, profile history, or browser-supplied
+cadence. A targeting profile may have at most five active monitors. Rejected
+targets are paused automatically.
+
+Authenticated users have no direct monitor-table access. The status projection
+omits leases, run IDs, error details, source locators, and retained records.
+The worker reuses the retained-public evidence collection boundary and has a
+separate bounded monitor quota, so it cannot consume the explicit-research
+budget.
 
 ## Retained recovery-unsubscribe compatibility
 

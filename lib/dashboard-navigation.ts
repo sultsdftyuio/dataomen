@@ -25,6 +25,11 @@ export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
     description: "Define who to look for and the signals that matter.",
   },
   {
+    href: "/dashboard/targets",
+    label: "Targets",
+    description: "Research accounts, builders, and projects before intent is explicit.",
+  },
+  {
     href: "/settings",
     label: "Settings",
     description: "Manage account, workspace, and billing settings.",

@@ -227,6 +227,91 @@ class BuyerLanguageResearchTriggerResponse(BaseModel):
     message_id: str
 
 
+class EntityCandidateGenerationTriggerRequest(BaseModel):
+    """Trusted request for bounded entity-first target generation."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    service_profile_id: str = Field(min_length=1)
+    requested_by: str | None = Field(default=None)
+    source: str | None = Field(default=None, max_length=120)
+
+    @field_validator("tenant_id", "service_profile_id")
+    @classmethod
+    def validate_uuid_identifier(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tenant_id and service_profile_id must be valid UUIDs") from exc
+
+    @field_validator("requested_by")
+    @classmethod
+    def validate_requested_by(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("requested_by must be a valid UUID") from exc
+
+
+class EntityCandidateGenerationTriggerResponse(BaseModel):
+    """Acknowledges dispatch only; it never claims that a target was found."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["queued", "running", "terminal"]
+    tenant_id: str
+    service_profile_id: str
+    run_id: str
+    message_id: str | None = None
+    created: bool
+
+
+class EvidenceCollectionTriggerRequest(BaseModel):
+    """Trusted request to review retained public evidence for named targets."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    service_profile_id: str = Field(min_length=1)
+    prospect_entity_ids: list[str] = Field(min_length=1, max_length=25)
+
+    @field_validator("tenant_id", "service_profile_id")
+    @classmethod
+    def validate_uuid_identifier(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tenant_id and service_profile_id must be valid UUIDs") from exc
+
+    @field_validator("prospect_entity_ids")
+    @classmethod
+    def validate_selected_entity_ids(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for entity_id in value:
+            try:
+                normalized.append(str(UUID(entity_id)))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("prospect_entity_ids must contain valid UUIDs") from exc
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("prospect_entity_ids must not contain duplicates")
+        return normalized
+
+class EvidenceCollectionTriggerResponse(BaseModel):
+    """Acknowledges an evidence review operation, not a buyer claim or lead."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["queued", "running", "terminal"]
+    tenant_id: str
+    service_profile_id: str
+    run_id: str
+    message_id: str | None = None
+    created: bool
+
+
 class WorkspaceBrainGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
 
@@ -910,6 +995,204 @@ def trigger_buyer_language_research(
         tenant_id=payload.tenant_id,
         service_profile_id=payload.service_profile_id,
         message_id=message_id,
+    )
+
+
+@app.post(
+    "/api/prospecting/candidate-generation/trigger",
+    response_model=EntityCandidateGenerationTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+def trigger_entity_candidate_generation(
+    payload: EntityCandidateGenerationTriggerRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+    idempotency_key: Annotated[str, Depends(require_idempotency_key)],
+) -> EntityCandidateGenerationTriggerResponse:
+    """Queue an explicit, entity-first official-site generation run.
+
+    This is intentionally separate from the lead and buyer-language routes.
+    Its response means only that a bounded target-generation request has been
+    recorded or is already in progress; it does not claim a lead, buyer signal,
+    contact, or even a discovered target.
+    """
+
+    from api.services.prospecting.candidate_dispatch import enqueue_candidate_generation_run
+    from api.services.prospecting.candidate_generation import (
+        CandidateGenerationStartRequest,
+        candidate_generation_is_enabled,
+    )
+
+    _validate_internal_tenant_scope(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+    )
+    if not candidate_generation_is_enabled():
+        logger.info(
+            "entity_candidate_generation_trigger_rejected tenant_id=%s service_profile_id=%s rejection_reason=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            "feature_disabled",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entity candidate generation is not enabled.",
+        )
+
+    try:
+        dispatch = enqueue_candidate_generation_run(
+            CandidateGenerationStartRequest(
+                tenant_id=payload.tenant_id,
+                service_profile_id=payload.service_profile_id,
+                request_nonce=idempotency_key,
+            )
+        )
+    except RuntimeError as exc:
+        logger.error(
+            "entity_candidate_generation_enqueue_failed tenant_id=%s service_profile_id=%s error_type=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Entity candidate generation queue is unavailable. Retry with the same Idempotency-Key.",
+        ) from exc
+
+    if dispatch.state == "skipped":
+        assert dispatch.skip_reason is not None
+        if dispatch.skip_reason == "tenant_quota_exceeded":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Entity candidate generation is temporarily rate limited. Try again later.",
+            )
+        if dispatch.skip_reason == "feature_disabled":
+            # The flag may have changed after the route's first check.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Entity candidate generation is not enabled.",
+            )
+        if dispatch.skip_reason == "no_planned_candidates":
+            detail = "Add an approved official-site seed before generating targets."
+        else:
+            detail = "The approved targeting brief changed or is unavailable. Refresh it and try again."
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+    assert dispatch.run is not None
+    logger.info(
+        "entity_candidate_generation_trigger_accepted tenant_id=%s service_profile_id=%s run_id=%s dispatch_state=%s created=%s",
+        payload.tenant_id,
+        payload.service_profile_id,
+        dispatch.run.id,
+        dispatch.state,
+        dispatch.created,
+    )
+    return EntityCandidateGenerationTriggerResponse(
+        status=dispatch.state,
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+        run_id=dispatch.run.id,
+        message_id=dispatch.message_id,
+        created=dispatch.created,
+    )
+
+
+@app.post(
+    "/api/prospecting/evidence-collection/trigger",
+    response_model=EvidenceCollectionTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+def trigger_retained_public_evidence_collection(
+    payload: EvidenceCollectionTriggerRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+    idempotency_key: Annotated[str, Depends(require_idempotency_key)],
+) -> EvidenceCollectionTriggerResponse:
+    """Queue review of exact retained public records for explicit targets.
+
+    This route does not discover people, fetch profiles, or infer a buyer.
+    Its acknowledgement means that a finite, tenant-scoped review operation
+    was recorded or is in progress; evidence still requires human acceptance.
+    """
+
+    from api.services.prospecting.evidence_collection import (
+        EvidenceCollectionStartRequest,
+        retained_public_evidence_research_is_enabled,
+    )
+    from api.services.prospecting.evidence_dispatch import enqueue_evidence_collection_run
+
+    _validate_internal_tenant_scope(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+    )
+    if not retained_public_evidence_research_is_enabled():
+        logger.info(
+            "retained_public_evidence_trigger_rejected tenant_id=%s service_profile_id=%s rejection_reason=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            "feature_disabled",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Retained-public evidence collection is not enabled.",
+        )
+
+    try:
+        dispatch = enqueue_evidence_collection_run(
+            EvidenceCollectionStartRequest(
+                tenant_id=payload.tenant_id,
+                service_profile_id=payload.service_profile_id,
+                prospect_entity_ids=payload.prospect_entity_ids,
+                request_nonce=idempotency_key,
+            )
+        )
+    except RuntimeError as exc:
+        logger.error(
+            "retained_public_evidence_enqueue_failed tenant_id=%s service_profile_id=%s error_type=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Retained-public evidence queue is unavailable. Retry with the same Idempotency-Key.",
+        ) from exc
+
+    if dispatch.state == "skipped":
+        assert dispatch.skip_reason is not None
+        if dispatch.skip_reason == "tenant_quota_exceeded":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Retained-public evidence collection is temporarily rate limited. Try again later.",
+            )
+        if dispatch.skip_reason == "feature_disabled":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Retained-public evidence collection is not enabled.",
+            )
+        # Keep absent/rejected/moved targets and a changed brief indistinct to
+        # prevent this internal endpoint from becoming an entity enumerator.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected targets or approved targeting brief are no longer available. Refresh and try again.",
+        )
+
+    assert dispatch.run is not None
+    logger.info(
+        "retained_public_evidence_trigger_accepted tenant_id=%s service_profile_id=%s run_id=%s dispatch_state=%s created=%s",
+        payload.tenant_id,
+        payload.service_profile_id,
+        dispatch.run.id,
+        dispatch.state,
+        dispatch.created,
+    )
+    return EvidenceCollectionTriggerResponse(
+        status=dispatch.state,
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+        run_id=dispatch.run.id,
+        message_id=dispatch.message_id,
+        created=dispatch.created,
     )
 
 

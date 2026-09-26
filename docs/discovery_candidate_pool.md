@@ -63,12 +63,12 @@ profiles, and checks Hacker News, Bluesky, Stack Exchange, public GitHub,
 and Lemmy concurrently. A cost-controlled X fallback remains available only
 when free-source coverage is insufficient and credentials are configured.
 
-The global source-query cache is disabled by default. A cache claim alone
-cannot replace the tenant-specific embedding and verification handoff, so it
-must not suppress a paid tenant's discovery run. Provider pacing and global
-post deduplication still bound repeated searches. Do not enable
-`ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED` until cache entries can
-replay the source-post references for every tenant.
+The global source-query cache is disabled, including when the legacy
+`ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_ENABLED` flag is present. A cache
+claim alone cannot replace the tenant-specific embedding and verification
+handoff, so it must not suppress a paid tenant's discovery run. Provider
+pacing and global post deduplication still bound repeated searches. It can be
+reintroduced only when entries replay source-post references to every tenant.
 
 ## Account and contact extension
 

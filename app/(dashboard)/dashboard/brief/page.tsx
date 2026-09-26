@@ -4,8 +4,10 @@ import { Target } from "lucide-react";
 
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
+import { TargetingBriefEditor } from "@/components/settings/workspace_page/targeting-brief-editor";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
+import { saveTargetingBrief } from "../targeting-actions";
 import {
   fetchBuyerDemandReport,
   fetchLatestCrawlJob,
@@ -14,6 +16,7 @@ import {
   isBuyerDemandReportCurrent,
   verifierScoreThreshold,
 } from "../data";
+import { fetchTargetingBrief } from "../targets/data";
 
 export const metadata: Metadata = {
   title: "Targeting | Arcli",
@@ -60,6 +63,12 @@ export default async function MatchingBriefPage() {
   const latestScan = isBuyerDemandReportCurrent(crawlJob, buyerDemandReport)
     ? buyerDemandReport
     : null;
+  const targetingBrief = await fetchTargetingBrief(
+    supabase,
+    tenantId,
+    serviceProfile.id,
+  );
+  const saveBrief = saveTargetingBrief.bind(null, serviceProfile.id);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col gap-4 overflow-y-auto pr-1">
@@ -78,6 +87,13 @@ export default async function MatchingBriefPage() {
         latestScan={latestScan}
         layout="progressive"
       />
+
+      {serviceProfile.hasProfile ? (
+        <TargetingBriefEditor
+          initialBrief={targetingBrief}
+          onSave={saveBrief}
+        />
+      ) : null}
     </div>
   );
 }

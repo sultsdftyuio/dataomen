@@ -10,6 +10,7 @@ import {
   LockKeyhole,
   Settings2,
   Sparkles,
+  Target,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/dashboard": ClipboardList,
   "/dashboard/watchlists": UsersRound,
   "/dashboard/brief": BriefcaseBusiness,
+  "/dashboard/targets": Target,
   "/settings": Settings2,
 };
 
@@ -70,7 +72,7 @@ export function DashboardNavigation({
         aria-label="Product navigation"
         className={
           compact
-            ? "grid w-full grid-cols-4 items-center"
+            ? "grid w-full grid-cols-5 items-center"
             : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
         }
       >

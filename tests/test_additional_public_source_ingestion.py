@@ -161,7 +161,7 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
             {"on_conflict": "source,source_post_id", "ignore_duplicates": True},
         )
 
-    def test_query_cache_is_global_but_scoped_by_source_and_window(self) -> None:
+    def test_query_cache_flag_is_ignored_until_tenant_safe_replay_exists(self) -> None:
         class FakeClient:
             def __init__(self) -> None:
                 self.calls: list[tuple[str, str, bool, int]] = []
@@ -201,10 +201,8 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
                 scope="public.api.bsky.app",
             )
 
-        self.assertFalse(claimed)
-        self.assertEqual(len(client.calls), 1)
-        self.assertTrue(client.calls[0][0].startswith("arcli:public-source-query:"))
-        self.assertEqual(client.calls[0][3], 600)
+        self.assertTrue(claimed)
+        self.assertEqual(client.calls, [])
 
     def test_query_cache_is_disabled_by_default_to_preserve_tenant_matching(self) -> None:
         class FakeClient:

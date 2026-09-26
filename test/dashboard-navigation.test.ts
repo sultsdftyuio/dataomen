@@ -8,13 +8,14 @@ import {
   isDashboardNavigationItemActive,
 } from "../lib/dashboard-navigation";
 
-test("exposes the four primary dashboard workflows", () => {
+test("exposes the five primary dashboard workflows", () => {
   assert.deepEqual(
     dashboardNavigationItems.map((item) => item.href),
     [
       "/dashboard",
       "/dashboard/watchlists",
       "/dashboard/brief",
+      "/dashboard/targets",
       "/settings",
     ],
   );
@@ -22,6 +23,11 @@ test("exposes the four primary dashboard workflows", () => {
     dashboardNavigationItems.find((item) => item.href === "/dashboard/brief")
       ?.label,
     "Targeting",
+  );
+  assert.equal(
+    dashboardNavigationItems.find((item) => item.href === "/dashboard/targets")
+      ?.label,
+    "Targets",
   );
 });
 

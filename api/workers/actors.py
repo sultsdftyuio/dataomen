@@ -2852,6 +2852,97 @@ def dispatch_due_website_recrawls() -> None:
 
 
 @dramatiq.actor(
+    actor_name="dispatch_due_retained_public_evidence_monitors",
+    queue_name="system",
+    max_retries=3,
+    min_backoff=10_000,
+    max_backoff=60_000,
+    time_limit=_int_env(
+        "ARCLI_RETAINED_PUBLIC_EVIDENCE_MONITORING_SCHEDULER_TIME_LIMIT_MS",
+        120_000,
+        minimum=1,
+    ),
+)
+def dispatch_due_retained_public_evidence_monitors(*, recovery: bool = False) -> None:
+    """Run a singleton, opt-in target-monitoring scheduler tick.
+
+    The scheduler dispatches only existing retained-corpus evidence work. It
+    does not fetch a target profile, crawl a URL, or introduce a new source
+    connector.
+    """
+
+    from api.services.prospecting.target_monitoring import (
+        DEFAULT_MONITOR_TICK_SECONDS,
+        claim_target_monitoring_scheduler_tick,
+        dispatch_due_target_monitor_refreshes as execute,
+        release_target_monitoring_scheduler_tick,
+        target_monitoring_scheduler_next_delay,
+    )
+
+    next_delay_seconds = DEFAULT_MONITOR_TICK_SECONDS
+    claimed_delay_seconds = claim_target_monitoring_scheduler_tick()
+    if claimed_delay_seconds is None:
+        # A retry can arrive after its previous attempt advanced the durable
+        # timestamp but died before publishing a successor. Schedule one
+        # one-shot recovery check; recovery messages never fan out further.
+        if not recovery:
+            recovery_delay_seconds = target_monitoring_scheduler_next_delay()
+            if recovery_delay_seconds is not None:
+                try:
+                    dispatch_due_retained_public_evidence_monitors.send_with_options(
+                        kwargs={"recovery": True},
+                        delay=max(60, recovery_delay_seconds) * 1_000,
+                    )
+                except Exception:
+                    logger.exception(
+                        "retained_public_monitor_scheduler_recovery_enqueue_failed delay_seconds=%s",
+                        recovery_delay_seconds,
+                    )
+                    raise
+        logger.debug(
+            "retained_public_monitor_scheduler_tick_skipped reason=%s",
+            "disabled_not_due_or_claimed_by_another_worker",
+        )
+        return
+
+    # The durable state advances before the successor is published. Publishing
+    # it first protects forward progress if this worker is recycled while
+    # dispatching a finite due set; the singleton claim prevents a second loop.
+    try:
+        next_delay_seconds = claimed_delay_seconds
+        dispatch_due_retained_public_evidence_monitors.send_with_options(
+            delay=max(60, next_delay_seconds) * 1_000,
+        )
+    except Exception:
+        release_target_monitoring_scheduler_tick()
+        logger.exception(
+            "retained_public_monitor_scheduler_successor_enqueue_failed next_delay_seconds=%s",
+            next_delay_seconds,
+        )
+        raise
+
+    try:
+        result = execute()
+        logger.info(
+            "retained_public_monitor_scheduler_tick_completed dispatched=%s deferred=%s paused=%s failed=%s enabled=%s next_delay_seconds=%s",
+            result.dispatched,
+            result.deferred,
+            result.paused,
+            result.failed,
+            result.enabled,
+            result.next_delay_seconds,
+        )
+    except Exception as exc:
+        # The successor is already durable and queued. A transient database or
+        # broker failure therefore recovers on the next tick without widening
+        # monitor scope or requiring a worker restart.
+        logger.exception(
+            "retained_public_monitor_scheduler_tick_failed error_type=%s",
+            exc.__class__.__name__,
+        )
+
+
+@dramatiq.actor(
     actor_name="mark_crawl_job_dead_lettered",
     queue_name=os.getenv("ARCLI_CRAWL_QUEUE_NAME", "crawling"),
 )
@@ -3088,4 +3179,217 @@ def mark_buyer_language_research_dead_lettered(
         (retry_context or {}).get("retries"),
         (retry_context or {}).get("max_retries"),
         message_data.get("message_id") if isinstance(message_data, dict) else None,
+    )
+
+
+@dramatiq.actor(
+    actor_name="process_entity_candidate_generation_job",
+    queue_name=os.getenv("ARCLI_ENTITY_CANDIDATE_GENERATION_QUEUE_NAME", "ingestion"),
+    max_retries=_int_env("ARCLI_ENTITY_CANDIDATE_GENERATION_JOB_MAX_RETRIES", 2),
+    min_backoff=_int_env(
+        "ARCLI_ENTITY_CANDIDATE_GENERATION_JOB_MIN_BACKOFF_MS", 15_000, minimum=1
+    ),
+    max_backoff=_int_env(
+        "ARCLI_ENTITY_CANDIDATE_GENERATION_JOB_MAX_BACKOFF_MS", 90_000, minimum=1
+    ),
+    time_limit=_int_env(
+        "ARCLI_ENTITY_CANDIDATE_GENERATION_JOB_TIME_LIMIT_MS", 180_000, minimum=1
+    ),
+    on_retry_exhausted="mark_entity_candidate_generation_dead_lettered",
+)
+def process_entity_candidate_generation_job(tenant_id: str, run_id: str) -> None:
+    """Execute one durable official-site target-generation run.
+
+    Broker payloads intentionally contain no targeting brief, seed URL, page
+    content, or provider result. The executor reloads all scope from the
+    tenant-owned durable run before it can fetch or persist anything.
+    """
+
+    _job_started(
+        job_name="entity_candidate_generation",
+        tenant_id=tenant_id,
+        run_id=run_id,
+    )
+    try:
+        from api.services.prospecting.candidate_executor import run_candidate_generation
+
+        result = run_candidate_generation(tenant_id, run_id)
+    except Exception as exc:
+        # Transport/parser errors can include a site URL. Keep actor logs to
+        # stable identifiers and the exception class; the executor has already
+        # released its compare-and-set claim for a real retry when possible.
+        logger.error(
+            "entity_candidate_generation_actor_failed tenant_id=%s run_id=%s error_type=%s",
+            tenant_id,
+            run_id,
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="entity_candidate_generation",
+        state=result.status,
+        tenant_id=tenant_id,
+        run_id=result.run_id,
+        terminalized=result.terminalized,
+        pages_fetched=result.summary.get("pages_fetched", 0),
+        candidate_proposals=result.summary.get("candidate_proposals", 0),
+        entities_created=result.summary.get("entities_created", 0),
+    )
+
+
+@dramatiq.actor(
+    actor_name="mark_entity_candidate_generation_dead_lettered",
+    queue_name=os.getenv("ARCLI_ENTITY_CANDIDATE_GENERATION_QUEUE_NAME", "ingestion"),
+)
+def mark_entity_candidate_generation_dead_lettered(
+    message_data: dict[str, Any],
+    retry_context: dict[str, Any] | None = None,
+) -> None:
+    """Fail only the still-queued run whose retries were actually exhausted."""
+
+    args = message_data.get("args") if isinstance(message_data, dict) else None
+    tenant_id = args[0] if isinstance(args, (list, tuple)) and len(args) > 0 else None
+    run_id = args[1] if isinstance(args, (list, tuple)) and len(args) > 1 else None
+    if not isinstance(tenant_id, str) or not isinstance(run_id, str):
+        logger.error(
+            "entity_candidate_generation_dead_letter_invalid_message retries=%s max_retries=%s",
+            (retry_context or {}).get("retries"),
+            (retry_context or {}).get("max_retries"),
+        )
+        return
+
+    try:
+        from api.services.prospecting.candidate_executor import (
+            mark_candidate_generation_dead_lettered,
+        )
+
+        result = mark_candidate_generation_dead_lettered(tenant_id, run_id)
+    except Exception as exc:
+        logger.error(
+            "entity_candidate_generation_dead_letter_failed tenant_id=%s run_id=%s error_type=%s",
+            tenant_id,
+            run_id,
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    logger.error(
+        "entity_candidate_generation_dead_lettered tenant_id=%s run_id=%s state=%s terminalized=%s retries=%s max_retries=%s",
+        tenant_id,
+        result.run_id,
+        result.status,
+        result.terminalized,
+        (retry_context or {}).get("retries"),
+        (retry_context or {}).get("max_retries"),
+    )
+
+
+@dramatiq.actor(
+    actor_name="process_retained_public_evidence_collection_job",
+    queue_name=os.getenv("ARCLI_RETAINED_PUBLIC_EVIDENCE_COLLECTION_QUEUE_NAME", "ingestion"),
+    max_retries=_int_env("ARCLI_RETAINED_PUBLIC_EVIDENCE_COLLECTION_JOB_MAX_RETRIES", 2),
+    min_backoff=_int_env(
+        "ARCLI_RETAINED_PUBLIC_EVIDENCE_COLLECTION_JOB_MIN_BACKOFF_MS", 10_000, minimum=1
+    ),
+    max_backoff=_int_env(
+        "ARCLI_RETAINED_PUBLIC_EVIDENCE_COLLECTION_JOB_MAX_BACKOFF_MS", 60_000, minimum=1
+    ),
+    # The executor's own deadline is shorter than the default lease. A hard
+    # worker loss is recovered by lease expiry, not by extending this job.
+    time_limit=_int_env(
+        "ARCLI_RETAINED_PUBLIC_EVIDENCE_COLLECTION_JOB_TIME_LIMIT_MS", 75_000, minimum=1
+    ),
+    on_retry_exhausted="mark_retained_public_evidence_collection_dead_lettered",
+)
+def process_retained_public_evidence_collection_job(tenant_id: str, run_id: str) -> None:
+    """Process one selected-target retained-corpus evidence request.
+
+    The broker carries only the durable tenant and run identifiers. The
+    executor reloads the approved brief, selected targets, source caps, and
+    exact retained public rows after acquiring its database lease.
+    """
+
+    _job_started(
+        job_name="retained_public_evidence_collection",
+        tenant_id=tenant_id,
+        run_id=run_id,
+    )
+    try:
+        from api.services.prospecting.evidence_executor import run_evidence_collection
+
+        result = run_evidence_collection(tenant_id, run_id)
+    except Exception as exc:
+        # An exception can contain a retained source fragment, so preserve
+        # only stable identifiers and its class in worker telemetry.
+        logger.error(
+            "retained_public_evidence_collection_actor_failed tenant_id=%s run_id=%s error_type=%s",
+            tenant_id,
+            run_id,
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="retained_public_evidence_collection",
+        state=result.status,
+        tenant_id=tenant_id,
+        run_id=result.run_id,
+        terminalized=result.terminalized,
+        retained_records_scanned=result.summary.get("retained_records_scanned", 0),
+        pending_evidence_proposals=result.summary.get("pending_evidence_proposals", 0),
+        evidence_created=result.summary.get("evidence_created", 0),
+    )
+
+
+@dramatiq.actor(
+    actor_name="mark_retained_public_evidence_collection_dead_lettered",
+    queue_name=os.getenv("ARCLI_RETAINED_PUBLIC_EVIDENCE_COLLECTION_QUEUE_NAME", "ingestion"),
+)
+def mark_retained_public_evidence_collection_dead_lettered(
+    message_data: dict[str, Any],
+    retry_context: dict[str, Any] | None = None,
+) -> None:
+    """Mark only the still-claimable selected run after retries exhaust."""
+
+    args = message_data.get("args") if isinstance(message_data, dict) else None
+    tenant_id = args[0] if isinstance(args, (list, tuple)) and len(args) > 0 else None
+    run_id = args[1] if isinstance(args, (list, tuple)) and len(args) > 1 else None
+    if not isinstance(tenant_id, str) or not isinstance(run_id, str):
+        logger.error(
+            "retained_public_evidence_collection_dead_letter_invalid_message retries=%s max_retries=%s",
+            (retry_context or {}).get("retries"),
+            (retry_context or {}).get("max_retries"),
+        )
+        return
+
+    try:
+        from api.services.prospecting.evidence_executor import mark_evidence_collection_dead_lettered
+
+        result = mark_evidence_collection_dead_lettered(tenant_id, run_id)
+    except Exception as exc:
+        logger.error(
+            "retained_public_evidence_collection_dead_letter_failed tenant_id=%s run_id=%s error_type=%s",
+            tenant_id,
+            run_id,
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    logger.error(
+        "retained_public_evidence_collection_dead_lettered tenant_id=%s run_id=%s state=%s terminalized=%s retries=%s max_retries=%s",
+        tenant_id,
+        result.run_id,
+        result.status,
+        result.terminalized,
+        (retry_context or {}).get("retries"),
+        (retry_context or {}).get("max_retries"),
     )

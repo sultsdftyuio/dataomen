@@ -22,19 +22,19 @@ const workspaceRouteSource = readFileSync(
   fileURLToPath(new URL("../app/api/settings/workspace/route.ts", import.meta.url)),
   "utf8",
 );
-const workspaceRefreshCenterSource = readFileSync(
+const targetingEditorSource = readFileSync(
   fileURLToPath(
     new URL(
-      "../components/settings/workspace_page/workspace-refresh-center.tsx",
+      "../components/settings/workspace_page/targeting-editor.tsx",
       import.meta.url,
     ),
   ),
   "utf8",
 );
-const matchingBriefGuideSource = readFileSync(
+const targetingBriefEditorSource = readFileSync(
   fileURLToPath(
     new URL(
-      "../components/settings/workspace_page/matching-brief-guide.tsx",
+      "../components/settings/workspace_page/targeting-brief-editor.tsx",
       import.meta.url,
     ),
   ),
@@ -46,34 +46,28 @@ const matchingBriefPageSource = readFileSync(
   ),
   "utf8",
 );
-test("the prospect desk relies on automatic website monitoring", () => {
+test("the prospect desk points people to targeting instead of launching website scans", () => {
   assert.match(
     leadDeskSource,
-    /<Link href="\/dashboard\/brief">Edit matching brief<\/Link>/,
+    /<Link href="\/dashboard\/brief">Edit targeting<\/Link>/,
   );
   assert.doesNotMatch(leadDeskSource, /startWebsiteDemandScan/);
   assert.doesNotMatch(leadDeskSource, /Scan website demand/);
   assert.doesNotMatch(leadDeskSource, /body: JSON\.stringify\(\{ websiteUrl \}\)/);
 });
 
-test("website re-crawls and brief updates each start only their own job", () => {
+test("website updates rebuild targeting before future discovery", () => {
   assert.match(
     profileSettingsSource,
     /body: JSON\.stringify\(\{ websiteUrl: normalizedWebsiteUrl \}\)/,
   );
-  assert.match(profileSettingsSource, /WorkspaceRefreshCenter/);
-  assert.match(workspaceRefreshCenterSource, /Save website/);
-  assert.match(workspaceRefreshCenterSource, /isPro/);
-  assert.match(workspaceRefreshCenterSource, /Free includes one website crawl/);
-  assert.match(workspaceRefreshCenterSource, /do not run recurring crawls or collect lead signals/);
-  assert.doesNotMatch(workspaceRefreshCenterSource, /Re-crawl/);
-  assert.match(workspaceRefreshCenterSource, /Refresh brief/);
-  assert.match(workspaceRefreshCenterSource, /Automatic monitoring/);
+  assert.match(profileSettingsSource, /onWebsiteSave=\{refreshWebsiteContext\}/);
+  assert.match(targetingEditorSource, /Save and rebuild/);
   assert.match(
-    workspaceRefreshCenterSource,
-    /Next update will target/,
+    targetingEditorSource,
+    /Changing the source rebuilds this targeting profile before Arcli looks for new conversations/,
   );
-  assert.match(workspaceRefreshCenterSource, /without a website crawl/);
+  assert.match(targetingEditorSource, /Refresh website profile/);
   assert.doesNotMatch(profileSettingsSource, /Replace & analyze|Analyze again/);
   assert.match(
     workspaceRouteSource,
@@ -82,12 +76,15 @@ test("website re-crawls and brief updates each start only their own job", () => 
   assert.doesNotMatch(workspaceRouteSource, /const triggerResults = await Promise\.all/);
 });
 
-test("the matching brief has a step-by-step guide instead of a static explanation", () => {
-  assert.match(matchingBriefPageSource, /<MatchingBriefGuide\s*\/>/);
-  assert.match(matchingBriefGuideSource, /Step \{activeStepIndex \+ 1\} of \{GUIDE_STEPS\.length\}/);
-  assert.match(matchingBriefGuideSource, /Define the buyer/);
-  assert.match(matchingBriefGuideSource, /Add the signals to look for/);
-  assert.match(matchingBriefGuideSource, /Set matching rules/);
-  assert.match(matchingBriefGuideSource, /Save, then choose one update/);
-  assert.match(matchingBriefGuideSource, /Refresh brief after editing the brief/);
+test("the targeting brief separates target fit from buyer evidence", () => {
+  assert.match(matchingBriefPageSource, /<TargetingBriefEditor/);
+  assert.match(targetingBriefEditorSource, /Target universe/);
+  assert.match(targetingBriefEditorSource, /Ideal customer traits/);
+  assert.match(targetingBriefEditorSource, /Relevant change triggers/);
+  assert.match(targetingBriefEditorSource, /What counts as strong buyer evidence\?/);
+  assert.match(targetingBriefEditorSource, /Outside the target universe/);
+  assert.match(
+    targetingBriefEditorSource,
+    /a high-fit target is not automatically a lead/,
+  );
 });

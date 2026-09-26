@@ -320,6 +320,111 @@ def bootstrap_website_recrawl_scheduler(
         )
 
 
+def bootstrap_retained_public_evidence_monitoring_scheduler(
+    queue_allowlist: set[str] | None,
+    *,
+    retry_attempt: int = 0,
+) -> None:
+    """Seed one opt-in retained-corpus target-monitoring scheduler tick.
+
+    This stays on the system queue and relies on PostgreSQL's singleton state,
+    so a process restart can repair a missed delayed message without creating
+    parallel monitor loops or broadening a target's selected evidence scope.
+    """
+
+    if queue_allowlist is not None and "system" not in queue_allowlist:
+        return
+    enabled_values = {"1", "true", "yes", "on"}
+    if (
+        os.getenv(
+            "ARCLI_RETAINED_PUBLIC_EVIDENCE_MONITORING_ENABLED",
+            "false",
+        )
+        .strip()
+        .lower()
+        not in enabled_values
+    ):
+        logger.info(
+            "retained_public_monitor_scheduler_bootstrap_skipped reason=%s",
+            "disabled",
+        )
+        return
+    if (
+        os.getenv(
+            "ARCLI_RETAINED_PUBLIC_EVIDENCE_RESEARCH_ENABLED",
+            "false",
+        )
+        .strip()
+        .lower()
+        not in enabled_values
+    ):
+        logger.warning(
+            "retained_public_monitor_scheduler_bootstrap_skipped reason=%s",
+            "retained_evidence_research_disabled",
+        )
+        return
+
+    try:
+        from api.workers.actors import (
+            dispatch_due_retained_public_evidence_monitors,
+        )
+        from api.services.prospecting.target_monitoring import (
+            bootstrap_target_monitoring_scheduler as acquire_target_monitoring_scheduler_tick,
+            target_monitoring_scheduler_next_delay,
+        )
+
+        if acquire_target_monitoring_scheduler_tick():
+            message = dispatch_due_retained_public_evidence_monitors.send()
+            logger.info(
+                "retained_public_monitor_scheduler_bootstrapped message_id=%s",
+                message.message_id,
+            )
+            return
+
+        recovery_delay_seconds = target_monitoring_scheduler_next_delay()
+        if recovery_delay_seconds is None:
+            logger.info(
+                "retained_public_monitor_scheduler_bootstrap_skipped reason=%s",
+                "scheduler_state_unavailable",
+            )
+            return
+
+        # An existing future tick may have lost its delayed broker message
+        # during a worker recycle. This one-shot recovery is safe because the
+        # PostgreSQL claim still permits only one actor to do the next tick.
+        message = dispatch_due_retained_public_evidence_monitors.send_with_options(
+            kwargs={"recovery": True},
+            delay=max(60, recovery_delay_seconds) * 1_000,
+        )
+        logger.info(
+            "retained_public_monitor_scheduler_recovery_enqueued delay_seconds=%s message_id=%s",
+            recovery_delay_seconds,
+            message.message_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "retained_public_monitor_scheduler_bootstrap_failed retry_attempt=%s error_type=%s",
+            retry_attempt,
+            exc.__class__.__name__,
+        )
+        if retry_attempt >= 3:
+            return
+        delay_seconds = min(300, 30 * (2**retry_attempt))
+        retry_timer = threading.Timer(
+            delay_seconds,
+            bootstrap_retained_public_evidence_monitoring_scheduler,
+            args=(queue_allowlist,),
+            kwargs={"retry_attempt": retry_attempt + 1},
+        )
+        retry_timer.daemon = True
+        retry_timer.start()
+        logger.info(
+            "retained_public_monitor_scheduler_bootstrap_retry_scheduled retry_attempt=%s delay_seconds=%s",
+            retry_attempt + 1,
+            delay_seconds,
+        )
+
+
 def close_dramatiq_broker(broker: Any) -> None:
     """Release Redis sockets before a child exits or is recycled."""
     try:
@@ -445,6 +550,7 @@ def run_embedded_dramatiq_worker(state: WorkerState) -> int:
     try:
         worker.start()
         bootstrap_website_recrawl_scheduler(queue_allowlist)
+        bootstrap_retained_public_evidence_monitoring_scheduler(queue_allowlist)
         while not state.shutdown_requested.wait(1.0):
             if state.recycle_requested.is_set():
                 # pause waits for active actor calls to finish and prevents a
