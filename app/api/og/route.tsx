@@ -4,12 +4,10 @@ import { getOgImageParams } from '@/lib/og-image';
 
 export const runtime = 'edge';
 
-export const size = {
+const OG_IMAGE_SIZE = {
   width: 1200,
   height: 630,
 };
-
-export const contentType = 'image/png';
 
 const CACHE_HEADERS = {
   'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400',
@@ -53,7 +51,7 @@ export function GET(request: Request) {
       </div>
     ),
     {
-      ...size,
+      ...OG_IMAGE_SIZE,
       headers: CACHE_HEADERS,
     },
   );

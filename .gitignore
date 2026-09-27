@@ -29,6 +29,7 @@ MANIFEST
 
 # --- Next.js & Node.js ---
 node_modules/
+package-lock.json
 .next/
 out/
 .vercel

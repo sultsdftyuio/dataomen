@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   crawlTriggerEndpoints,
   embeddingTriggerEndpoints,
-} from "../app/api/settings/workspace/route";
+} from "../lib/settings/worker-endpoints";
 
 test("uses worker API settings for the crawl trigger and avoids a doubled api path", () => {
   assert.deepEqual(

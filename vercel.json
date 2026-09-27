@@ -1,4 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "next build"
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm exec next build --webpack"
 }

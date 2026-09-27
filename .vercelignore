@@ -15,6 +15,3 @@ requirements.txt
 compute_worker.py
 .coverage
 pytest.ini
-
-# Package Manager
-pnpm-lock.yaml
