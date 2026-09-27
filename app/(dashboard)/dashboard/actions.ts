@@ -29,7 +29,10 @@ type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type EmbeddingTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type BuyerLanguageResearchTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
-type CrawlerTriggerSource = "dashboard_onboarding" | "dashboard_demand_scan";
+type CrawlerTriggerSource =
+  | "dashboard_onboarding"
+  | "dashboard_demand_scan"
+  | "dashboard_profile_rebuild";
 type EmbeddingTriggerSource = "onboarding_profile_approval" | "dashboard_demand_scan";
 
 type CrawlerTriggerResponse = {
@@ -442,6 +445,7 @@ async function postCrawlerTrigger(
   context: CrawlerTriggerContext,
   websiteUrl: string,
   source: CrawlerTriggerSource = "dashboard_onboarding",
+  forceProfileRebuild = false,
 ): Promise<ProspectActionResult> {
   const endpoint = crawlerTriggerEndpoint();
   if (!endpoint) {
@@ -481,6 +485,7 @@ async function postCrawlerTrigger(
         website_url: websiteUrl,
         requested_by: context.userId,
         source,
+        ...(forceProfileRebuild ? { force_profile_rebuild: true } : {}),
       }),
     });
 
@@ -1055,6 +1060,38 @@ export async function retryServiceProfileEmbedding(
   }
 
   return result;
+}
+
+/** Re-crawl the active website and regenerate its AI-derived service profile. */
+export async function rebuildCurrentWebsiteProfile(): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+
+  const websiteUrl = await fetchTenantWebsiteUrl(
+    context.supabase,
+    context.tenantId,
+  );
+  if (!websiteUrl) {
+    return actionError("Add a website before rebuilding its profile.");
+  }
+
+  const result = await postCrawlerTrigger(
+    {
+      tenantId: context.tenantId,
+      userId: context.userId,
+    },
+    websiteUrl,
+    "dashboard_profile_rebuild",
+    true,
+  );
+  if (!result.ok) return result;
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/brief");
+  revalidatePath("/onboarding/workspace");
+  return actionOk(
+    "Profile rebuild queued. Arcli will re-crawl the current website and refresh the AI profile.",
+  );
 }
 
 /**

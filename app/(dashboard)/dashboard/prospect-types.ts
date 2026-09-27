@@ -78,6 +78,8 @@ export type LeadMatchStatus =
   | "qualified"
   | "rejected";
 
+export type LeadIntentTier = "high" | "warm" | "exploratory" | "not_a_match";
+
 export type QualifiedLeadView = {
   id: string;
   matchStatus: LeadMatchStatus;
@@ -95,6 +97,8 @@ export type QualifiedLeadView = {
   purchaseStage: string | null;
   /** A direct product or vendor name from the source text, when present. */
   competitorMention: string | null;
+  /** The verifier's discovery-priority tier; absent on historical verdicts. */
+  intentTier?: LeadIntentTier | null;
   matchReason: string;
   suggestedReply: string;
   matchedAt: string | null;

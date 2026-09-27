@@ -29,6 +29,7 @@ import type { Database, Json } from "@/types/supabase";
 import type {
   BuyerDemandReportView,
   CrawlJobView,
+  LeadIntentTier,
   LeadMatchStatus,
   QualifiedLeadView,
   ServiceProfileFields,
@@ -109,6 +110,18 @@ function numberValue(value: unknown): number | null {
 
 function booleanValue(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
+}
+
+function intentTierValue(value: string | null): LeadIntentTier | null {
+  switch (value) {
+    case "high":
+    case "warm":
+    case "exploratory":
+    case "not_a_match":
+      return value;
+    default:
+      return null;
+  }
 }
 
 function isOptionalAdditiveSchemaUnavailable(error: unknown) {
@@ -601,6 +614,7 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
     ),
     purchaseStage: readString(sources, ["purchase_stage"]),
     competitorMention: readString(sources, ["competitor_mention"]),
+    intentTier: intentTierValue(readString(sources, ["intent_tier"])),
     matchReason:
       readString(sources, [
         "match_reason",

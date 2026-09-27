@@ -33,6 +33,7 @@ import {
 import type {
   BuyerGroupActivationAction,
   LeadFeedbackValue,
+  ProspectActionResult,
   QualifiedLeadView,
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
@@ -62,12 +63,15 @@ type ProspectLeadDeskProps = {
   queueSource: string;
   queueSources: string[];
   isRefreshing: boolean;
+  isProfileRebuildPending: boolean;
   lastUpdatedAt: Date | null;
+  profileRebuildResult: ProspectActionResult | null;
   feedbackNotice: { message: string; ok: boolean } | null;
   feedbackPending: boolean;
   qualificationPending: boolean;
   qualificationMessage: string | null;
   onRefresh: () => void;
+  onRebuildProfile: () => void;
   onQueryChange: (value: string) => void;
   onFilterChange: (value: QueueFilter) => void;
   onSortChange: (value: QueueSort) => void;
@@ -223,6 +227,14 @@ function exactDateTime(value: string | null) {
 }
 
 function leadStatus(lead: QualifiedLeadView) {
+  if (isScreenedMatch(lead)) {
+    return {
+      label: "Screened out",
+      description: "Automated review did not find a plausible enough fit for the opportunity inbox.",
+      color: C.muted,
+      background: C.offWhite,
+    };
+  }
   if (lead.matchStatus === "qualified") {
     return {
       label: "Qualified",
@@ -231,20 +243,36 @@ function leadStatus(lead: QualifiedLeadView) {
       background: C.greenPale,
     };
   }
+  if (lead.intentTier === "high") {
+    return {
+      label: "High intent",
+      description: "A direct request or relevant evaluation that is ready to prioritize for review.",
+      color: C.green,
+      background: C.greenPale,
+    };
+  }
+  if (lead.intentTier === "warm") {
+    return {
+      label: "Warm signal",
+      description: "Relevant frustration or workflow pain worth a thoughtful review.",
+      color: C.amber,
+      background: C.amberPale,
+    };
+  }
+  if (lead.intentTier === "exploratory") {
+    return {
+      label: "Exploratory",
+      description: "A relevant category or adjacent-workflow discussion for research or future outreach.",
+      color: C.blue,
+      background: C.bluePale,
+    };
+  }
   if (isPotentialBuyer(lead)) {
     return {
       label: "Relevant",
       description: "A plausible public conversation to review, not a confirmed buyer.",
       color: C.amber,
       background: C.amberPale,
-    };
-  }
-  if (isScreenedMatch(lead)) {
-    return {
-      label: "Screened out",
-      description: "Automated review did not find a plausible enough fit for the opportunity inbox.",
-      color: C.muted,
-      background: C.offWhite,
     };
   }
   return {
@@ -293,12 +321,15 @@ export function ProspectLeadDesk({
   queueSource,
   queueSources,
   isRefreshing,
+  isProfileRebuildPending,
   lastUpdatedAt,
+  profileRebuildResult,
   feedbackNotice,
   feedbackPending,
   qualificationPending,
   qualificationMessage,
   onRefresh,
+  onRebuildProfile,
   onQueryChange,
   onFilterChange,
   onSortChange,
@@ -461,8 +492,32 @@ export function ProspectLeadDesk({
           <Button asChild variant="outline" className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
             <Link href="/dashboard/brief">Edit targeting</Link>
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]"
+            disabled={isProfileRebuildPending || !serviceProfile.websiteUrl}
+            onClick={onRebuildProfile}
+            title="Re-crawl the current website and rebuild its AI profile"
+          >
+            <RefreshCw
+              className={cn("size-3.5", isProfileRebuildPending && "animate-spin")}
+              aria-hidden="true"
+            />
+            {isProfileRebuildPending ? "Rebuilding..." : "Rebuild AI profile"}
+          </Button>
         </div>
       </section>
+
+      {profileRebuildResult ? (
+        <p
+          role="status"
+          className="shrink-0 text-xs"
+          style={{ color: profileRebuildResult.ok ? C.green : C.red }}
+        >
+          {profileRebuildResult.message}
+        </p>
+      ) : null}
 
       <section
         aria-label="Lead discovery summary"

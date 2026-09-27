@@ -37,6 +37,9 @@ class CrawlTriggerRequest(BaseModel):
     website_url: str = Field(min_length=1)
     requested_by: str | None = Field(default=None)
     source: str | None = Field(default=None)
+    # An explicit rebuild can refresh the current site even when its normal
+    # recurring crawl schedule is already active.
+    force_profile_rebuild: bool = Field(default=False)
 
     @field_validator("tenant_id")
     @classmethod
@@ -707,6 +710,7 @@ def trigger_crawl(
         _database_engine(),
         tenant_id=payload.tenant_id,
         website_url=payload.website_url,
+        force_profile_rebuild=payload.force_profile_rebuild,
     )
     if submission is None:
         raise HTTPException(

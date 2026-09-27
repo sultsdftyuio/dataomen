@@ -38,7 +38,11 @@ import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { StartingDiscoveryScreen } from "@/components/discovery/starting-discovery-screen";
 import { ProspectLeadDesk } from "@/components/prospects/prospect-lead-desk";
-import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
+import {
+  rebuildCurrentWebsiteProfile,
+  retryServiceProfileEmbedding,
+  submitLeadFeedback,
+} from "./actions";
 import {
   isPotentialBuyer,
   isScreenedMatch,
@@ -54,6 +58,7 @@ import {
   type BuyerGroupActivationAction,
   type CrawlJobView,
   type LeadFeedbackValue,
+  type ProspectActionResult,
   type QualifiedLeadView,
   type ServiceProfileView,
 } from "./prospect-types";
@@ -187,6 +192,7 @@ function matchesQueueSearch(lead: QualifiedLeadView, query: string) {
     lead.urgencyReason,
     lead.purchaseStage,
     lead.competitorMention,
+    lead.intentTier,
   ]
     .filter(Boolean)
     .join(" ")
@@ -200,6 +206,18 @@ function denseStatusPresentation(lead: QualifiedLeadView) {
     return { label: "Screened out", background: C.offWhite, color: C.muted };
   }
 
+  if (lead.matchStatus !== "qualified" && lead.intentTier === "high") {
+    return { label: "High intent", background: C.greenPale, color: C.green };
+  }
+
+  if (lead.intentTier === "warm") {
+    return { label: "Warm signal", background: C.amberPale, color: C.amber };
+  }
+
+  if (lead.intentTier === "exploratory") {
+    return { label: "Exploratory", background: C.bluePale, color: C.blue };
+  }
+
   if (isPotentialBuyer(lead)) {
     return { label: "Relevant opportunity", background: C.amberPale, color: C.amber };
   }
@@ -209,6 +227,9 @@ function denseStatusPresentation(lead: QualifiedLeadView) {
 
 function denseDetailStatusLabel(lead: QualifiedLeadView) {
   if (isScreenedMatch(lead)) return "Screened out";
+  if (lead.matchStatus !== "qualified" && lead.intentTier === "high") return "High intent";
+  if (lead.intentTier === "warm") return "Warm signal";
+  if (lead.intentTier === "exploratory") return "Exploratory signal";
   return isPotentialBuyer(lead) ? "Relevant opportunity" : "Strong public signal";
 }
 
@@ -219,6 +240,7 @@ function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
 
     const priority = (lead: QualifiedLeadView) =>
       (isScreenedMatch(lead) ? -2 : isPotentialBuyer(lead) ? 0 : 4) +
+      (lead.intentTier === "high" ? 3 : lead.intentTier === "warm" ? 2 : lead.intentTier === "exploratory" ? 1 : 0) +
       (lead.urgencyReason ? 2 : 0) +
       (lead.matchStatus === "qualified" ? 1 : 0);
     const priorityDifference = priority(b) - priority(a);
@@ -2745,6 +2767,10 @@ export default function ProspectDashboardClient({
   const [isQueueControlsOpen, setIsQueueControlsOpen] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshPending, startRefreshTransition] = useTransition();
+  const [isProfileRebuildPending, startProfileRebuildTransition] = useTransition();
+  const [profileRebuildResult, setProfileRebuildResult] = useState<
+    ProspectActionResult | null
+  >(null);
   const [dashboardView, setDashboardView] = useState<DashboardView>("overview");
   const [isScanActivityOpen, setIsScanActivityOpen] = useState(false);
   const shouldRefreshForLeads = shouldContinueActionQueuePolling({
@@ -2827,6 +2853,22 @@ export default function ProspectDashboardClient({
         }));
       } finally {
         setPendingQualificationLeadId(null);
+      }
+    });
+  };
+
+  const handleProfileRebuild = () => {
+    setProfileRebuildResult(null);
+    startProfileRebuildTransition(async () => {
+      try {
+        const result = await rebuildCurrentWebsiteProfile();
+        setProfileRebuildResult(result);
+        if (result.ok) router.refresh();
+      } catch {
+        setProfileRebuildResult({
+          ok: false,
+          message: "Could not queue a profile rebuild. Please try again.",
+        });
       }
     });
   };
@@ -2960,12 +3002,15 @@ export default function ProspectDashboardClient({
         queueSource={queueSource}
         queueSources={queueSources}
         isRefreshing={isRefreshPending}
+        isProfileRebuildPending={isProfileRebuildPending}
         lastUpdatedAt={lastUpdatedAt}
+        profileRebuildResult={profileRebuildResult}
         feedbackNotice={selectedLead ? feedbackMessages[selectedLead.id] ?? null : null}
         feedbackPending={isFeedbackPending && pendingFeedbackLeadId === selectedLead?.id}
         qualificationPending={isQualificationPending && pendingQualificationLeadId === selectedLead?.id}
         qualificationMessage={selectedLead ? qualificationMessages[selectedLead.id] ?? null : null}
         onRefresh={refreshDashboard}
+        onRebuildProfile={handleProfileRebuild}
         onQueryChange={setQueueQuery}
         onFilterChange={setQueueFilter}
         onSortChange={setQueueSort}

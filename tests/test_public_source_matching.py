@@ -827,37 +827,89 @@ class PublicSourceMatchingTests(unittest.TestCase):
     def test_lowered_review_and_discovery_thresholds_still_require_a_verifier_match(self) -> None:
         import api.services.social_ingestion as ingestion
 
-        ready_for_review = VerificationResult(
+        direct_recommendation_request = VerificationResult(
             match=True,
             decision_label="strong_match",
-            confidence=0.6,
-            pain_detected="Manual billing work",
-            why_this_matches="Plausible recurring billing need.",
-            suggested_reply="Here is a useful resource.",
-        )
-        self.assertEqual(ingestion._lead_match_status(ready_for_review), "ready_for_review")
-
-        high_confidence_potential = ready_for_review.model_copy(
-            update={"decision_label": "weak_match", "confidence": 0.8}
+            intent_tier="high",
+            confidence=0.8,
+            pain_detected="The author asks for a recommendation.",
+            why_this_matches="A direct request for a relevant workflow solution.",
+            suggested_reply="Compare the manual steps first, then evaluate the tools that remove them.",
         )
         self.assertEqual(
-            ingestion._lead_match_status(high_confidence_potential),
+            ingestion._lead_match_status(direct_recommendation_request),
+            "ready_for_review",
+        )
+
+        relevant_frustration = direct_recommendation_request.model_copy(
+            update={
+                "decision_label": "weak_match",
+                "intent_tier": "warm",
+                "confidence": 0.42,
+                "pain_detected": "The team repeatedly chases invoices by hand.",
+                "why_this_matches": "Manual workflow frustration is useful for review without purchase intent.",
+            }
+        )
+        self.assertEqual(
+            ingestion._lead_match_status(relevant_frustration),
             "discovery_candidate",
         )
 
-        discovery_candidate = ready_for_review.model_copy(update={"confidence": 0.20})
+        adjacent_workflow_discussion = direct_recommendation_request.model_copy(
+            update={
+                "decision_label": "weak_match",
+                "intent_tier": "exploratory",
+                "confidence": 0.20,
+                "pain_detected": "The author discusses billing workflow trade-offs.",
+                "why_this_matches": "An adjacent category discussion remains useful for research.",
+            }
+        )
         self.assertEqual(
-            ingestion._lead_match_status(discovery_candidate),
+            ingestion._lead_match_status(adjacent_workflow_discussion),
             "discovery_candidate",
         )
 
-        low_confidence = ready_for_review.model_copy(update={"confidence": 0.19})
-        self.assertEqual(ingestion._lead_match_status(low_confidence), "rejected")
+        job_post = direct_recommendation_request.model_copy(
+            update={
+                "match": False,
+                "decision_label": "not_a_match",
+                "intent_tier": "not_a_match",
+                "confidence": 0.03,
+                "why_this_matches": "A hiring ad is not a customer conversation.",
+                "rejection_reason": "job_posting",
+            }
+        )
+        self.assertEqual(ingestion._lead_match_status(job_post), "rejected")
 
-        skipped = ready_for_review.model_copy(update={"verifier_executed": False})
+        promotional_spam = job_post.model_copy(update={"decision_label": "spam"})
+        self.assertEqual(ingestion._lead_match_status(promotional_spam), "rejected")
+
+        unrelated_keyword_debugging = job_post.model_copy(
+            update={
+                "confidence": 0.08,
+                "why_this_matches": "A technical debugging question contains a keyword but has no relevant workflow connection.",
+                "rejection_reason": "unrelated_technical_debugging",
+            }
+        )
+        self.assertEqual(
+            ingestion._lead_match_status(unrelated_keyword_debugging),
+            "rejected",
+        )
+
+        # Cached verdicts from before intent tiers continue using the legacy
+        # decision-label path so existing rows remain reviewable.
+        legacy_ready_for_review = direct_recommendation_request.model_copy(
+            update={"intent_tier": None, "confidence": 0.6}
+        )
+        self.assertEqual(
+            ingestion._lead_match_status(legacy_ready_for_review),
+            "ready_for_review",
+        )
+
+        skipped = direct_recommendation_request.model_copy(update={"verifier_executed": False})
         self.assertEqual(ingestion._lead_match_status(skipped), "rejected")
 
-        non_match_label = ready_for_review.model_copy(
+        non_match_label = direct_recommendation_request.model_copy(
             update={"match": False, "decision_label": "not_a_match"}
         )
         self.assertEqual(ingestion._lead_match_status(non_match_label), "rejected")

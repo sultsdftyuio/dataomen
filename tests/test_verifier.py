@@ -55,7 +55,7 @@ def test_verifier_uses_the_matching_threshold_when_no_override_is_configured() -
     verify.assert_called_once()
 
 
-def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() -> None:
+def test_verifier_prompt_uses_the_discovery_oriented_tiered_intent_standard() -> None:
     profile = ServiceProfile(
         company_name="Billing Co",
         one_liner="Automated recurring billing for SaaS teams.",
@@ -76,18 +76,71 @@ def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() 
     prompt = verifier._build_user_prompt(candidate, profile)
 
     assert "Revenue is at risk after a payment failure" in prompt
+    assert "discovery-oriented tiered-intent standard" in prompt
+    assert "as `high`" in prompt
+    assert "as `warm`" in prompt
+    assert "as `exploratory`" in prompt
+    assert "do not require explicit purchase intent" in prompt
+    assert "job/hiring and freelance" in prompt
     assert "similarity score is only a cheap prefilter" in prompt.lower()
     assert "search_terms describe the buyer's desired outcome" in prompt
     assert "weighted relevance signals, not a checklist" in prompt
-    assert "tool/category search" in verifier.SYSTEM_PROMPT
-    assert "relevant opportunity" in verifier.SYSTEM_PROMPT
-    assert "strong signal must show a clear, real buyer problem" in verifier.SYSTEM_PROMPT
-    assert "0.20-0.54 represents a plausible relevant opportunity" in verifier.SYSTEM_PROMPT
+    assert "public-conversation discovery product, not a procurement gatekeeper" in verifier.SYSTEM_PROMPT
+    assert "A question about a method can be high intent" in verifier.SYSTEM_PROMPT
+    assert "Retain vague but plausibly relevant posts as exploratory" in verifier.SYSTEM_PROMPT
+    assert "pure technical debugging with no meaningful connection" in verifier.SYSTEM_PROMPT
     assert "not a prediction that the author will buy" in verifier.SYSTEM_PROMPT
-    assert "Do not require the writer to use the vendor's product-category" in verifier.SYSTEM_PROMPT
+    assert "Do not require the writer to use the vendor's product category" in verifier.SYSTEM_PROMPT
     assert "without words such as prospect, lead" in verifier.SYSTEM_PROMPT
     assert "exact short excerpt" in verifier.SYSTEM_PROMPT
     assert "Prefer a cautious `weak_match`" in prompt
+
+
+def test_tiered_verdict_normalization_keeps_the_declared_discovery_tier() -> None:
+    contradictory_warm_result = VerificationResult(
+        match=False,
+        decision_label="not_a_match",
+        intent_tier="warm",
+        confidence=0.42,
+        pain_detected="Manual invoice follow-up is consuming the team.",
+        why_this_matches="The tier identifies relevant workflow frustration.",
+    )
+
+    normalized = VerifierService._normalize_tiered_decision(contradictory_warm_result)
+
+    assert normalized.match is True
+    assert normalized.decision_label == "weak_match"
+    assert normalized.intent_tier == "warm"
+
+
+def test_tiered_rejection_normalization_preserves_the_legacy_spam_label() -> None:
+    spam_result = VerificationResult(
+        match=True,
+        decision_label="spam",
+        intent_tier="not_a_match",
+        confidence=0.03,
+        pain_detected="",
+        why_this_matches="Promotional spam is not a customer conversation.",
+    )
+
+    normalized = VerifierService._normalize_tiered_decision(spam_result)
+
+    assert normalized.match is False
+    assert normalized.decision_label == "spam"
+    assert normalized.intent_tier == "not_a_match"
+
+
+def test_legacy_verifier_payloads_without_an_intent_tier_still_parse() -> None:
+    legacy_ready = VerificationResult.model_validate(
+        {
+            "match": True,
+            "decision_label": "strong_match",
+            "confidence": 0.60,
+            "pain_detected": "A concrete workflow problem.",
+            "why_this_matches": "Legacy strong match.",
+        }
+    )
+    assert legacy_ready.intent_tier is None
 
 
 def test_verifier_keeps_only_verbatim_source_evidence() -> None:

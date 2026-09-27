@@ -36,6 +36,29 @@ def test_initial_crawl_is_durably_accepted_before_browser_admission() -> None:
     assert response.message_id == "durable-job-1"
 
 
+def test_profile_rebuild_forces_the_current_recurring_schedule_to_run() -> None:
+    payload = main.CrawlTriggerRequest(
+        tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
+        website_url="https://example.com/",
+        force_profile_rebuild=True,
+    )
+    with (
+        patch.object(main, "_validate_internal_tenant_scope"),
+        patch("api.services.crawling._database_engine", return_value=object()),
+        patch(
+            "api.services.website_recrawl.queue_initial_website_crawl",
+            return_value=website_recrawl.InitialCrawlSubmission(
+                job_id="profile-rebuild-job",
+                deduplicated=False,
+            ),
+        ) as queue,
+    ):
+        response = main.trigger_crawl(payload, None, "profile-rebuild-key")
+
+    assert response.job_id == "profile-rebuild-job"
+    assert queue.call_args.kwargs["force_profile_rebuild"] is True
+
+
 class _NoRecentCrawlConnection:
     def __init__(self):
         self.calls: list[object] = []

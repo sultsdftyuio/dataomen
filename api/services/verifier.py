@@ -29,6 +29,7 @@ from api.services.social.comparison import truncate_comparison_text
 logger = logging.getLogger(__name__)
 
 DecisionLabel = Literal["strong_match", "weak_match", "spam", "not_a_match"]
+IntentTier = Literal["high", "warm", "exploratory", "not_a_match"]
 UrgencyLevel = Literal["none", "low", "medium", "high"]
 PurchaseStage = Literal[
     "problem_aware",
@@ -51,10 +52,10 @@ VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 # Persist this alongside a verdict. Bump it only when verifier instructions
 # materially change lead eligibility, so cached decisions cannot survive a
 # policy change while preserving normal tenant-scoped cache reuse.
-# v9 widens the review-only opportunity lane. It keeps the high-confidence
-# threshold for strong signals, but lets a match at the 0.20 relevance floor
-# remain visible for human judgment instead of treating it as a rejection.
-VERIFIER_POLICY_VERSION = "buyer_outcome_v9_broader_review_opportunities"
+# v10 adds explicit discovery intent tiers. It keeps the review-safe
+# strong-signal threshold while surfacing warm and exploratory conversations
+# as distinguishable human-review candidates.
+VERIFIER_POLICY_VERSION = "buyer_outcome_v10_tiered_discovery_intent"
 DEFAULT_VERIFIER_MAX_POST_CHARS = 12_000
 DEFAULT_VERIFIER_MAX_PROFILE_FIELD_CHARS = 750
 DEFAULT_VERIFIER_MAX_PROFILE_LIST_ITEMS = 12
@@ -119,6 +120,10 @@ class VerificationResult(BaseModel):
 
     match: bool
     decision_label: DecisionLabel
+    # ``None`` is reserved for verdicts cached before tiered intent was
+    # introduced. The lifecycle mapper retains its legacy decision-label
+    # behavior for those payloads.
+    intent_tier: IntentTier | None = Field(default=None)
     confidence: float = Field(ge=0.0, le=1.0)
     pain_detected: str
     why_this_matches: str
@@ -172,38 +177,56 @@ def _log_retry(retry_state: RetryCallState) -> None:
 
 class VerifierService(OpenAIClientOwner):
     SYSTEM_PROMPT = (
+        "Arcli is a public-conversation discovery product, not a procurement "
+        "gatekeeper. The tier rules below are authoritative when they conflict "
+        "with narrower eligibility language elsewhere in this prompt. Classify "
+        "every post into exactly one tier: `high`, `warm`, `exploratory`, or "
+        "`not_a_match`. `high` is a direct request for recommendations, "
+        "alternatives, comparisons, ways to solve a relevant problem, or an "
+        "evaluation of a relevant workflow or tool; it must return `match: true` "
+        "and `strong_match`. `warm` is relevant frustration, repeated manual "
+        "work, workflow failure, inefficiency, dissatisfaction, or a clear "
+        "problem this service could help solve; it must return `match: true` and "
+        "`weak_match`. `exploratory` is a relevant category, adjacent workflow, "
+        "target-role, practice, trade-off, or underlying-problem discussion useful "
+        "for thoughtful engagement, market research, or future outreach; it must "
+        "return `match: true` and `weak_match`. "
+        "Use `not_a_match` only for clear noise or clear irrelevance: job or "
+        "hiring posts, portfolio/freelance requests, spam, promotional PR, "
+        "unrelated news, or pure technical debugging with no meaningful connection "
+        "to the service problem. Do not require purchase intent, budget, company "
+        "details, authority, urgency, a named competitor, exact keywords, or vendor "
+        "vocabulary. A question about a method can be high intent without mentioning "
+        "software. Retain vague but plausibly relevant posts as exploratory; relevant "
+        "category discussion is normally exploratory rather than a rejection. "
         "Evaluate the candidate post against the Service Profile. Treat target "
         "audience, problem solved, pain points, buying triggers, urgency signals, "
-        "search_terms, named competitors, negative keywords, and excluded audiences as weighted "
-        "relevance signals, not a checklist or hard requirements. Similar words or "
-        "a product category alone are not evidence. A strong signal must show a clear, "
-        "real buyer problem that the service could plausibly solve. Return "
-        "`strong_match` only for that direct evidence: a specific request, urgency, "
-        "evaluation, tool/category search, switching signal, or concrete problem. "
-        "A relevant opportunity can be an earlier but still credible buyer signal: a relevant "
-        "question, investigation, workflow frustration, failed outcome, or request from "
-        "a person or team that the service could plausibly help. Return `match: true` and "
-        "`weak_match` for a relevant opportunity, even if the writer is not an exact target "
-        "persona, does not mention every profile field, or does not explicitly say they "
-        "are shopping for a solution. Do not require the writer to use the vendor's product-category, "
-        "internal workflow, or operator terminology when they clearly describe the "
-        "real outcome the service solves. For example, when a service helps a B2B "
-        "software team find customers, an in-context team explicitly needing more "
-        "signups or customers, asking how to reach customers, or struggling with "
-        "manual outreach can be a match even without words such as prospect, lead, "
-        "account matching, or buyer intent. Calibrate confidence so 0.20-0.54 represents a plausible "
-        "relevant opportunity and 0.55+ represents a clear strong signal ready for human review. "
+        "search_terms, named competitors, negative keywords, and excluded audiences as "
+        "weighted relevance signals, not a checklist or hard requirements. Similar words "
+        "or a product category alone do not establish relevance, but one plausible connection "
+        "to a problem the service can help solve is enough to retain a warm or exploratory "
+        "signal. Return `strong_match` only for the `high` tier. Return `weak_match` for "
+        "warm and exploratory signals, even if the writer is not an exact target persona, "
+        "does not mention every profile field, or does not explicitly say they are shopping "
+        "for a solution. Do not require the writer to use the vendor's product category, "
+        "internal workflow, or operator terminology when they describe an outcome the "
+        "service plausibly improves. For example, when a service helps a B2B software "
+        "team find customers, a team asking how to reach customers or struggling with manual "
+        "outreach can be relevant without words such as prospect, lead, account matching, "
+        "or buyer intent. Calibrate confidence as a relevance ranking: high intent is "
+        "normally 0.55+; warm and exploratory signals may be 0.20+ when the connection is plausible. "
         "Confidence is a relative relevance ranking, not a prediction that the author will buy. "
         "Treat a complaint about an existing tool, an architecture or best-practice "
         "question, and frustration with a manual workflow as potentially commercial "
         "signals when they describe an outcome this service can plausibly improve. "
-        "Reject only no plausible fit, clear conflicting audiences or use cases, spam, "
-        "job postings, announcements, generic publisher content, or generic advice "
-        "with no buyer situation. Negative keywords and excluded audiences are context "
-        "for clear bad-fit content, not a reason to reject a post merely because it "
-        "contains one of those words. You must return "
+        "Reject only clear irrelevance, clear conflicting audiences or use cases, spam, "
+        "job postings, portfolio or freelance requests, promotional PR, unrelated news, "
+        "or generic technical debugging with no connection to the problem space. Negative "
+        "keywords and excluded audiences are context for clear bad-fit content, not a "
+        "reason to reject a post merely because it contains one of those words. You must return "
         "ONLY a JSON object with: `match` (boolean), `decision_label` (string: "
         "strong_match, weak_match, spam, not_a_match), `confidence` (float), "
+        "`intent_tier` (high, warm, exploratory, or not_a_match), "
         "`pain_detected` (string), `why_this_matches` (string), "
         "`suggested_reply` (string), `pain_theme` (string), `signal_type` "
         "(buyer_pain, urgent_failure, recommendation_request, "
@@ -218,8 +241,8 @@ class VerifierService(OpenAIClientOwner):
         "post, or an empty string when no explicit evidence exists. Only set "
         "`competitor_mention` when the writer directly names a tool or vendor; do not "
         "infer a competitor from a category. Purchase stage is a cautious reading of "
-        "the conversation, not proof of a purchase. For rejected posts, make "
-        "`rejection_reason` explicit and concise and return an empty "
+        "the conversation, not proof of a purchase. For rejected posts, set "
+        "`intent_tier` to `not_a_match`, make `rejection_reason` explicit and concise, and return an empty "
         "`suggested_reply`, empty `pain_theme`, null `signal_type`, `none` urgency, "
         "empty competitor context, null purchase stage, and empty evidence fields. "
         "For a match, write a concise, genuinely useful public reply. Start by "
@@ -375,6 +398,7 @@ class VerifierService(OpenAIClientOwner):
                 exc,
             )
             raise
+        result = self._normalize_tiered_decision(result)
         if not result.match and not result.rejection_reason:
             result = result.model_copy(
                 update={"rejection_reason": f"llm_{result.decision_label}"}
@@ -383,10 +407,11 @@ class VerifierService(OpenAIClientOwner):
         result = self._sanitize_source_evidence(result, candidate_post.text)
 
         logger.info(
-            "candidate_verified tenant_id=%s service_profile_id=%s source_post_id=%s decision_label=%s match=%s confidence=%.3f similarity_score=%.3f rejection_reason=%s verifier_executed=%s",
+            "candidate_verified tenant_id=%s service_profile_id=%s source_post_id=%s intent_tier=%s decision_label=%s match=%s confidence=%.3f similarity_score=%.3f rejection_reason=%s verifier_executed=%s",
             resolved_tenant_id,
             resolved_service_profile_id,
             candidate_post.post_id,
+            result.intent_tier,
             result.decision_label,
             result.match,
             result.confidence,
@@ -395,6 +420,50 @@ class VerifierService(OpenAIClientOwner):
             result.verifier_executed,
         )
         return result
+
+    @staticmethod
+    def _normalize_tiered_decision(result: VerificationResult) -> VerificationResult:
+        """Make the declared tier the source of truth for new verifier verdicts.
+
+        Structured output can occasionally contain a contradictory boolean or
+        legacy decision label. The prompt requires one tier, and downstream
+        lifecycle routing relies on its meaning, so normalizing the coupled
+        fields preserves a plausible discovery signal instead of silently
+        dropping it. Verdicts without a tier are historical cache entries and
+        intentionally retain their legacy behavior.
+        """
+
+        expected_by_tier: dict[str, tuple[bool, DecisionLabel]] = {
+            "high": (True, "strong_match"),
+            "warm": (True, "weak_match"),
+            "exploratory": (True, "weak_match"),
+        }
+        expected = expected_by_tier.get(result.intent_tier or "")
+        if result.intent_tier == "not_a_match":
+            # `spam` remains a useful legacy rejection reason. It belongs to
+            # the same non-match tier, so do not collapse it into the more
+            # general `not_a_match` label during normalization.
+            expected = (
+                False,
+                result.decision_label
+                if result.decision_label in {"spam", "not_a_match"}
+                else "not_a_match",
+            )
+        if expected is None or (result.match, result.decision_label) == expected:
+            return result
+
+        expected_match, expected_label = expected
+        logger.warning(
+            "verifier_tier_decision_normalized intent_tier=%s supplied_match=%s supplied_decision_label=%s normalized_match=%s normalized_decision_label=%s",
+            result.intent_tier,
+            result.match,
+            result.decision_label,
+            expected_match,
+            expected_label,
+        )
+        return result.model_copy(
+            update={"match": expected_match, "decision_label": expected_label}
+        )
 
     @staticmethod
     def _normalize_evidence(value: str) -> str:
@@ -563,8 +632,19 @@ class VerifierService(OpenAIClientOwner):
         profile_payload = self._bounded_profile_payload(service_profile)
         candidate_payload = self._bounded_candidate_payload(candidate_post)
         return (
-            "Use a practical lead-quality standard. The similarity score is "
+            "Use a discovery-oriented tiered-intent standard. The similarity score is "
             "only a cheap prefilter and must not be treated as proof of fit.\n\n"
+            "Classify direct requests for recommendations, alternatives, comparisons, "
+            "methods, or relevant workflow/tool evaluation as `high`. Classify relevant "
+            "frustration, manual work, workflow failure, inefficiency, or dissatisfaction "
+            "as `warm`. Classify relevant category and adjacent-workflow discussion as "
+            "`exploratory`, including vague posts with a plausible connection to the "
+            "matching brief. Keep warm and exploratory candidates as matches for human "
+            "review; do not require explicit purchase intent, company details, budget, "
+            "authority, urgency, competitor names, or exact keyword overlap. Reserve "
+            "`not_a_match` for clear irrelevance or noise such as job/hiring and freelance "
+            "posts, spam, promotional PR, unrelated news, or pure technical debugging "
+            "without a meaningful connection to the buyer problem.\n\n"
             "Read the matching brief's buyer-language fields before judging the "
             "candidate. In particular, search_terms describe the buyer's desired "
             "outcome, not required vendor vocabulary. Treat target audience, problem "

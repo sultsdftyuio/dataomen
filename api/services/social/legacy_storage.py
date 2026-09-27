@@ -374,22 +374,48 @@ def _lead_match_status(verification: Any) -> str:
     is_match = bool(getattr(verification, "match", False))
     verifier_executed = bool(getattr(verification, "verifier_executed", False))
     decision_label = str(getattr(verification, "decision_label", ""))
+    intent_tier = str(getattr(verification, "intent_tier", "") or "")
     if not verifier_executed or not is_match:
         return "rejected"
     threshold = env_float(
         "LEAD_VERIFIER_SCORE_THRESHOLD",
         DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
     )
-    # Strong signals need both the configured confidence and direct evidence
-    # of a real buyer problem. Broader opportunities stay in their own
-    # review-only lane, even if the model gave an unusually high numeric score.
-    # The score ranks relevance; it is not a conversion prediction.
-    if decision_label == "strong_match" and verifier_score >= threshold:
+    # High-intent direct requests need the configured confidence before they
+    # enter the actionable lane. Warm and exploratory conversations stay in
+    # their own review-only lane, even if the model gave an unusually high
+    # numeric score. The score ranks relevance; it is not a conversion
+    # prediction. Legacy cached verdicts have no explicit tier and retain this
+    # label fallback.
+    if (
+        not intent_tier
+        and decision_label == "strong_match"
+        and verifier_score >= threshold
+    ):
         return "ready_for_review"
     discovery_threshold = env_float(
         "LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD",
         DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD,
     )
+    if intent_tier == "high":
+        if decision_label != "strong_match":
+            return "rejected"
+        if verifier_score >= threshold:
+            return "ready_for_review"
+        return (
+            "discovery_candidate"
+            if verifier_score >= discovery_threshold
+            else "rejected"
+        )
+    if intent_tier in {"warm", "exploratory"}:
+        return (
+            "discovery_candidate"
+            if decision_label in {"strong_match", "weak_match"}
+            and verifier_score >= discovery_threshold
+            else "rejected"
+        )
+    if intent_tier:
+        return "rejected"
     if decision_label in {"strong_match", "weak_match"} and verifier_score >= discovery_threshold:
         return "discovery_candidate"
     return "rejected"

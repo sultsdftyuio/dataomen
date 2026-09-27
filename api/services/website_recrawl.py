@@ -394,12 +394,15 @@ def queue_initial_website_crawl(
     *,
     tenant_id: str,
     website_url: str,
+    force_profile_rebuild: bool = False,
 ) -> InitialCrawlSubmission | None:
-    """Durably accept a first crawl without occupying a browser queue slot.
+    """Durably accept an initial or user-requested profile rebuild crawl.
 
     The request is idempotent for one tenant and URL. A later scheduler tick
     performs ordinary queue admission, which lets a 200-user onboarding burst
-    drain safely instead of returning a capacity error to 194 users.
+    drain safely instead of returning a capacity error to 194 users. A forced
+    rebuild resets the current recurring schedule to run now; successful crawl
+    completion restores the plan-aware recurring schedule.
     """
     job_id = _crawl_job_id(tenant_id, website_url)
     try:
@@ -425,7 +428,11 @@ def queue_initial_website_crawl(
                 ),
                 {"tenant_id": tenant_id, "website_url": website_url},
             ).mappings().first()
-            if existing and str(existing["crawl_kind"]) == RECURRING_CRAWL_KIND:
+            if (
+                existing
+                and str(existing["crawl_kind"]) == RECURRING_CRAWL_KIND
+                and not force_profile_rebuild
+            ):
                 return InitialCrawlSubmission(job_id=job_id, deduplicated=True)
 
             # A new website supersedes any still-pending site for this tenant.
@@ -499,10 +506,11 @@ def queue_initial_website_crawl(
         return None
 
     logger.info(
-        "website_initial_crawl_queued tenant_id=%s website_url=%s crawl_job_id=%s",
+        "website_initial_crawl_queued tenant_id=%s website_url=%s crawl_job_id=%s force_profile_rebuild=%s",
         tenant_id,
         website_url,
         job_id,
+        force_profile_rebuild,
     )
     return InitialCrawlSubmission(job_id=job_id, deduplicated=False)
 

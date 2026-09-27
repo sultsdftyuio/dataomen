@@ -20,6 +20,38 @@ class _NoopEngine:
         return _NoopTransaction()
 
 
+class _RecurringScheduleConnection:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def execute(self, statement, *_args, **_kwargs):
+        self.statements.append(str(statement))
+        return self
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return {"crawl_kind": website_recrawl.RECURRING_CRAWL_KIND, "status": "active"}
+
+
+class _RecurringScheduleEngine:
+    def __init__(self, connection: _RecurringScheduleConnection) -> None:
+        self.connection = connection
+
+    def begin(self):
+        connection = self.connection
+
+        class _Transaction:
+            def __enter__(self):
+                return connection
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+        return _Transaction()
+
+
 def test_recrawl_interval_is_never_less_than_24_or_more_than_48_hours(
     monkeypatch,
 ) -> None:
@@ -44,6 +76,23 @@ def test_recrawl_interval_defaults_to_the_full_24_to_48_hour_window(
     assert limits.max_interval_seconds == 172_800
     assert limits.tick_seconds == 300
     assert limits.reserved_pro_dispatches_per_day == 50
+
+
+def test_manual_profile_rebuild_resets_an_active_recurring_schedule() -> None:
+    connection = _RecurringScheduleConnection()
+    engine = _RecurringScheduleEngine(connection)
+
+    with patch.object(website_recrawl, "_scheduler_tables_available", return_value=True):
+        result = website_recrawl.queue_initial_website_crawl(
+            engine,
+            tenant_id="tenant-1",
+            website_url="https://example.com/",
+            force_profile_rebuild=True,
+        )
+
+    assert result is not None
+    assert result.deduplicated is False
+    assert any("ON CONFLICT (tenant_id, website_url) DO UPDATE" in statement for statement in connection.statements)
 
 
 def test_due_recrawl_uses_the_existing_admission_and_enqueue_path() -> None:
