@@ -398,6 +398,12 @@ class VerifierService(OpenAIClientOwner):
                 exc,
             )
             raise
+        # This is execution provenance, not a classification decision. The
+        # structured LLM payload can contain its defaulted value, but a
+        # successful provider call above is definitive proof that verification
+        # ran. Without this override, an arbitrary `false` causes the matching
+        # pipeline to defer (and not persist) an otherwise valid lead.
+        result = result.model_copy(update={"verifier_executed": True})
         result = self._normalize_tiered_decision(result)
         if not result.match and not result.rejection_reason:
             result = result.model_copy(

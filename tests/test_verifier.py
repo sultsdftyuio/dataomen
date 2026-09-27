@@ -11,6 +11,7 @@ from api.services.verifier import (
     VerificationResult,
     VerifierService,
 )
+from api.services.social.legacy_storage import _lead_match_status
 
 
 def test_verifier_uses_the_matching_threshold_when_no_override_is_configured() -> None:
@@ -53,6 +54,45 @@ def test_verifier_uses_the_matching_threshold_when_no_override_is_configured() -
 
     assert result.verifier_executed is True
     verify.assert_called_once()
+
+
+def test_successful_llm_verification_cannot_be_marked_unexecuted_by_its_payload() -> None:
+    class AllowedQuotaGuard:
+        def check_and_increment(self, **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(allowed=True, tenant_id="tenant-a")
+
+    profile = ServiceProfile(
+        company_name="Workflow Co",
+        one_liner="Reduce manual operations work.",
+        target_audience=["Operations teams"],
+        core_problem_solved="Repeated manual work.",
+        key_value_propositions=["Automated workflows"],
+        ideal_customer_pain_points=["Slow handoffs"],
+    )
+    candidate = CandidatePost(
+        post_id="post-2",
+        source="hackernews",
+        text="We still copy this data between three systems every day.",
+        similarity_score=0.5,
+    )
+    verifier = VerifierService(client=object(), quota_guard=AllowedQuotaGuard())
+    llm_result = VerificationResult(
+        match=True,
+        decision_label="weak_match",
+        intent_tier="exploratory",
+        confidence=0.28,
+        pain_detected="Repeated manual work.",
+        why_this_matches="The workflow is plausibly relevant.",
+        verifier_executed=False,
+    )
+
+    with patch.object(verifier, "_verify_with_openai", return_value=llm_result):
+        result = verifier.verify(candidate, profile, tenant_id="tenant-a")
+
+    assert result.verifier_executed is True
+    assert result.intent_tier == "exploratory"
+    assert result.match is True
+    assert _lead_match_status(result) == "discovery_candidate"
 
 
 def test_verifier_prompt_uses_the_discovery_oriented_tiered_intent_standard() -> None:
