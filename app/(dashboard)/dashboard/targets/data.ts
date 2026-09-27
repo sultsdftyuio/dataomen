@@ -27,7 +27,7 @@ import type {
 type DbRecord = Record<string, unknown>;
 
 type ReadQuery = {
-  eq: (column: string, value: string) => ReadQuery;
+  eq: (column: string, value: string | number) => ReadQuery;
   in: (column: string, values: string[]) => ReadQuery;
   order: (column: string, options: { ascending: boolean }) => ReadQuery;
   limit: (count: number) => ReadQuery;
@@ -173,7 +173,7 @@ export async function fetchTargetingBrief(
     const result = await client
       .from("targeting_profiles")
       .select(
-        "id,tenant_id,service_profile_id,target_types,ideal_customer_traits,change_triggers,strong_evidence_definitions,exclusions,seed_urls,updated_at",
+        "id,tenant_id,service_profile_id,profile_version,target_types,ideal_customer_traits,change_triggers,strong_evidence_definitions,exclusions,seed_urls,updated_at",
       )
       .eq("tenant_id", tenantId)
       .eq("service_profile_id", serviceProfileId)
@@ -190,7 +190,9 @@ export async function fetchTargetingBrief(
     if (
       !row ||
       stringValue(row.tenant_id) !== tenantId ||
-      stringValue(row.service_profile_id) !== serviceProfileId
+      stringValue(row.service_profile_id) !== serviceProfileId ||
+      !Number.isSafeInteger(assessmentScore(row.profile_version, 1_000_000)) ||
+      assessmentScore(row.profile_version, 1_000_000) === 0
     ) {
       return emptyTargetingBriefView();
     }
@@ -205,6 +207,7 @@ export async function fetchTargetingBrief(
     });
     return {
       id: stringValue(row.id),
+      profileVersion: assessmentScore(row.profile_version, 1_000_000),
       hasBrief: true,
       updatedAt: stringValue(row.updated_at),
       ...fields,
@@ -219,9 +222,21 @@ type AssessmentRow = {
   assessmentId: string;
   prospectEntityId: string;
   state: TargetAssessmentState;
+  fitScore: number | null;
+  triggerScore: number | null;
+  priorityScore: number;
   reasons: string[];
   assessedAt: string | null;
 };
+
+function assessmentScore(value: unknown, maximum: number): number | null {
+  const text = typeof value === "number" ? null : stringValue(value);
+  if (typeof value !== "number" && text === null) return null;
+  const numeric = typeof value === "number" ? value : Number(text);
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= maximum
+    ? numeric
+    : null;
+}
 
 function assessmentFromRow(value: unknown): AssessmentRow | null {
   const row = asRecord(value);
@@ -237,10 +252,16 @@ function assessmentFromRow(value: unknown): AssessmentRow | null {
     return null;
   }
 
+  const priorityScore = assessmentScore(row?.priority_score, 100);
+  if (priorityScore === null) return null;
+
   return {
     assessmentId,
     prospectEntityId,
     state: state as TargetAssessmentState,
+    fitScore: assessmentScore(row?.fit_score, 1),
+    triggerScore: assessmentScore(row?.trigger_score, 1),
+    priorityScore,
     reasons: stringList(row?.reason_codes),
     assessedAt: stringValue(row?.last_assessed_at) ?? stringValue(row?.updated_at),
   };
@@ -370,6 +391,7 @@ function entityResearchRunFromRow(
   value: unknown,
   tenantId: string,
   targetingProfileId: string,
+  targetingProfileVersion: number,
 ): EntityResearchRunView | null {
   const row = asRecord(value);
   const runKind = stringValue(row?.run_kind);
@@ -377,6 +399,8 @@ function entityResearchRunFromRow(
   if (
     stringValue(row?.tenant_id) !== tenantId ||
     stringValue(row?.targeting_profile_id) !== targetingProfileId ||
+    assessmentScore(row?.targeting_profile_version, 1_000_000) !==
+      targetingProfileVersion ||
     !runKind ||
     !status ||
     !ENTITY_RESEARCH_RUN_KINDS.has(runKind as EntityResearchRunKind) ||
@@ -500,16 +524,31 @@ export async function fetchEntityResearchRunStatuses(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   targetingProfileId: string | null,
+  targetingProfileVersion: number | null,
 ): Promise<Partial<Record<EntityResearchRunKind, EntityResearchRunView>>> {
-  if (!targetingProfileId) return {};
+  const activeProfileVersion =
+    typeof targetingProfileVersion === "number" &&
+    Number.isSafeInteger(targetingProfileVersion) &&
+    targetingProfileVersion >= 1
+      ? targetingProfileVersion
+      : null;
+  if (
+    !targetingProfileId ||
+    activeProfileVersion === null
+  ) {
+    return {};
+  }
 
   const client = supabase as unknown as TargetingReadClient;
   try {
     const request = client
       .from("prospect_research_runs")
-      .select("tenant_id,targeting_profile_id,run_kind,status,created_at,started_at,completed_at")
+      .select(
+        "tenant_id,targeting_profile_id,targeting_profile_version,run_kind,status,created_at,started_at,completed_at",
+      )
       .eq("tenant_id", tenantId)
       .eq("targeting_profile_id", targetingProfileId)
+      .eq("targeting_profile_version", activeProfileVersion)
       .in("run_kind", [...ENTITY_RESEARCH_RUN_KINDS])
       .order("created_at", { ascending: false })
       .limit(12);
@@ -525,7 +564,12 @@ export async function fetchEntityResearchRunStatuses(
 
     const newest: Partial<Record<EntityResearchRunKind, EntityResearchRunView>> = {};
     for (const value of result.data ?? []) {
-      const run = entityResearchRunFromRow(value, tenantId, targetingProfileId);
+      const run = entityResearchRunFromRow(
+        value,
+        tenantId,
+        targetingProfileId,
+        activeProfileVersion,
+      );
       // The database query is newest-first. Keep the first safely parsed row
       // for each action rather than exposing a historical run as current.
       if (run && !newest[run.kind]) newest[run.kind] = run;
@@ -547,24 +591,29 @@ export async function fetchProspectTargets(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   targetingProfileId: string | null,
+  targetingProfileVersion: number | null,
 ): Promise<ProspectTargetView[]> {
-  if (!targetingProfileId) return [];
+  if (
+    !targetingProfileId ||
+    typeof targetingProfileVersion !== "number" ||
+    !Number.isSafeInteger(targetingProfileVersion) ||
+    targetingProfileVersion < 1
+  ) {
+    return [];
+  }
 
   const client = supabase as unknown as TargetingReadClient;
   try {
-    const assessmentRequest = client
-      .from("prospect_assessments")
-      .select(
-        "id,tenant_id,prospect_entity_id,assessment_state,reason_codes,last_assessed_at,updated_at",
-      )
-      .eq("tenant_id", tenantId)
-      .eq("targeting_profile_id", targetingProfileId)
-      .order("last_assessed_at", { ascending: false })
-      .limit(100);
-    const assessmentResult = await (assessmentRequest as unknown as Promise<{
+    const assessmentResult = await client.rpc(
+      "list_current_prospect_assessments_for_profile",
+      {
+        target_profile_id: targetingProfileId,
+        expected_profile_version: targetingProfileVersion,
+      },
+    ) as {
       data: unknown[] | null;
       error: unknown;
-    }>);
+    };
 
     if (assessmentResult.error) {
       logOptionalTargetingFailure("target assessment lookup", assessmentResult.error);
@@ -576,8 +625,8 @@ export async function fetchProspectTargets(
       .filter((assessment): assessment is AssessmentRow => assessment !== null);
     const assessmentByEntityId = new Map<string, AssessmentRow>();
     for (const assessment of assessments) {
-      // The query is newest-first. Preserve the first assessment instead of
-      // allowing an older row to overwrite a newer current assessment.
+      // The RPC returns one active-revision row per entity. Keep the first
+      // defensively if a partial/invalid projection ever contains duplicates.
       if (!assessmentByEntityId.has(assessment.prospectEntityId)) {
         assessmentByEntityId.set(assessment.prospectEntityId, assessment);
       }
@@ -661,6 +710,9 @@ export async function fetchProspectTargets(
         subtitle: title && canonicalUrl ? canonicalUrl : null,
         canonicalUrl,
         assessmentState: assessment.state,
+        fitScore: assessment.fitScore,
+        triggerScore: assessment.triggerScore,
+        priorityScore: assessment.priorityScore,
         assessmentReasons: assessment.reasons,
         assessedAt: assessment.assessedAt,
         evidence: evidenceByEntityId.get(id) ?? [],

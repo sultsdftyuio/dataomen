@@ -19,6 +19,8 @@ export type TargetingBriefInput = {
 
 export type TargetingBriefView = TargetingBriefInput & {
   id: string | null;
+  /** The approved policy revision that target/evidence rows must match. */
+  profileVersion: number | null;
   hasBrief: boolean;
   updatedAt: string | null;
 };
@@ -203,6 +205,7 @@ export function normalizeTargetingBriefInput(
 export function emptyTargetingBriefView(): TargetingBriefView {
   return {
     id: null,
+    profileVersion: null,
     hasBrief: false,
     updatedAt: null,
     ...EMPTY_TARGETING_BRIEF_INPUT,

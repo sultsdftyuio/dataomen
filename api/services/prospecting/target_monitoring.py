@@ -91,6 +91,7 @@ class DueTargetMonitor:
     service_profile_id: str
     prospect_entity_id: str
     scheduled_for: datetime
+    targeting_profile_version: int
 
     def __post_init__(self) -> None:
         for field_name in ("monitor_id", "service_profile_id", "prospect_entity_id"):
@@ -102,6 +103,12 @@ class DueTargetMonitor:
         if not isinstance(self.tenant_id, str) or not self.tenant_id.strip():
             raise ValueError("tenant_id is required")
         object.__setattr__(self, "tenant_id", self.tenant_id.strip())
+        if (
+            isinstance(self.targeting_profile_version, bool)
+            or not isinstance(self.targeting_profile_version, int)
+            or not 1 <= self.targeting_profile_version <= 1_000_000
+        ):
+            raise ValueError("targeting_profile_version is invalid")
         if (
             not isinstance(self.scheduled_for, datetime)
             or self.scheduled_for.tzinfo is None
@@ -414,6 +421,10 @@ def _claim_due_target_monitors(
                               ON assessment.tenant_id = monitor.tenant_id
                              AND assessment.targeting_profile_id = monitor.targeting_profile_id
                              AND assessment.prospect_entity_id = monitor.prospect_entity_id
+                      INNER JOIN public.targeting_profiles AS profile
+                              ON profile.id = assessment.targeting_profile_id
+                             AND profile.tenant_id = assessment.tenant_id
+                             AND profile.profile_version = assessment.targeting_profile_version
                      WHERE monitor.status = 'active'
                        AND monitor.next_refresh_at <= NOW()
                        AND (
@@ -442,11 +453,17 @@ def _claim_due_target_monitors(
                        claimed.tenant_id,
                        profile.service_profile_id,
                        claimed.prospect_entity_id,
-                       claimed.next_refresh_at
+                       claimed.next_refresh_at,
+                       profile.profile_version AS targeting_profile_version
                   FROM claimed
                   INNER JOIN public.targeting_profiles AS profile
                           ON profile.id = claimed.targeting_profile_id
                          AND profile.tenant_id = claimed.tenant_id
+                  INNER JOIN public.prospect_assessments AS assessment
+                          ON assessment.tenant_id = claimed.tenant_id
+                         AND assessment.targeting_profile_id = claimed.targeting_profile_id
+                         AND assessment.prospect_entity_id = claimed.prospect_entity_id
+                         AND assessment.targeting_profile_version = profile.profile_version
                  ORDER BY claimed.next_refresh_at ASC, claimed.id ASC
                 """
             ),
@@ -465,6 +482,7 @@ def _claim_due_target_monitors(
                         service_profile_id=row.get("service_profile_id"),
                         prospect_entity_id=row.get("prospect_entity_id"),
                         scheduled_for=row.get("next_refresh_at"),
+                        targeting_profile_version=row.get("targeting_profile_version"),
                     )
                 )
             except (AttributeError, TypeError, ValueError):
@@ -653,6 +671,7 @@ def dispatch_due_target_monitor_refreshes(
                     prospect_entity_ids=(claim.prospect_entity_id,),
                     request_nonce=_monitor_nonce(claim),
                     quota_scope="monitoring",
+                    expected_profile_version=claim.targeting_profile_version,
                 ),
                 engine=resolved_engine,
             )

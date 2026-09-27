@@ -1,13 +1,14 @@
 "use client";
 
 import { BriefcaseBusiness, Check, Loader2, Send } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 import type {
   ProspectActionResult,
+  TargetAssessmentState,
   TargetEvidenceView,
   TargetOpportunityCreateAction,
   TargetOpportunityQualifyAction,
@@ -48,12 +49,14 @@ function opportunityLabel(status: TargetOpportunityStatus["status"]): string {
  */
 export function TargetOpportunityControls({
   assessmentId,
+  assessmentState,
   evidence,
   opportunity,
   onCreate,
   onQualify,
 }: {
   assessmentId: string;
+  assessmentState: TargetAssessmentState;
   evidence: readonly TargetEvidenceView[];
   opportunity: TargetOpportunityStatus | null | undefined;
   onCreate: TargetOpportunityCreateAction | null | undefined;
@@ -67,6 +70,11 @@ export function TargetOpportunityControls({
   const [notice, setNotice] = useState<ProspectActionResult | null>(null);
   const [pendingAction, setPendingAction] = useState<"create" | "qualify" | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (availableEvidence.some((item) => item.id === selectedEvidenceId)) return;
+    setSelectedEvidenceId(availableEvidence[0]?.id ?? "");
+  }, [availableEvidence, selectedEvidenceId]);
 
   const create = () => {
     if (!onCreate || !selectedEvidenceId) return;
@@ -108,7 +116,11 @@ export function TargetOpportunityControls({
     });
   };
 
-  const canCreate = !opportunity && Boolean(onCreate) && availableEvidence.length > 0;
+  const canCreate =
+    assessmentState !== "rejected" &&
+    !opportunity &&
+    Boolean(onCreate) &&
+    availableEvidence.length > 0;
   const canQualify = opportunity?.status === "ready_for_review" && Boolean(onQualify);
 
   return (
@@ -134,7 +146,11 @@ export function TargetOpportunityControls({
       </div>
 
       {!opportunity ? (
-        availableEvidence.length > 0 ? (
+        assessmentState === "rejected" ? (
+          <p className="mt-3 text-[11px] leading-4" style={{ color: C.muted }}>
+            This target was rejected, so it cannot be promoted or exported.
+          </p>
+        ) : availableEvidence.length > 0 ? (
           <>
             <label className="mt-3 block text-[11px] font-medium" style={{ color: C.navySoft }}>
               Accepted cited evidence
@@ -223,4 +239,3 @@ export function TargetOpportunityControls({
     </section>
   );
 }
-

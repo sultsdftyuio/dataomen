@@ -149,6 +149,7 @@ DECLARE
     evidence_type TEXT;
     evidence_source_url TEXT;
     assessment_state TEXT;
+    assessment_targeting_profile_version INTEGER;
     target_profile_service_profile_id UUID;
 BEGIN
     IF TG_OP = 'UPDATE'
@@ -176,12 +177,12 @@ BEGIN
             USING ERRCODE = '23503';
     END IF;
 
-    SELECT assessment.assessment_state
-      INTO assessment_state
+    SELECT assessment.assessment_state, assessment.targeting_profile_version
+      INTO assessment_state, assessment_targeting_profile_version
       FROM public.prospect_assessments AS assessment
      WHERE assessment.tenant_id = NEW.tenant_id
-       AND assessment.id = NEW.prospect_assessment_id
-       AND assessment.targeting_profile_id = NEW.targeting_profile_id
+        AND assessment.id = NEW.prospect_assessment_id
+        AND assessment.targeting_profile_id = NEW.targeting_profile_id
        AND assessment.prospect_entity_id = NEW.prospect_entity_id;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'prospect opportunity assessment crosses tenant or target scope'
@@ -196,9 +197,10 @@ BEGIN
            evidence_source_url
       FROM public.prospect_evidence AS evidence
      WHERE evidence.tenant_id = NEW.tenant_id
-       AND evidence.id = NEW.prospect_evidence_id
-       AND evidence.targeting_profile_id = NEW.targeting_profile_id
-       AND evidence.prospect_entity_id = NEW.prospect_entity_id;
+        AND evidence.id = NEW.prospect_evidence_id
+        AND evidence.targeting_profile_id = NEW.targeting_profile_id
+        AND evidence.targeting_profile_version = assessment_targeting_profile_version
+        AND evidence.prospect_entity_id = NEW.prospect_entity_id;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'prospect opportunity evidence crosses tenant or target scope'
             USING ERRCODE = '23503';
@@ -248,10 +250,37 @@ BEGIN
            SET opportunity_status = 'invalidated',
                invalidated_at = NOW(),
                updated_at = NOW()
+          WHERE opportunity.tenant_id = NEW.tenant_id
+            AND opportunity.targeting_profile_id = NEW.targeting_profile_id
+            AND opportunity.prospect_assessment_id = NEW.id
+            AND opportunity.opportunity_status = 'ready_for_review';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- A brief revision changes the policy that made an opportunity actionable.
+-- Keep already-qualified rows as historical audit records, but invalidate
+-- pending handoffs so an old citation cannot linger as a current task.
+CREATE OR REPLACE FUNCTION public.invalidate_prospect_opportunities_after_targeting_profile_revision()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF NEW.profile_version IS DISTINCT FROM OLD.profile_version THEN
+        UPDATE public.prospect_opportunities AS opportunity
+           SET opportunity_status = 'invalidated',
+               invalidated_at = NOW(),
+               updated_at = NOW()
+          FROM public.prospect_assessments AS assessment
          WHERE opportunity.tenant_id = NEW.tenant_id
-           AND opportunity.targeting_profile_id = NEW.targeting_profile_id
-           AND opportunity.prospect_assessment_id = NEW.id
-           AND opportunity.opportunity_status <> 'invalidated';
+           AND opportunity.targeting_profile_id = NEW.id
+           AND opportunity.tenant_id = assessment.tenant_id
+           AND opportunity.prospect_assessment_id = assessment.id
+           AND assessment.targeting_profile_version <> NEW.profile_version
+           AND opportunity.opportunity_status = 'ready_for_review';
     END IF;
     RETURN NEW;
 END;
@@ -272,6 +301,12 @@ DROP TRIGGER IF EXISTS prospect_assessments_invalidate_opportunity_after_rejecti
 CREATE TRIGGER prospect_assessments_invalidate_opportunity_after_rejection
     AFTER UPDATE OF assessment_state ON public.prospect_assessments
     FOR EACH ROW EXECUTE FUNCTION public.invalidate_prospect_opportunity_after_assessment_rejection();
+
+DROP TRIGGER IF EXISTS targeting_profiles_invalidate_opportunities_after_revision
+    ON public.targeting_profiles;
+CREATE TRIGGER targeting_profiles_invalidate_opportunities_after_revision
+    AFTER UPDATE OF profile_version ON public.targeting_profiles
+    FOR EACH ROW EXECUTE FUNCTION public.invalidate_prospect_opportunities_after_targeting_profile_revision();
 
 ALTER TABLE public.prospect_opportunities ENABLE ROW LEVEL SECURITY;
 
@@ -334,11 +369,13 @@ BEGIN
       INNER JOIN public.targeting_profiles AS profile
               ON profile.tenant_id = assessment.tenant_id
              AND profile.id = assessment.targeting_profile_id
+             AND profile.profile_version = assessment.targeting_profile_version
       INNER JOIN public.prospect_evidence AS evidence
               ON evidence.tenant_id = assessment.tenant_id
-             AND evidence.id = target_evidence_id
-             AND evidence.targeting_profile_id = assessment.targeting_profile_id
-             AND evidence.prospect_entity_id = assessment.prospect_entity_id
+              AND evidence.id = target_evidence_id
+              AND evidence.targeting_profile_id = assessment.targeting_profile_id
+              AND evidence.targeting_profile_version = assessment.targeting_profile_version
+              AND evidence.prospect_entity_id = assessment.prospect_entity_id
       INNER JOIN public.tenant_users AS tenant_user
               ON tenant_user.tenant_id::TEXT = assessment.tenant_id::TEXT
              AND tenant_user.user_id::TEXT = auth.uid()::TEXT
@@ -404,6 +441,25 @@ BEGIN
     RETURNING * INTO saved_opportunity;
 
     IF FOUND THEN
+        -- Promotion is a human workflow outcome. Keep it tenant-scoped and
+        -- idempotent so later ranking calibration can distinguish reviewed
+        -- opportunities from targets that were only researched.
+        INSERT INTO public.prospect_feedback (
+            tenant_id,
+            prospect_assessment_id,
+            user_id,
+            feedback_type,
+            reason_code
+        ) VALUES (
+            resolved_tenant_id,
+            target_assessment_id,
+            auth.uid()::TEXT,
+            'promote_to_opportunity',
+            'accepted_cited_evidence'
+        )
+        ON CONFLICT (tenant_id, prospect_assessment_id, user_id, feedback_type)
+        DO NOTHING;
+
         opportunity_id = saved_opportunity.id;
         opportunity_status = saved_opportunity.opportunity_status;
         created = TRUE;
@@ -478,12 +534,31 @@ BEGIN
            opportunity.opportunity_status,
            opportunity.created_at,
            opportunity.qualified_at
-      FROM public.prospect_opportunities AS opportunity
-     WHERE opportunity.tenant_id = resolved_tenant_id
-       AND opportunity.targeting_profile_id = target_profile_id
-     -- The target desk is bounded by assessment recency. Keep this mapping in
-     -- the same window so an existing opportunity is never rendered as new.
-     ORDER BY assessment.last_assessed_at DESC, opportunity.id ASC
+       FROM public.prospect_opportunities AS opportunity
+      INNER JOIN public.prospect_assessments AS assessment
+              ON assessment.tenant_id = opportunity.tenant_id
+             AND assessment.id = opportunity.prospect_assessment_id
+      INNER JOIN public.targeting_profiles AS profile
+              ON profile.tenant_id = assessment.tenant_id
+             AND profile.id = assessment.targeting_profile_id
+             AND profile.profile_version = assessment.targeting_profile_version
+      WHERE opportunity.tenant_id = resolved_tenant_id
+        AND opportunity.targeting_profile_id = target_profile_id
+        AND assessment.targeting_profile_version = profile.profile_version
+     -- Match the desk's state-first bounded window so an existing opportunity
+     -- cannot be rendered as new merely because it falls below an unrelated
+     -- recency cutoff.
+     ORDER BY CASE assessment.assessment_state
+                  WHEN 'strong_buyer_signal' THEN 0
+                  WHEN 'signal_backed' THEN 1
+                  WHEN 'triggered' THEN 2
+                  WHEN 'high_fit' THEN 3
+                  WHEN 'rejected' THEN 4
+                  ELSE 5
+              END ASC,
+              assessment.priority_score DESC,
+              assessment.last_assessed_at DESC,
+              opportunity.id ASC
      LIMIT 100;
 END;
 $$;
@@ -525,16 +600,21 @@ BEGIN
     SELECT opportunity.*
       INTO saved_opportunity
       FROM public.prospect_opportunities AS opportunity
-      INNER JOIN public.prospect_assessments AS assessment
-              ON assessment.tenant_id = opportunity.tenant_id
-             AND assessment.id = opportunity.prospect_assessment_id
-             AND assessment.targeting_profile_id = opportunity.targeting_profile_id
-             AND assessment.prospect_entity_id = opportunity.prospect_entity_id
-      INNER JOIN public.prospect_evidence AS evidence
-              ON evidence.tenant_id = opportunity.tenant_id
-             AND evidence.id = opportunity.prospect_evidence_id
-             AND evidence.targeting_profile_id = opportunity.targeting_profile_id
-             AND evidence.prospect_entity_id = opportunity.prospect_entity_id
+       INNER JOIN public.prospect_assessments AS assessment
+               ON assessment.tenant_id = opportunity.tenant_id
+              AND assessment.id = opportunity.prospect_assessment_id
+              AND assessment.targeting_profile_id = opportunity.targeting_profile_id
+              AND assessment.prospect_entity_id = opportunity.prospect_entity_id
+       INNER JOIN public.targeting_profiles AS profile
+               ON profile.tenant_id = assessment.tenant_id
+              AND profile.id = assessment.targeting_profile_id
+              AND profile.profile_version = assessment.targeting_profile_version
+       INNER JOIN public.prospect_evidence AS evidence
+               ON evidence.tenant_id = opportunity.tenant_id
+               AND evidence.id = opportunity.prospect_evidence_id
+               AND evidence.targeting_profile_id = opportunity.targeting_profile_id
+              AND evidence.targeting_profile_version = assessment.targeting_profile_version
+               AND evidence.prospect_entity_id = opportunity.prospect_entity_id
       INNER JOIN public.tenant_users AS tenant_user
               ON tenant_user.tenant_id::TEXT = opportunity.tenant_id::TEXT
              AND tenant_user.user_id::TEXT = auth.uid()::TEXT
@@ -582,11 +662,12 @@ BEGIN
            current_evidence_source,
            current_evidence_summary
       FROM public.prospect_assessments AS assessment
-      INNER JOIN public.prospect_evidence AS evidence
-              ON evidence.tenant_id = assessment.tenant_id
-             AND evidence.id = saved_opportunity.prospect_evidence_id
-             AND evidence.targeting_profile_id = assessment.targeting_profile_id
-             AND evidence.prospect_entity_id = assessment.prospect_entity_id
+       INNER JOIN public.prospect_evidence AS evidence
+               ON evidence.tenant_id = assessment.tenant_id
+               AND evidence.id = saved_opportunity.prospect_evidence_id
+               AND evidence.targeting_profile_id = assessment.targeting_profile_id
+              AND evidence.targeting_profile_version = assessment.targeting_profile_version
+               AND evidence.prospect_entity_id = assessment.prospect_entity_id
      WHERE assessment.tenant_id = saved_opportunity.tenant_id
        AND assessment.id = saved_opportunity.prospect_assessment_id;
     IF NOT FOUND THEN
@@ -637,14 +718,178 @@ BEGIN
 END;
 $$;
 
+-- Keep the original qualification RPC stable for existing callers. The
+-- additive context variant exposes only the public entity the user explicitly
+-- qualified, making a CRM handoff actionable without adding contact or person
+-- data to the target system.
+CREATE OR REPLACE FUNCTION public.qualify_prospect_opportunity_with_target_context(
+    target_opportunity_id UUID
+)
+RETURNS TABLE (
+    opportunity_id UUID,
+    opportunity_status TEXT,
+    already_qualified BOOLEAN,
+    evidence_source TEXT,
+    evidence_source_url TEXT,
+    evidence_summary TEXT,
+    target_kind TEXT,
+    target_title TEXT,
+    target_url TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT qualification.opportunity_id,
+           qualification.opportunity_status,
+           qualification.already_qualified,
+           qualification.evidence_source,
+           qualification.evidence_source_url,
+           qualification.evidence_summary,
+           entity.entity_kind,
+           entity.title,
+           entity.canonical_url
+      FROM public.qualify_prospect_opportunity(target_opportunity_id) AS qualification
+      INNER JOIN public.prospect_opportunities AS opportunity
+              ON opportunity.id = qualification.opportunity_id
+      INNER JOIN public.prospect_entities AS entity
+              ON entity.tenant_id = opportunity.tenant_id
+             AND entity.id = opportunity.prospect_entity_id;
+END;
+$$;
+
+-- Browser sessions never execute the mutation RPCs directly. A server action
+-- first resolves the authenticated user and entitlement, then a service-role
+-- client enters this bridge with that verified user ID. The JWT-role check is
+-- defense in depth for a SECURITY DEFINER function: a caller cannot select an
+-- arbitrary tenant member merely by knowing their UUID.
+CREATE OR REPLACE FUNCTION public.create_prospect_opportunity_from_server(
+    target_assessment_id UUID,
+    target_evidence_id UUID,
+    actor_user_id TEXT
+)
+RETURNS TABLE (
+    opportunity_id UUID,
+    opportunity_status TEXT,
+    created BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF current_setting('request.jwt.claim.role', TRUE) IS DISTINCT FROM 'service_role' THEN
+        RAISE EXCEPTION 'server-only opportunity mutation'
+            USING ERRCODE = '42501';
+    END IF;
+    IF actor_user_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+        RAISE EXCEPTION 'server actor identity is invalid'
+            USING ERRCODE = '22023';
+    END IF;
+
+    PERFORM set_config('request.jwt.claim.sub', actor_user_id, TRUE);
+    RETURN QUERY
+    SELECT *
+      FROM public.create_prospect_opportunity(
+          target_assessment_id,
+          target_evidence_id
+      );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.qualify_prospect_opportunity_from_server(
+    target_opportunity_id UUID,
+    actor_user_id TEXT
+)
+RETURNS TABLE (
+    opportunity_id UUID,
+    opportunity_status TEXT,
+    already_qualified BOOLEAN,
+    evidence_source TEXT,
+    evidence_source_url TEXT,
+    evidence_summary TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF current_setting('request.jwt.claim.role', TRUE) IS DISTINCT FROM 'service_role' THEN
+        RAISE EXCEPTION 'server-only opportunity mutation'
+            USING ERRCODE = '42501';
+    END IF;
+    IF actor_user_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+        RAISE EXCEPTION 'server actor identity is invalid'
+            USING ERRCODE = '22023';
+    END IF;
+
+    PERFORM set_config('request.jwt.claim.sub', actor_user_id, TRUE);
+    RETURN QUERY
+    SELECT *
+      FROM public.qualify_prospect_opportunity(target_opportunity_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.qualify_prospect_opportunity_with_target_context_from_server(
+    target_opportunity_id UUID,
+    actor_user_id TEXT
+)
+RETURNS TABLE (
+    opportunity_id UUID,
+    opportunity_status TEXT,
+    already_qualified BOOLEAN,
+    evidence_source TEXT,
+    evidence_source_url TEXT,
+    evidence_summary TEXT,
+    target_kind TEXT,
+    target_title TEXT,
+    target_url TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF current_setting('request.jwt.claim.role', TRUE) IS DISTINCT FROM 'service_role' THEN
+        RAISE EXCEPTION 'server-only opportunity mutation'
+            USING ERRCODE = '42501';
+    END IF;
+    IF actor_user_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+        RAISE EXCEPTION 'server actor identity is invalid'
+            USING ERRCODE = '22023';
+    END IF;
+
+    PERFORM set_config('request.jwt.claim.sub', actor_user_id, TRUE);
+    RETURN QUERY
+    SELECT *
+      FROM public.qualify_prospect_opportunity_with_target_context(
+          target_opportunity_id
+      );
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.guard_prospect_opportunity_tenant_scope() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.invalidate_prospect_opportunity_after_assessment_rejection() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.invalidate_prospect_opportunities_after_targeting_profile_revision() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.create_prospect_opportunity(UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.create_prospect_opportunity(UUID, UUID) FROM authenticated;
 REVOKE ALL ON FUNCTION public.list_prospect_opportunity_status_for_profile(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity(UUID) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_prospect_opportunity(UUID, UUID) TO authenticated;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity(UUID) FROM authenticated;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity_with_target_context(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity_with_target_context(UUID) FROM authenticated;
+REVOKE ALL ON FUNCTION public.create_prospect_opportunity_from_server(UUID, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.create_prospect_opportunity_from_server(UUID, UUID, TEXT) FROM authenticated;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity_from_server(UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity_from_server(UUID, TEXT) FROM authenticated;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity_with_target_context_from_server(UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.qualify_prospect_opportunity_with_target_context_from_server(UUID, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.list_prospect_opportunity_status_for_profile(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.qualify_prospect_opportunity(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_prospect_opportunity_from_server(UUID, UUID, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.qualify_prospect_opportunity_from_server(UUID, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.qualify_prospect_opportunity_with_target_context_from_server(UUID, TEXT) TO service_role;
 
 NOTIFY pgrst, 'reload schema';
 

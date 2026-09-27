@@ -223,6 +223,10 @@ export type ProspectTargetView = {
   subtitle: string | null;
   canonicalUrl: string | null;
   assessmentState: TargetAssessmentState;
+  /** Relevance ordering, not a probability that this target will buy. */
+  fitScore: number | null;
+  triggerScore: number | null;
+  priorityScore: number;
   assessmentReasons: string[];
   assessedAt: string | null;
   evidence: TargetEvidenceView[];

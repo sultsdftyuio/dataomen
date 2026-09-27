@@ -10,6 +10,7 @@ import {
 } from "@/lib/crm-webhook-destination";
 import { PRO_PLAN_REQUIRED_MESSAGE, requireProEntitlement } from "@/lib/entitlements";
 import type { Json } from "@/types/supabase";
+import { createServiceRoleClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 import type { ProspectActionResult } from "@/app/(dashboard)/dashboard/prospect-types";
@@ -42,6 +43,9 @@ type OpportunityQualificationRow = {
   evidence_source: string | null;
   evidence_source_url: string | null;
   evidence_summary: string | null;
+  target_kind: string | null;
+  target_title: string | null;
+  target_url: string | null;
 };
 
 type OpportunityWebhookStatus = "sent" | "not_configured" | "failed" | "skipped";
@@ -101,18 +105,28 @@ export async function createProspectOpportunity(
     );
   }
 
-  const { supabase, tenantId } = tenantResult.context;
+  const { supabase, tenantId, userId } = tenantResult.context;
   try {
     await requireProEntitlement(supabase, tenantId);
   } catch {
     return actionError(PRO_PLAN_REQUIRED_MESSAGE);
   }
 
-  const client = supabase as unknown as OpportunityRpcClient;
-  const result = await client.rpc("create_prospect_opportunity", {
-    target_assessment_id: parsed.data.assessmentId,
-    target_evidence_id: parsed.data.evidenceId,
-  });
+  let result: { data: unknown; error: unknown };
+  try {
+    const client = createServiceRoleClient() as unknown as OpportunityRpcClient;
+    result = await client.rpc("create_prospect_opportunity_from_server", {
+      target_assessment_id: parsed.data.assessmentId,
+      target_evidence_id: parsed.data.evidenceId,
+      actor_user_id: userId,
+    });
+  } catch (error) {
+    console.error("[ProspectOpportunity] server creation bridge unavailable", {
+      tenant_id: tenantId,
+      error,
+    });
+    return actionError("Could not create an opportunity. Please try again shortly.");
+  }
   if (result.error) {
     console.warn("[ProspectOpportunity] creation rejected", {
       tenant_id: tenantId,
@@ -172,17 +186,28 @@ export async function qualifyProspectOpportunity(
     );
   }
 
-  const { supabase, tenantId } = tenantResult.context;
+  const { supabase, tenantId, userId } = tenantResult.context;
   try {
     await requireProEntitlement(supabase, tenantId);
   } catch {
     return actionFailure("unauthorized", PRO_PLAN_REQUIRED_MESSAGE);
   }
 
-  const client = supabase as unknown as OpportunityRpcClient;
-  const result = await client.rpc("qualify_prospect_opportunity", {
-    target_opportunity_id: parsed.data.opportunityId,
-  });
+  let result: { data: unknown; error: unknown };
+  try {
+    const client = createServiceRoleClient() as unknown as OpportunityRpcClient;
+    result = await client.rpc("qualify_prospect_opportunity_with_target_context_from_server", {
+      target_opportunity_id: parsed.data.opportunityId,
+      actor_user_id: userId,
+    });
+  } catch (error) {
+    console.error("[ProspectOpportunity] server qualification bridge unavailable", {
+      tenant_id: tenantId,
+      opportunity_id: parsed.data.opportunityId,
+      error,
+    });
+    return actionFailure("error", "Could not qualify the opportunity. Please try again shortly.");
+  }
   if (result.error) {
     console.warn("[ProspectOpportunity] qualification rejected", {
       tenant_id: tenantId,
@@ -270,8 +295,9 @@ export async function qualifyProspectOpportunity(
     };
   }
 
-  // The contract returns a safe summary, source label, and cited public URL,
-  // never a profile, contact, raw post body, or crawler output.
+  // The contract returns a safe public target locator plus the approved
+  // citation, never a person profile, contact, raw post body, or crawler
+  // output.
   const delivered = await deliverCrmWebhook(
     webhookDestination,
     {
@@ -279,6 +305,11 @@ export async function qualifyProspectOpportunity(
       url: stringValue(row?.evidence_source_url),
       pain_detected: stringValue(row?.evidence_summary),
       suggested_reply: null,
+      target: {
+        kind: stringValue(row?.target_kind),
+        title: stringValue(row?.target_title),
+        url: stringValue(row?.target_url),
+      },
     },
     `arcli-prospect-opportunity-${qualifiedOpportunityId}`,
   );

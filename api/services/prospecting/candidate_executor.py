@@ -31,6 +31,7 @@ from .candidate_generation import (
     release_candidate_generation_run_for_retry,
 )
 from .candidate_persistence import (
+    CandidateExcludedByTargetingBrief,
     CandidatePersistenceClaimLostError,
     persist_phase2_candidate,
 )
@@ -401,6 +402,9 @@ def _process_seed(
                     )
             except CandidatePersistenceClaimLostError:
                 return _handle_persistence_claim_loss(engine, run, counters, plan)
+            except CandidateExcludedByTargetingBrief:
+                counters.record_reason("brief_exclusion_match")
+                continue
             except ValueError:
                 # A classifier-produced proposal should normally validate. If a
                 # later code change violates the persistence contract, retain a

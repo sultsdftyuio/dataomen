@@ -293,10 +293,29 @@ BEGIN
              ELSE NULL
            END AS next_refresh_at,
            monitor.last_dispatched_at
-      FROM public.prospect_target_monitors AS monitor
+       FROM public.prospect_target_monitors AS monitor
+      INNER JOIN public.prospect_assessments AS assessment
+              ON assessment.tenant_id = monitor.tenant_id
+             AND assessment.targeting_profile_id = monitor.targeting_profile_id
+             AND assessment.prospect_entity_id = monitor.prospect_entity_id
+      INNER JOIN public.targeting_profiles AS profile
+              ON profile.tenant_id = assessment.tenant_id
+             AND profile.id = assessment.targeting_profile_id
+             AND profile.profile_version = assessment.targeting_profile_version
      WHERE monitor.tenant_id = resolved_tenant_id
        AND monitor.targeting_profile_id = target_profile_id
-     ORDER BY monitor.status ASC, monitor.updated_at DESC, monitor.id ASC
+       AND assessment.assessment_state <> 'rejected'
+     ORDER BY CASE assessment.assessment_state
+                  WHEN 'strong_buyer_signal' THEN 0
+                  WHEN 'signal_backed' THEN 1
+                  WHEN 'triggered' THEN 2
+                  WHEN 'high_fit' THEN 3
+                  WHEN 'rejected' THEN 4
+                  ELSE 5
+              END ASC,
+              assessment.priority_score DESC,
+              assessment.last_assessed_at DESC,
+              monitor.id ASC
      LIMIT 100;
 END;
 $$;
@@ -348,10 +367,14 @@ BEGIN
            resolved_entity_kind,
            resolved_canonical_url
       FROM public.prospect_assessments AS assessment
-      INNER JOIN public.prospect_entities AS entity
-              ON entity.id = assessment.prospect_entity_id
-             AND entity.tenant_id = assessment.tenant_id
-      INNER JOIN public.tenant_users AS tenant_user
+       INNER JOIN public.prospect_entities AS entity
+               ON entity.id = assessment.prospect_entity_id
+              AND entity.tenant_id = assessment.tenant_id
+       INNER JOIN public.targeting_profiles AS profile
+               ON profile.id = assessment.targeting_profile_id
+              AND profile.tenant_id = assessment.tenant_id
+              AND profile.profile_version = assessment.targeting_profile_version
+       INNER JOIN public.tenant_users AS tenant_user
               ON tenant_user.tenant_id::TEXT = assessment.tenant_id::TEXT
              AND tenant_user.user_id::TEXT = auth.uid()::TEXT
      WHERE assessment.id = target_assessment_id

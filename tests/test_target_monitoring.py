@@ -24,6 +24,7 @@ def _claim() -> target_monitoring.DueTargetMonitor:
         service_profile_id=PROFILE_ID,
         prospect_entity_id=ENTITY_ID,
         scheduled_for=datetime(2026, 9, 26, tzinfo=timezone.utc),
+        targeting_profile_version=1,
     )
 
 
@@ -119,6 +120,7 @@ def test_due_monitor_dispatches_only_one_existing_target_id(monkeypatch) -> None
     assert request.prospect_entity_ids == (ENTITY_ID,)
     assert request.request_nonce == target_monitoring._monitor_nonce(claim)
     assert request.quota_scope == "monitoring"
+    assert request.expected_profile_version == claim.targeting_profile_version
     mark_dispatched.assert_called_once()
 
 

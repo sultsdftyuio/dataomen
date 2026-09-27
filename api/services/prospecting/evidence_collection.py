@@ -188,6 +188,9 @@ class EvidenceCollectionStartRequest:
     # customer's explicit evidence-research budget. Browser and API triggers
     # use the default and cannot choose this internal scope.
     quota_scope: EvidenceCollectionQuotaScope = "explicit"
+    # Internal monitor dispatches pin this to the revision that held their
+    # lease. Browser/API requests leave it unset and resolve the current brief.
+    expected_profile_version: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "tenant_id", _required_string(self.tenant_id, field_name="tenant_id", maximum=MAX_TENANT_ID_CHARS))
@@ -202,6 +205,12 @@ class EvidenceCollectionStartRequest:
         if scope not in {"explicit", "monitoring"}:
             raise ValueError("quota_scope is invalid")
         object.__setattr__(self, "quota_scope", scope)
+        if self.expected_profile_version is not None:
+            object.__setattr__(
+                self,
+                "expected_profile_version",
+                _profile_version(self.expected_profile_version),
+            )
 
 
 @dataclass(frozen=True)

@@ -22,15 +22,27 @@ test("target opportunities remain separate from verifier-owned lead matches", ()
 
 test("opportunity creation and qualification are separate explicit user actions", () => {
   const action = source("app/actions/prospect-opportunities.ts");
+  const contract = source("scripts/prospect_target_opportunity_contract.sql");
 
   assert.match(action, /export async function createProspectOpportunity/);
-  assert.match(action, /rpc\("create_prospect_opportunity"/);
+  assert.match(action, /createServiceRoleClient/);
+  assert.match(action, /rpc\("create_prospect_opportunity_from_server"/);
   assert.match(action, /export async function qualifyProspectOpportunity/);
-  assert.match(action, /rpc\("qualify_prospect_opportunity"/);
+  assert.match(action, /rpc\("qualify_prospect_opportunity_with_target_context_from_server"/);
   assert.match(action, /requireProEntitlement/);
   assert.match(action, /validateWebhookDestination/);
   assert.match(action, /arcli-prospect-opportunity-/);
-  assert.match(action, /never\s+sends outreach/i);
+  assert.match(action, /never[\s*]+sends outreach/i);
+  assert.match(contract, /TO service_role/);
+  assert.match(contract, /qualify_prospect_opportunity_with_target_context/);
+  assert.match(action, /target:\s*\{/);
+  assert.match(contract, /invalidate_prospect_opportunities_after_targeting_profile_revision/);
+  assert.match(contract, /'promote_to_opportunity'/);
+  assert.match(contract, /target_kind TEXT/);
+  assert.doesNotMatch(
+    contract,
+    /GRANT EXECUTE ON FUNCTION public\.create_prospect_opportunity\(UUID, UUID\) TO authenticated/,
+  );
 });
 
 test("target desk exposes opportunity actions only after the optional projection is available", () => {

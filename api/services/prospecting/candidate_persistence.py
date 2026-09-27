@@ -189,6 +189,7 @@ def _active_claim_params(
 
 _ACTIVE_CLAIM_SQL = """
     SELECT run.id,
+           run.targeting_profile_version,
            profile.target_types,
            profile.ideal_customer_traits,
            profile.change_triggers,
@@ -358,6 +359,7 @@ def _insert_high_fit_assessment(
             INSERT INTO public.prospect_assessments (
                 tenant_id,
                 targeting_profile_id,
+                targeting_profile_version,
                 prospect_entity_id,
                 assessment_state,
                 fit_score,
@@ -367,6 +369,7 @@ def _insert_high_fit_assessment(
             )
             SELECT :tenant_id,
                    run.targeting_profile_id,
+                   active_claim.targeting_profile_version,
                    CAST(:entity_id AS uuid),
                    'high_fit',
                    :fit_score,
@@ -377,9 +380,21 @@ def _insert_high_fit_assessment(
               INNER JOIN active_claim ON active_claim.id = run.id
              WHERE run.id = CAST(:run_id AS uuid)
                AND run.tenant_id = :tenant_id
-            ON CONFLICT (tenant_id, targeting_profile_id, prospect_entity_id)
-            DO NOTHING
-            RETURNING id
+            ON CONFLICT (
+                tenant_id,
+                targeting_profile_id,
+                targeting_profile_version,
+                prospect_entity_id
+            )
+            DO UPDATE SET
+                fit_score = EXCLUDED.fit_score,
+                trigger_score = EXCLUDED.trigger_score,
+                priority_score = EXCLUDED.priority_score,
+                reason_codes = EXCLUDED.reason_codes,
+                last_assessed_at = NOW(),
+                updated_at = NOW()
+            WHERE public.prospect_assessments.assessment_state = 'high_fit'
+            RETURNING (xmax = 0)
             """
         ),
         params,
@@ -438,6 +453,7 @@ def _insert_official_fit_evidence(
             INSERT INTO public.prospect_evidence (
                 tenant_id,
                 targeting_profile_id,
+                targeting_profile_version,
                 prospect_entity_id,
                 research_run_id,
                 evidence_type,
@@ -452,6 +468,7 @@ def _insert_official_fit_evidence(
             )
             SELECT :tenant_id,
                    CAST(:targeting_profile_id AS uuid),
+                   active_claim.targeting_profile_version,
                    CAST(:prospect_entity_id AS uuid),
                    CAST(:research_run_id AS uuid),
                    'fit',
@@ -464,7 +481,12 @@ def _insert_official_fit_evidence(
                    CAST(:observed_at AS timestamptz),
                    :evidence_key
               FROM active_claim
-            ON CONFLICT (tenant_id, targeting_profile_id, evidence_key)
+            ON CONFLICT (
+                tenant_id,
+                targeting_profile_id,
+                targeting_profile_version,
+                evidence_key
+            )
             DO NOTHING
             RETURNING id
             """

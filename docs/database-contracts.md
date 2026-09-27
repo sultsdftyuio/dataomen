@@ -35,17 +35,21 @@ because it exists.
     evidence listing/review RPCs.
 15. `scripts/service_profile_website_scope.sql`
 16. `scripts/enforce-free-plan-limits.sql`
-17. `scripts/stripe.sql` — only when Stripe Connect is enabled.
-18. `scripts/public_data_compliance_contract.sql`
-19. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
+17. `scripts/prospect_target_opportunity_contract.sql` — optional human-reviewed
+    target opportunities and server-only CRM handoff guards; apply after steps
+    14 and 16.
+18. `scripts/stripe.sql` — only when Stripe Connect is enabled.
+19. `scripts/public_data_compliance_contract.sql`
+20. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
     recovery-unsubscribe route remains enabled.
 
-The detailed dependency order for steps 8–14 is also in
+Detailed prospect-intelligence migration guidance is also in
 [`prospect-intelligence-production.md`](prospect-intelligence-production.md).
 
 The optional target-monitoring contract follows the entity-first contract; it
 is not needed for manual targets, candidate generation, or one-off
-retained-evidence review.
+retained-evidence review. It can be installed independently of the opportunity
+contract, but both require the entity-first base contract.
 
 ## Entity-first retained-public evidence migration
 
@@ -57,13 +61,22 @@ target mapping. That mapping is service-only: it stores target IDs, immutable
 policy caps, and source names, but no canonical URL, author locator, query,
 source text, or contact field.
 
+For an existing entity-first installation, rerun the idempotent base contract
+before its matching web/API/worker deployment. This upgrade adds
+revision-scoped assessment and evidence identities. Historical generated,
+provider, and public-evidence rows remain outside the active revision; only
+eligible manual targets receive a fresh fit-only assessment.
+
 The same migration exposes narrow browser-facing evidence functions:
 `list_prospect_evidence_for_profile(UUID)` returns the tenant's reviewable
 projection, `review_prospect_evidence(UUID, TEXT)` records an
 `accepted`/`rejected` human decision, and
 `list_prospect_feedback_summary_for_profile(UUID)` returns aggregate outcome
 counts only. They do not grant browser access to the global source corpus, the
-mapping table, reviewer identities, or per-target feedback history.
+mapping table, reviewer identities, or per-target feedback history. The
+evidence projection mirrors the desk's state-first 100-target window and
+caps each visible target at eight reviewable citations, avoiding a global
+recency cutoff that could hide one target's evidence behind another's.
 
 The migration makes legacy running entity-first generation/evidence jobs
 reclaimable rather than preserving an unsafe pre-token claim. Deploy the
@@ -84,13 +97,29 @@ Only exact GitHub, Bluesky, and Hacker News builder profile locators are
 eligible. The contract stores target IDs and scheduler state, never URLs,
 handles, queries, source text, contacts, profile history, or browser-supplied
 cadence. A targeting profile may have at most five active monitors. Rejected
-targets are paused automatically.
+targets are paused automatically. A targeting-brief revision also pauses active
+monitors, so an old target thesis cannot continue a background scan.
 
 Authenticated users have no direct monitor-table access. The status projection
 omits leases, run IDs, error details, source locators, and retained records.
 The worker reuses the retained-public evidence collection boundary and has a
 separate bounded monitor quota, so it cannot consume the explicit-research
 budget.
+
+## Human-reviewed target opportunity
+
+`prospect_target_opportunity_contract.sql` is an additive contract that
+depends on the entity-first and paid-plan contracts. Apply it only after both.
+It creates a local opportunity from one accepted cited target observation, then
+allows a separate explicit qualification action. The browser cannot directly
+execute either mutation: server-role bridge functions restore the
+server-verified user identity before delegating to the tenant/evidence guards.
+
+The handoff does not create a `lead_matches` row, enrich a contact, or send
+outreach. A qualification may make one SSRF-protected, best-effort CRM webhook
+request using the citation plus public target kind/title/URL. It is intentionally
+not an automatic retry system; local `qualified` state records the human
+decision, not a guarantee of receiving-CRM delivery.
 
 ## Retained recovery-unsubscribe compatibility
 

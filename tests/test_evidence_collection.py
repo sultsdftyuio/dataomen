@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from api.services.prospecting import evidence_collection
+from api.services.prospecting import evidence_run_lifecycle
 from api.services.prospecting.evidence_collection import (
     ApprovedEvidenceTargetingProfileSnapshot,
     EvidenceCollectionStartRequest,
@@ -129,6 +130,32 @@ def test_retry_identity_is_stable_when_the_targeting_plan_changes() -> None:
             request_nonce="review-request-2",
         )
     )
+
+
+def test_monitor_request_rejects_a_brief_revision_after_its_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = EvidenceCollectionStartRequest(
+        tenant_id=TENANT_ID,
+        service_profile_id=SERVICE_PROFILE_ID,
+        prospect_entity_ids=(ENTITY_IDS[0],),
+        request_nonce="monitor-request-1",
+        quota_scope="monitoring",
+        expected_profile_version=3,
+    )
+    monkeypatch.setattr(
+        evidence_run_lifecycle,
+        "_load_approved_targeting_profile",
+        lambda *_args, **_kwargs: _snapshot(),
+    )
+
+    result = evidence_run_lifecycle._create_evidence_collection_run_with_connection(
+        SimpleNamespace(),
+        request,
+        idempotency_key="a" * 64,
+    )
+
+    assert request.expected_profile_version == 3
+    assert result.run is None
+    assert result.skip_reason == "targeting_profile_changed"
 
 
 def test_summary_rejects_raw_content_and_allows_only_safe_operational_values() -> None:

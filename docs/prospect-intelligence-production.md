@@ -12,6 +12,8 @@ Apply the database contracts in this order, using the normal production migratio
 6. `scripts/buyer_language_research_contract.sql`
 7. `scripts/watchlists_contract.sql`
 8. `scripts/entity_first_prospecting_contract.sql`
+9. `scripts/enforce-free-plan-limits.sql`
+10. `scripts/prospect_target_opportunity_contract.sql`
 
 The candidate-pool migration is required for candidate-first discovery. Do not
 enable the discovery worker until it has completed successfully: otherwise the
@@ -28,6 +30,13 @@ RPCs used by retained-public evidence collection. Existing pre-lease running
 entity-first jobs are deliberately made reclaimable by the migration; deploy a
 token-aware worker with the migration rather than treating an old running job
 as completed.
+
+On an existing entity-first deployment, rerun the idempotent entity-first
+contract before deploying its matching code. The upgrade makes assessments and
+evidence revision-scoped: old generated/provider research stays historical,
+while eligible manual targets carry forward only as fresh fit-only targets.
+The target desk, research status, feedback summary, and opportunity status all
+read the active brief revision only.
 
 ## Entity-first candidate generation
 
@@ -58,8 +67,9 @@ pages and redirects only, and classifies structured metadata only. It does not
 call social search, profile/history discovery, public comments, private
 sources, CRM delivery, or a contact provider. Default limits are 12 seeds, six
 pages per seed, 48 candidate proposals, 150 seconds total execution time, and
-12 seconds per seed. Do not add a dashboard control until this complete path
-is deployed and the feature flag has been verified in the target environment.
+12 seconds per seed. The dashboard generation action is available only when
+this complete path is deployed and the feature flag has been verified in the
+target environment.
 
 ## Retained-public target evidence
 
@@ -112,11 +122,33 @@ retained slice, retrieves thread context, or uses private sources. It may
 create pending cited evaluation evidence only;
 it cannot create a lead, contact, CRM record, or buyer-signal label.
 
-Keep this as a trusted server-side operation while rolling it out. Do not add
-a dashboard research button until the migration, trigger, broker, and worker
-have been verified in the target environment. A queued run is an auditable,
-bounded request, not a promise that an account or builder will produce buyer
-intent.
+Keep this as a trusted server-side operation while rolling it out. The dashboard
+research action remains unavailable until the migration, trigger, broker, and
+worker have been verified in the target environment. A queued run is an
+auditable, bounded request, not a promise that an account or builder will
+produce buyer intent.
+
+## Human-reviewed target opportunity
+
+Apply `scripts/prospect_target_opportunity_contract.sql` only after the
+entity-first and paid-plan contracts. It is intentionally separate from
+verifier-owned `lead_matches`: an accepted target citation becomes a local
+opportunity only after a user explicitly creates it, and it can reach a CRM
+only after a second explicit qualification action.
+
+The web action first verifies the session and paid entitlement, then invokes a
+service-role-only bridge that restores the verified user identity for the
+existing tenant/evidence guards. Do not grant the underlying create or qualify
+RPCs to `authenticated`. A qualified handoff contains the accepted citation
+and public target kind/title/URL. It never enriches a contact, produces a
+message, or sends outreach. CRM delivery is one SSRF-protected best-effort
+webhook request; a local `qualified` state is not proof that the receiving
+CRM accepted it, and Arcli does not retry it automatically.
+
+Saving a new brief invalidates any pending opportunity from the earlier
+revision. A qualified row remains historical. Source/evidence retention can
+delete the local opportunity with its citation, while an external CRM record
+is never recalled.
 
 ## Opt-in retained-public target monitoring
 
@@ -160,8 +192,9 @@ slice already held in the global source-post corpus. It never fetches a
 profile, calls a source API, crawls the target URL, performs a broad search,
 enumerates history, opens thread context, retrieves private data, creates a
 lead, sends outreach, or exports a CRM record. Rejected targets pause
-automatically. Any new observation remains pending until a human accepts it in
-the target desk.
+automatically, and a changed targeting brief pauses active watches until a user
+re-enables a current target. Any new observation remains pending until a human
+accepts it in the target desk.
 
 ## Required worker configuration
 
@@ -324,6 +357,12 @@ Useful controls include `ARCLI_BUYER_LANGUAGE_RESEARCH_QUERY_LIMIT`,
   assessment. The desk's feedback readiness view uses only aggregate
   tenant-scoped outcome counts; any later calibration must use those aggregate
   outcomes rather than reviewer identities or source-post content.
+- An entity-first opportunity is a separate local handoff. It requires a
+  current non-rejected target and accepted cited trigger, problem, or
+  evaluation evidence, followed by two explicit human decisions (create, then
+  qualify). Only the server-role bridge can invoke those guarded mutations; a
+  best-effort CRM webhook carries the citation plus the public target locator,
+  never contact enrichment or outreach.
 - Watchlist source controls only reduce the enabled public-source set. They
   cannot enable an operator-disabled connector, bypass the X fallback budget,
   or access private groups.

@@ -553,6 +553,7 @@ CREATE TABLE IF NOT EXISTS public.prospect_evidence (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
     targeting_profile_id UUID NOT NULL,
+    targeting_profile_version INTEGER NOT NULL DEFAULT 1,
     prospect_entity_id UUID NOT NULL,
     research_run_id UUID NOT NULL,
     evidence_type TEXT NOT NULL,
@@ -605,8 +606,10 @@ CREATE TABLE IF NOT EXISTS public.prospect_evidence (
         ),
     CONSTRAINT prospect_evidence_key_check
         CHECK (evidence_key ~ '^[0-9a-f]{64}$'),
-    CONSTRAINT uq_prospect_evidence_tenant_profile_key
-        UNIQUE (tenant_id, targeting_profile_id, evidence_key)
+    CONSTRAINT prospect_evidence_profile_version_check
+        CHECK (targeting_profile_version >= 0),
+    CONSTRAINT uq_prospect_evidence_tenant_profile_version_key
+        UNIQUE (tenant_id, targeting_profile_id, targeting_profile_version, evidence_key)
 );
 
 COMMENT ON TABLE public.prospect_evidence IS
@@ -616,6 +619,7 @@ CREATE TABLE IF NOT EXISTS public.prospect_assessments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
     targeting_profile_id UUID NOT NULL,
+    targeting_profile_version INTEGER NOT NULL DEFAULT 1,
     prospect_entity_id UUID NOT NULL,
     assessment_state TEXT NOT NULL DEFAULT 'high_fit',
 
@@ -660,12 +664,110 @@ CREATE TABLE IF NOT EXISTS public.prospect_assessments (
             OR (assessment_state = 'rejected' AND rejected_at IS NOT NULL AND strong_signal_at IS NULL)
             OR (assessment_state NOT IN ('strong_buyer_signal', 'rejected') AND strong_signal_at IS NULL AND rejected_at IS NULL)
         ),
-    CONSTRAINT uq_prospect_assessments_tenant_profile_entity
-        UNIQUE (tenant_id, targeting_profile_id, prospect_entity_id)
+    CONSTRAINT prospect_assessments_profile_version_check
+        CHECK (targeting_profile_version >= 0),
+    CONSTRAINT uq_prospect_assessments_tenant_profile_version_entity
+        UNIQUE (tenant_id, targeting_profile_id, targeting_profile_version, prospect_entity_id)
 );
 
 COMMENT ON TABLE public.prospect_assessments IS
     'Per-targeting-profile target classification. Strong buyer signal requires accepted direct evaluation evidence.';
+
+-- Target briefs are edited in place, so their revision is part of an
+-- assessment/evidence identity. Existing version-one rows remain usable; rows
+-- from an already-edited profile are conservatively retained as history (0)
+-- rather than being misrepresented as evidence for its newest policy.
+ALTER TABLE public.prospect_evidence
+    ADD COLUMN IF NOT EXISTS targeting_profile_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.prospect_assessments
+    ADD COLUMN IF NOT EXISTS targeting_profile_version INTEGER NOT NULL DEFAULT 0;
+
+UPDATE public.prospect_evidence AS evidence
+   SET targeting_profile_version = profile.profile_version
+  FROM public.targeting_profiles AS profile
+ WHERE evidence.tenant_id = profile.tenant_id
+   AND evidence.targeting_profile_id = profile.id
+   AND evidence.targeting_profile_version = 0
+   AND profile.profile_version = 1;
+
+UPDATE public.prospect_assessments AS assessment
+   SET targeting_profile_version = profile.profile_version
+  FROM public.targeting_profiles AS profile
+ WHERE assessment.tenant_id = profile.tenant_id
+   AND assessment.targeting_profile_id = profile.id
+   AND assessment.targeting_profile_version = 0
+   AND profile.profile_version = 1;
+
+ALTER TABLE public.prospect_evidence
+    DROP CONSTRAINT IF EXISTS uq_prospect_evidence_tenant_profile_key;
+ALTER TABLE public.prospect_evidence
+    DROP CONSTRAINT IF EXISTS uq_prospect_evidence_tenant_profile_version_key;
+ALTER TABLE public.prospect_evidence
+    DROP CONSTRAINT IF EXISTS prospect_evidence_profile_version_check;
+ALTER TABLE public.prospect_evidence
+    ADD CONSTRAINT prospect_evidence_profile_version_check
+        CHECK (targeting_profile_version >= 0),
+    ADD CONSTRAINT uq_prospect_evidence_tenant_profile_version_key
+        UNIQUE (tenant_id, targeting_profile_id, targeting_profile_version, evidence_key);
+
+ALTER TABLE public.prospect_assessments
+    DROP CONSTRAINT IF EXISTS uq_prospect_assessments_tenant_profile_entity;
+ALTER TABLE public.prospect_assessments
+    DROP CONSTRAINT IF EXISTS uq_prospect_assessments_tenant_profile_version_entity;
+ALTER TABLE public.prospect_assessments
+    DROP CONSTRAINT IF EXISTS prospect_assessments_profile_version_check;
+ALTER TABLE public.prospect_assessments
+    ADD CONSTRAINT prospect_assessments_profile_version_check
+        CHECK (targeting_profile_version >= 0),
+    ADD CONSTRAINT uq_prospect_assessments_tenant_profile_version_entity
+        UNIQUE (
+            tenant_id,
+            targeting_profile_id,
+            targeting_profile_version,
+            prospect_entity_id
+        );
+
+-- Carry forward only a deliberate, non-rejected manual selection for an
+-- already-edited profile. Generated/provider fit and all prior evidence must
+-- be regenerated/reviewed under the active policy.
+INSERT INTO public.prospect_assessments (
+    tenant_id,
+    targeting_profile_id,
+    targeting_profile_version,
+    prospect_entity_id,
+    assessment_state,
+    fit_score,
+    priority_score,
+    reason_codes
+)
+SELECT profile.tenant_id,
+       profile.id,
+       profile.profile_version,
+       entity.id,
+       'high_fit',
+       0.5,
+       42.5,
+       '["manual_seed", "manual_target_confirmed_fit"]'::JSONB
+  FROM public.targeting_profiles AS profile
+  INNER JOIN public.prospect_entities AS entity
+          ON entity.tenant_id = profile.tenant_id
+         AND entity.origin_kind = 'manual'
+ WHERE profile.profile_version > 1
+   AND profile.target_types @> jsonb_build_array(entity.entity_kind)
+   AND NOT EXISTS (
+        SELECT 1
+          FROM public.prospect_assessments AS prior_assessment
+         WHERE prior_assessment.tenant_id = entity.tenant_id
+           AND prior_assessment.targeting_profile_id = profile.id
+           AND prior_assessment.prospect_entity_id = entity.id
+           AND prior_assessment.assessment_state = 'rejected'
+   )
+ON CONFLICT (
+    tenant_id,
+    targeting_profile_id,
+    targeting_profile_version,
+    prospect_entity_id
+) DO NOTHING;
 
 -- A deliberate manual addition is a human confirmation of *fit*, not buyer
 -- intent. Earlier revisions left this dimension NULL, which meant a manual
@@ -685,11 +787,15 @@ UPDATE public.prospect_assessments AS assessment
        END,
        last_assessed_at = NOW(),
        updated_at = NOW()
-  FROM public.prospect_entities AS entity
- WHERE entity.tenant_id = assessment.tenant_id
-   AND entity.id = assessment.prospect_entity_id
-   AND entity.origin_kind = 'manual'
-   AND assessment.assessment_state <> 'rejected'
+   FROM public.prospect_entities AS entity
+  INNER JOIN public.targeting_profiles AS profile
+          ON profile.tenant_id = entity.tenant_id
+  WHERE entity.tenant_id = assessment.tenant_id
+    AND entity.id = assessment.prospect_entity_id
+    AND entity.origin_kind = 'manual'
+    AND profile.id = assessment.targeting_profile_id
+    AND profile.profile_version = assessment.targeting_profile_version
+    AND assessment.assessment_state <> 'rejected'
    AND (
        assessment.fit_score IS NULL
        OR assessment.fit_score < 0.5
@@ -909,6 +1015,15 @@ CREATE INDEX IF NOT EXISTS idx_prospect_research_run_entities_tenant_run_positio
     ON public.prospect_research_run_entities(tenant_id, research_run_id, request_position);
 CREATE INDEX IF NOT EXISTS idx_prospect_evidence_tenant_profile_entity_observed
     ON public.prospect_evidence(tenant_id, targeting_profile_id, prospect_entity_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prospect_evidence_current_profile_entity_observed
+    ON public.prospect_evidence(
+        tenant_id,
+        targeting_profile_id,
+        targeting_profile_version,
+        prospect_entity_id,
+        observed_at DESC,
+        id DESC
+    );
 CREATE INDEX IF NOT EXISTS idx_prospect_evidence_public_source_post
     ON public.prospect_evidence(source_post_id)
     WHERE source_post_id IS NOT NULL;
@@ -919,6 +1034,25 @@ CREATE INDEX IF NOT EXISTS idx_prospect_assessments_tenant_profile_state_priorit
         assessment_state,
         priority_score DESC,
         last_assessed_at DESC
+    );
+CREATE INDEX IF NOT EXISTS idx_prospect_assessments_current_desk_order
+    ON public.prospect_assessments(
+        tenant_id,
+        targeting_profile_id,
+        targeting_profile_version,
+        (
+            CASE assessment_state
+                WHEN 'strong_buyer_signal' THEN 0
+                WHEN 'signal_backed' THEN 1
+                WHEN 'triggered' THEN 2
+                WHEN 'high_fit' THEN 3
+                WHEN 'rejected' THEN 4
+                ELSE 5
+            END
+        ),
+        priority_score DESC,
+        last_assessed_at DESC,
+        id
     );
 CREATE INDEX IF NOT EXISTS idx_prospect_feedback_tenant_assessment_created
     ON public.prospect_feedback(tenant_id, prospect_assessment_id, created_at DESC);
@@ -1151,6 +1285,7 @@ BEGIN
               ON assessment.prospect_entity_id = NEW.prospect_entity_id
              AND assessment.tenant_id = NEW.tenant_id
              AND assessment.targeting_profile_id = run.targeting_profile_id
+             AND assessment.targeting_profile_version = run.targeting_profile_version
              AND assessment.assessment_state = NEW.assessment_state_at_request
      WHERE run.id = NEW.research_run_id
        AND run.tenant_id = NEW.tenant_id;
@@ -1180,6 +1315,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     run_targeting_profile_id UUID;
+    run_targeting_profile_version INTEGER;
     source_tenant_id TEXT;
     source_name TEXT;
     source_post_url TEXT;
@@ -1187,9 +1323,10 @@ DECLARE
 BEGIN
     IF TG_OP = 'UPDATE'
        AND (
-           NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
-           OR NEW.targeting_profile_id IS DISTINCT FROM OLD.targeting_profile_id
-           OR NEW.prospect_entity_id IS DISTINCT FROM OLD.prospect_entity_id
+            NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+            OR NEW.targeting_profile_id IS DISTINCT FROM OLD.targeting_profile_id
+            OR NEW.targeting_profile_version IS DISTINCT FROM OLD.targeting_profile_version
+            OR NEW.prospect_entity_id IS DISTINCT FROM OLD.prospect_entity_id
            OR NEW.research_run_id IS DISTINCT FROM OLD.research_run_id
            OR NEW.evidence_type IS DISTINCT FROM OLD.evidence_type
            OR NEW.summary IS DISTINCT FROM OLD.summary
@@ -1224,12 +1361,14 @@ BEGIN
             USING ERRCODE = '23503';
     END IF;
 
-    SELECT run.targeting_profile_id
-      INTO run_targeting_profile_id
+    SELECT run.targeting_profile_id, run.targeting_profile_version
+      INTO run_targeting_profile_id, run_targeting_profile_version
       FROM public.prospect_research_runs AS run
      WHERE run.id = NEW.research_run_id
        AND run.tenant_id = NEW.tenant_id;
-    IF NOT FOUND OR run_targeting_profile_id IS DISTINCT FROM NEW.targeting_profile_id THEN
+    IF NOT FOUND
+       OR run_targeting_profile_id IS DISTINCT FROM NEW.targeting_profile_id
+       OR run_targeting_profile_version IS DISTINCT FROM NEW.targeting_profile_version THEN
         RAISE EXCEPTION 'prospect evidence research run does not belong to targeting profile'
             USING ERRCODE = '23503';
     END IF;
@@ -1280,9 +1419,10 @@ DECLARE
 BEGIN
     IF TG_OP = 'UPDATE'
        AND (
-           NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
-           OR NEW.targeting_profile_id IS DISTINCT FROM OLD.targeting_profile_id
-           OR NEW.prospect_entity_id IS DISTINCT FROM OLD.prospect_entity_id
+            NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+            OR NEW.targeting_profile_id IS DISTINCT FROM OLD.targeting_profile_id
+            OR NEW.targeting_profile_version IS DISTINCT FROM OLD.targeting_profile_version
+            OR NEW.prospect_entity_id IS DISTINCT FROM OLD.prospect_entity_id
            OR NEW.created_at IS DISTINCT FROM OLD.created_at
        ) THEN
         RAISE EXCEPTION 'prospect assessment tenant, target profile, and entity are immutable'
@@ -1309,25 +1449,28 @@ BEGIN
     SELECT EXISTS (
         SELECT 1
           FROM public.prospect_evidence AS evidence
-         WHERE evidence.tenant_id = NEW.tenant_id
-           AND evidence.targeting_profile_id = NEW.targeting_profile_id
-           AND evidence.prospect_entity_id = NEW.prospect_entity_id
+          WHERE evidence.tenant_id = NEW.tenant_id
+            AND evidence.targeting_profile_id = NEW.targeting_profile_id
+            AND evidence.targeting_profile_version = NEW.targeting_profile_version
+            AND evidence.prospect_entity_id = NEW.prospect_entity_id
            AND evidence.evidence_status = 'accepted'
            AND evidence.evidence_type = 'trigger'
     ), EXISTS (
         SELECT 1
           FROM public.prospect_evidence AS evidence
-         WHERE evidence.tenant_id = NEW.tenant_id
-           AND evidence.targeting_profile_id = NEW.targeting_profile_id
-           AND evidence.prospect_entity_id = NEW.prospect_entity_id
+          WHERE evidence.tenant_id = NEW.tenant_id
+            AND evidence.targeting_profile_id = NEW.targeting_profile_id
+            AND evidence.targeting_profile_version = NEW.targeting_profile_version
+            AND evidence.prospect_entity_id = NEW.prospect_entity_id
            AND evidence.evidence_status = 'accepted'
            AND evidence.evidence_type IN ('problem', 'evaluation')
     ), EXISTS (
         SELECT 1
           FROM public.prospect_evidence AS evidence
-         WHERE evidence.tenant_id = NEW.tenant_id
-           AND evidence.targeting_profile_id = NEW.targeting_profile_id
-           AND evidence.prospect_entity_id = NEW.prospect_entity_id
+          WHERE evidence.tenant_id = NEW.tenant_id
+            AND evidence.targeting_profile_id = NEW.targeting_profile_id
+            AND evidence.targeting_profile_version = NEW.targeting_profile_version
+            AND evidence.prospect_entity_id = NEW.prospect_entity_id
            AND evidence.evidence_status = 'accepted'
            AND evidence.evidence_type = 'evaluation'
            AND evidence.evidence_strength = 'strong'
@@ -1367,8 +1510,12 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
           FROM public.prospect_assessments AS assessment
+          INNER JOIN public.targeting_profiles AS profile
+                  ON profile.tenant_id = assessment.tenant_id
+                 AND profile.id = assessment.targeting_profile_id
+                 AND profile.profile_version = assessment.targeting_profile_version
          WHERE assessment.id = NEW.prospect_assessment_id
-           AND assessment.tenant_id = NEW.tenant_id
+            AND assessment.tenant_id = NEW.tenant_id
     ) THEN
         RAISE EXCEPTION 'prospect feedback assessment does not belong to tenant'
             USING ERRCODE = '23503';
@@ -1399,6 +1546,7 @@ AS $$
 DECLARE
     affected_tenant_id TEXT;
     affected_targeting_profile_id UUID;
+    affected_targeting_profile_version INTEGER;
     affected_prospect_entity_id UUID;
     has_trigger_evidence BOOLEAN;
     has_signal_evidence BOOLEAN;
@@ -1407,10 +1555,12 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         affected_tenant_id = OLD.tenant_id;
         affected_targeting_profile_id = OLD.targeting_profile_id;
+        affected_targeting_profile_version = OLD.targeting_profile_version;
         affected_prospect_entity_id = OLD.prospect_entity_id;
     ELSE
         affected_tenant_id = NEW.tenant_id;
         affected_targeting_profile_id = NEW.targeting_profile_id;
+        affected_targeting_profile_version = NEW.targeting_profile_version;
         affected_prospect_entity_id = NEW.prospect_entity_id;
     END IF;
 
@@ -1419,22 +1569,25 @@ BEGIN
     -- based on one ordered view of the accepted evidence set.
     PERFORM 1
       FROM public.prospect_assessments AS assessment
-     WHERE assessment.tenant_id = affected_tenant_id
-       AND assessment.targeting_profile_id = affected_targeting_profile_id
-       AND assessment.prospect_entity_id = affected_prospect_entity_id
+      WHERE assessment.tenant_id = affected_tenant_id
+        AND assessment.targeting_profile_id = affected_targeting_profile_id
+        AND assessment.targeting_profile_version = affected_targeting_profile_version
+        AND assessment.prospect_entity_id = affected_prospect_entity_id
        FOR UPDATE;
 
     SELECT EXISTS (
         SELECT 1 FROM public.prospect_evidence AS evidence
-         WHERE evidence.tenant_id = affected_tenant_id
-           AND evidence.targeting_profile_id = affected_targeting_profile_id
-           AND evidence.prospect_entity_id = affected_prospect_entity_id
+          WHERE evidence.tenant_id = affected_tenant_id
+            AND evidence.targeting_profile_id = affected_targeting_profile_id
+            AND evidence.targeting_profile_version = affected_targeting_profile_version
+            AND evidence.prospect_entity_id = affected_prospect_entity_id
            AND evidence.evidence_status = 'accepted'
            AND evidence.evidence_type = 'trigger'
     ), EXISTS (
         SELECT 1 FROM public.prospect_evidence AS evidence
          WHERE evidence.tenant_id = affected_tenant_id
            AND evidence.targeting_profile_id = affected_targeting_profile_id
+           AND evidence.targeting_profile_version = affected_targeting_profile_version
            AND evidence.prospect_entity_id = affected_prospect_entity_id
            AND evidence.evidence_status = 'accepted'
            AND evidence.evidence_type IN ('problem', 'evaluation')
@@ -1442,6 +1595,7 @@ BEGIN
         SELECT 1 FROM public.prospect_evidence AS evidence
          WHERE evidence.tenant_id = affected_tenant_id
            AND evidence.targeting_profile_id = affected_targeting_profile_id
+           AND evidence.targeting_profile_version = affected_targeting_profile_version
            AND evidence.prospect_entity_id = affected_prospect_entity_id
            AND evidence.evidence_status = 'accepted'
            AND evidence.evidence_type = 'evaluation'
@@ -1465,9 +1619,10 @@ BEGIN
            rejected_at = NULL,
            last_assessed_at = NOW(),
            updated_at = NOW()
-     WHERE assessment.tenant_id = affected_tenant_id
-       AND assessment.targeting_profile_id = affected_targeting_profile_id
-       AND assessment.prospect_entity_id = affected_prospect_entity_id
+      WHERE assessment.tenant_id = affected_tenant_id
+        AND assessment.targeting_profile_id = affected_targeting_profile_id
+        AND assessment.targeting_profile_version = affected_targeting_profile_version
+        AND assessment.prospect_entity_id = affected_prospect_entity_id
        AND assessment.assessment_state <> 'rejected';
     IF TG_OP = 'DELETE' THEN
         RETURN OLD;
@@ -1680,6 +1835,7 @@ AS $$
 DECLARE
     resolved_tenant_id TEXT;
     saved_profile public.targeting_profiles%ROWTYPE;
+    profile_changed BOOLEAN;
 BEGIN
     IF auth.uid() IS NULL THEN
         RAISE EXCEPTION 'authentication is required to save a targeting profile'
@@ -1748,7 +1904,97 @@ BEGIN
         approved_at = NOW(),
         approved_by = auth.uid()::TEXT,
         updated_at = NOW()
+    WHERE public.targeting_profiles.target_types
+              IS DISTINCT FROM EXCLUDED.target_types
+       OR public.targeting_profiles.ideal_customer_traits
+              IS DISTINCT FROM EXCLUDED.ideal_customer_traits
+       OR public.targeting_profiles.change_triggers
+              IS DISTINCT FROM EXCLUDED.change_triggers
+       OR public.targeting_profiles.strong_evidence_definitions
+              IS DISTINCT FROM EXCLUDED.strong_evidence_definitions
+       OR public.targeting_profiles.exclusions
+              IS DISTINCT FROM EXCLUDED.exclusions
+       OR public.targeting_profiles.seed_urls
+              IS DISTINCT FROM EXCLUDED.seed_urls
     RETURNING * INTO saved_profile;
+    profile_changed := FOUND;
+
+    -- A retry with the same normalized brief is not a new policy. Preserve its
+    -- revision and every current run/watch/opportunity rather than creating
+    -- churn merely because the browser submitted the form twice.
+    IF NOT profile_changed THEN
+        SELECT profile.*
+          INTO saved_profile
+          FROM public.targeting_profiles AS profile
+         WHERE profile.tenant_id = resolved_tenant_id
+           AND profile.service_profile_id = target_service_profile_id
+         LIMIT 1;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'could not resolve the existing targeting profile'
+                USING ERRCODE = '40001';
+        END IF;
+    END IF;
+
+    -- A changed brief invalidates the rationale for an existing background
+    -- watch. Pause rather than silently carrying it into the new policy; the
+    -- user can deliberately re-enable any current target after reviewing it.
+    -- The monitor contract is optional, so use dynamic SQL only when its table
+    -- is present and keep this base contract independently deployable.
+    IF profile_changed
+       AND saved_profile.profile_version > 1
+       AND to_regclass('public.prospect_target_monitors') IS NOT NULL THEN
+        EXECUTE
+            'UPDATE public.prospect_target_monitors AS monitor
+                SET status = ''paused'',
+                    dispatch_lease_until = NULL,
+                    last_error_code = NULL,
+                    updated_at = NOW()
+              WHERE monitor.tenant_id = $1
+                AND monitor.targeting_profile_id = $2
+                AND monitor.status = ''active'''
+        USING saved_profile.tenant_id, saved_profile.id;
+    END IF;
+
+    -- A brief revision deliberately starts generated/provider targets over so
+    -- they can be scored under the new policy. Preserve only non-rejected
+    -- manual choices as fresh fit-only assessments; manual selection confirms
+    -- target fit but never carries forward buyer evidence or intent.
+    INSERT INTO public.prospect_assessments (
+        tenant_id,
+        targeting_profile_id,
+        targeting_profile_version,
+        prospect_entity_id,
+        assessment_state,
+        fit_score,
+        priority_score,
+        reason_codes
+    )
+    SELECT saved_profile.tenant_id,
+           saved_profile.id,
+           saved_profile.profile_version,
+           entity.id,
+           'high_fit',
+           0.5,
+           42.5,
+           '["manual_seed", "manual_target_confirmed_fit"]'::JSONB
+      FROM public.prospect_entities AS entity
+     WHERE entity.tenant_id = saved_profile.tenant_id
+       AND entity.origin_kind = 'manual'
+       AND saved_profile.target_types @> jsonb_build_array(entity.entity_kind)
+       AND NOT EXISTS (
+            SELECT 1
+              FROM public.prospect_assessments AS prior_assessment
+             WHERE prior_assessment.tenant_id = entity.tenant_id
+               AND prior_assessment.targeting_profile_id = saved_profile.id
+               AND prior_assessment.prospect_entity_id = entity.id
+               AND prior_assessment.assessment_state = 'rejected'
+       )
+    ON CONFLICT (
+        tenant_id,
+        targeting_profile_id,
+        targeting_profile_version,
+        prospect_entity_id
+    ) DO NOTHING;
 
     RETURN saved_profile;
 END;
@@ -1777,6 +2023,7 @@ AS $$
 DECLARE
     resolved_tenant_id TEXT;
     resolved_targeting_profile_id UUID;
+    resolved_targeting_profile_version INTEGER;
     resolved_target_types JSONB;
     resolved_kind TEXT;
     resolved_url TEXT;
@@ -1812,8 +2059,14 @@ BEGIN
         END IF;
     END IF;
 
-    SELECT profile.tenant_id, targeting_profile.id, targeting_profile.target_types
-      INTO resolved_tenant_id, resolved_targeting_profile_id, resolved_target_types
+    SELECT profile.tenant_id,
+           targeting_profile.id,
+           targeting_profile.profile_version,
+           targeting_profile.target_types
+      INTO resolved_tenant_id,
+           resolved_targeting_profile_id,
+           resolved_targeting_profile_version,
+           resolved_target_types
       FROM public.service_profiles AS profile
       INNER JOIN public.tenant_users AS tenant_user
               ON tenant_user.tenant_id::TEXT = profile.tenant_id::TEXT
@@ -1864,6 +2117,7 @@ BEGIN
     INSERT INTO public.prospect_assessments (
         tenant_id,
         targeting_profile_id,
+        targeting_profile_version,
         prospect_entity_id,
         assessment_state,
         fit_score,
@@ -1872,13 +2126,19 @@ BEGIN
     ) VALUES (
         resolved_tenant_id,
         resolved_targeting_profile_id,
+        resolved_targeting_profile_version,
         persisted_entity_id,
         'high_fit',
         0.5,
         42.5,
         '["manual_seed", "manual_target_confirmed_fit"]'::JSONB
     )
-    ON CONFLICT (tenant_id, targeting_profile_id, prospect_entity_id)
+    ON CONFLICT (
+        tenant_id,
+        targeting_profile_id,
+        targeting_profile_version,
+        prospect_entity_id
+    )
     DO UPDATE SET
         last_assessed_at = NOW(),
         updated_at = NOW()
@@ -1893,10 +2153,101 @@ BEGIN
 END;
 $$;
 
--- Return only the tenant's reviewable evidence projection. Global source-post
--- data remains private to the retention layer: the sole projected source-post
--- field is its original URL, used as the human-review citation without URL
--- normalization or any author/body metadata.
+-- Select the active revision through the same state-first ordering used by the
+-- target desk. This keeps a bounded cold-target list from pushing a cited
+-- strong signal outside the result window merely because its fit score is
+-- lower. The expected revision makes a brief edit fail closed during an SSR
+-- request instead of mixing two policies in one response.
+CREATE OR REPLACE FUNCTION public.list_current_prospect_assessments_for_profile(
+    target_profile_id UUID,
+    expected_profile_version INTEGER
+)
+RETURNS TABLE (
+    id UUID,
+    prospect_entity_id UUID,
+    assessment_state TEXT,
+    fit_score DOUBLE PRECISION,
+    trigger_score DOUBLE PRECISION,
+    priority_score DOUBLE PRECISION,
+    reason_codes JSONB,
+    last_assessed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    resolved_tenant_id TEXT;
+    resolved_profile_version INTEGER;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'authentication is required to list prospect targets'
+            USING ERRCODE = '42501';
+    END IF;
+    IF expected_profile_version IS NULL OR expected_profile_version < 1 THEN
+        RAISE EXCEPTION 'targeting profile revision is invalid'
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT profile.tenant_id, profile.profile_version
+      INTO resolved_tenant_id, resolved_profile_version
+      FROM public.targeting_profiles AS profile
+     WHERE profile.id = target_profile_id
+       AND profile.profile_version = expected_profile_version
+       AND EXISTS (
+            SELECT 1
+              FROM public.tenant_users AS tenant_user
+             WHERE tenant_user.tenant_id::TEXT = profile.tenant_id::TEXT
+               AND tenant_user.user_id::TEXT = auth.uid()::TEXT
+       )
+     LIMIT 1;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'targeting profile is not available at this revision'
+            USING ERRCODE = '42501';
+    END IF;
+
+    RETURN QUERY
+    SELECT assessment.id,
+           assessment.prospect_entity_id,
+           assessment.assessment_state,
+           assessment.fit_score,
+           assessment.trigger_score,
+           assessment.priority_score,
+           assessment.reason_codes,
+           assessment.last_assessed_at,
+           assessment.updated_at
+      FROM public.prospect_assessments AS assessment
+      INNER JOIN public.targeting_profiles AS profile
+              ON profile.tenant_id = assessment.tenant_id
+             AND profile.id = assessment.targeting_profile_id
+             AND profile.profile_version = assessment.targeting_profile_version
+     WHERE assessment.tenant_id = resolved_tenant_id
+       AND assessment.targeting_profile_id = target_profile_id
+       AND assessment.targeting_profile_version = resolved_profile_version
+     ORDER BY CASE assessment.assessment_state
+                  WHEN 'strong_buyer_signal' THEN 0
+                  WHEN 'signal_backed' THEN 1
+                  WHEN 'triggered' THEN 2
+                  WHEN 'high_fit' THEN 3
+                  WHEN 'rejected' THEN 4
+                  ELSE 5
+              END ASC,
+              assessment.priority_score DESC,
+              assessment.last_assessed_at DESC,
+              assessment.id ASC
+     LIMIT 100;
+END;
+$$;
+
+-- Return only the tenant's reviewable evidence projection. It uses the same
+-- state-first 100-target window as the desk and caps each target at its
+-- persisted maximum of eight citations. A single recently researched target
+-- therefore cannot push another visible target's accepted evidence out of a
+-- global recency limit. Global source-post data remains private to the
+-- retention layer: the sole projected source-post field is its original URL,
+-- used as the human-review citation without URL normalization or any
+-- author/body metadata.
 CREATE OR REPLACE FUNCTION public.list_prospect_evidence_for_profile(
     target_profile_id UUID
 )
@@ -1918,14 +2269,15 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     resolved_tenant_id TEXT;
+    resolved_profile_version INTEGER;
 BEGIN
     IF auth.uid() IS NULL THEN
         RAISE EXCEPTION 'authentication is required to list target evidence'
             USING ERRCODE = '42501';
     END IF;
 
-    SELECT profile.tenant_id
-      INTO resolved_tenant_id
+    SELECT profile.tenant_id, profile.profile_version
+      INTO resolved_tenant_id, resolved_profile_version
       FROM public.targeting_profiles AS profile
      WHERE profile.id = target_profile_id
        AND EXISTS (
@@ -1941,6 +2293,66 @@ BEGIN
     END IF;
 
     RETURN QUERY
+    WITH desk_targets AS (
+        SELECT assessment.prospect_entity_id,
+               CASE assessment.assessment_state
+                   WHEN 'strong_buyer_signal' THEN 0
+                   WHEN 'signal_backed' THEN 1
+                   WHEN 'triggered' THEN 2
+                   WHEN 'high_fit' THEN 3
+                   WHEN 'rejected' THEN 4
+                   ELSE 5
+               END AS state_rank,
+               assessment.priority_score,
+               assessment.last_assessed_at
+          FROM public.prospect_assessments AS assessment
+          INNER JOIN public.targeting_profiles AS profile
+                  ON profile.tenant_id = assessment.tenant_id
+                 AND profile.id = assessment.targeting_profile_id
+                 AND profile.profile_version = assessment.targeting_profile_version
+         WHERE assessment.tenant_id = resolved_tenant_id
+           AND assessment.targeting_profile_id = target_profile_id
+           AND assessment.targeting_profile_version = resolved_profile_version
+         ORDER BY CASE assessment.assessment_state
+                      WHEN 'strong_buyer_signal' THEN 0
+                      WHEN 'signal_backed' THEN 1
+                      WHEN 'triggered' THEN 2
+                      WHEN 'high_fit' THEN 3
+                      WHEN 'rejected' THEN 4
+                      ELSE 5
+                  END ASC,
+                  assessment.priority_score DESC,
+                  assessment.last_assessed_at DESC,
+                  assessment.id ASC
+         LIMIT 100
+    ),
+    ranked_evidence AS (
+        SELECT evidence.id,
+               evidence.prospect_entity_id,
+               evidence.evidence_type,
+               evidence.summary,
+               evidence.source,
+               evidence.source_url,
+               evidence.source_post_id,
+               evidence.evidence_excerpt,
+               evidence.evidence_strength,
+               evidence.evidence_status,
+               evidence.observed_at,
+               target.state_rank,
+               target.priority_score,
+               target.last_assessed_at,
+               ROW_NUMBER() OVER (
+                   PARTITION BY evidence.prospect_entity_id
+                   ORDER BY evidence.observed_at DESC, evidence.id DESC
+               ) AS evidence_rank
+          FROM public.prospect_evidence AS evidence
+          INNER JOIN desk_targets AS target
+                  ON target.prospect_entity_id = evidence.prospect_entity_id
+         WHERE evidence.tenant_id = resolved_tenant_id
+           AND evidence.targeting_profile_id = target_profile_id
+           AND evidence.targeting_profile_version = resolved_profile_version
+           AND evidence.evidence_status IN ('pending', 'accepted')
+    )
     SELECT evidence.id,
            evidence.prospect_entity_id,
            evidence.evidence_type,
@@ -1951,15 +2363,16 @@ BEGIN
            evidence.evidence_strength,
            evidence.evidence_status,
            evidence.observed_at
-      FROM public.prospect_evidence AS evidence
+      FROM ranked_evidence AS evidence
       LEFT JOIN public.source_posts AS source_posts
              ON source_posts.id = evidence.source_post_id
             AND source_posts.tenant_id IS NULL
-     WHERE evidence.tenant_id = resolved_tenant_id
-       AND evidence.targeting_profile_id = target_profile_id
-       AND evidence.evidence_status IN ('pending', 'accepted')
-     ORDER BY evidence.observed_at DESC, evidence.id DESC
-     LIMIT 300;
+     WHERE evidence.evidence_rank <= 8
+     ORDER BY evidence.state_rank ASC,
+              evidence.priority_score DESC,
+              evidence.last_assessed_at DESC,
+              evidence.observed_at DESC,
+              evidence.id ASC;
 END;
 $$;
 
@@ -1981,14 +2394,15 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     resolved_tenant_id TEXT;
+    resolved_profile_version INTEGER;
 BEGIN
     IF auth.uid() IS NULL THEN
         RAISE EXCEPTION 'authentication is required to list target feedback'
             USING ERRCODE = '42501';
     END IF;
 
-    SELECT profile.tenant_id
-      INTO resolved_tenant_id
+    SELECT profile.tenant_id, profile.profile_version
+      INTO resolved_tenant_id, resolved_profile_version
       FROM public.targeting_profiles AS profile
      WHERE profile.id = target_profile_id
        AND EXISTS (
@@ -2012,8 +2426,13 @@ BEGIN
       INNER JOIN public.prospect_assessments AS assessment
               ON assessment.id = feedback.prospect_assessment_id
              AND assessment.tenant_id = feedback.tenant_id
+      INNER JOIN public.targeting_profiles AS profile
+              ON profile.tenant_id = assessment.tenant_id
+             AND profile.id = assessment.targeting_profile_id
+             AND profile.profile_version = assessment.targeting_profile_version
      WHERE feedback.tenant_id = resolved_tenant_id
        AND assessment.targeting_profile_id = target_profile_id
+       AND profile.profile_version = resolved_profile_version
      GROUP BY feedback.feedback_type
      ORDER BY max(feedback.created_at) DESC, feedback.feedback_type ASC
      LIMIT 9;
@@ -2059,7 +2478,11 @@ BEGIN
     SELECT evidence.*
       INTO saved_evidence
       FROM public.prospect_evidence AS evidence
-     WHERE evidence.id = target_evidence_id
+      INNER JOIN public.targeting_profiles AS profile
+              ON profile.id = evidence.targeting_profile_id
+             AND profile.tenant_id = evidence.tenant_id
+             AND profile.profile_version = evidence.targeting_profile_version
+      WHERE evidence.id = target_evidence_id
        AND EXISTS (
             SELECT 1
               FROM public.tenant_users AS tenant_user
@@ -2091,8 +2514,9 @@ BEGIN
       INTO assessment_id, assessment_state
       FROM public.prospect_assessments AS assessment
      WHERE assessment.tenant_id = saved_evidence.tenant_id
-       AND assessment.targeting_profile_id = saved_evidence.targeting_profile_id
-       AND assessment.prospect_entity_id = saved_evidence.prospect_entity_id;
+        AND assessment.targeting_profile_id = saved_evidence.targeting_profile_id
+        AND assessment.targeting_profile_version = saved_evidence.targeting_profile_version
+        AND assessment.prospect_entity_id = saved_evidence.prospect_entity_id;
     RETURN NEXT;
 END;
 $$;
@@ -2133,6 +2557,10 @@ BEGIN
     SELECT assessment.tenant_id
       INTO resolved_tenant_id
       FROM public.prospect_assessments AS assessment
+      INNER JOIN public.targeting_profiles AS profile
+              ON profile.tenant_id = assessment.tenant_id
+             AND profile.id = assessment.targeting_profile_id
+             AND profile.profile_version = assessment.targeting_profile_version
       INNER JOIN public.tenant_users AS tenant_user
               ON tenant_user.tenant_id::TEXT = assessment.tenant_id::TEXT
              AND tenant_user.user_id::TEXT = auth.uid()::TEXT
@@ -2193,12 +2621,14 @@ REVOKE ALL ON FUNCTION public.guard_prospect_feedback_tenant_scope() FROM PUBLIC
 REVOKE ALL ON FUNCTION public.reconcile_prospect_assessment_after_evidence_change() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.upsert_targeting_profile(UUID, JSONB, JSONB, JSONB, JSONB, JSONB, JSONB) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.create_manual_prospect_entity(UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_current_prospect_assessments_for_profile(UUID, INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_prospect_evidence_for_profile(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_prospect_feedback_summary_for_profile(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.review_prospect_evidence(UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.submit_prospect_feedback(UUID, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.upsert_targeting_profile(UUID, JSONB, JSONB, JSONB, JSONB, JSONB, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_manual_prospect_entity(UUID, TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_current_prospect_assessments_for_profile(UUID, INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_prospect_evidence_for_profile(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_prospect_feedback_summary_for_profile(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.review_prospect_evidence(UUID, TEXT) TO authenticated;

@@ -75,14 +75,24 @@ export default async function TargetsPage() {
   const targetMonitoringEnabled = retainedPublicTargetMonitoringUiIsEnabled();
   const entityResearchEnabled = candidateGenerationEnabled || evidenceResearchEnabled;
   const [targets, feedbackSummary, monitoringStatuses, opportunityStatuses, entityResearchRuns] = await Promise.all([
-    fetchProspectTargets(supabase, tenantId, targetingBrief.id),
+    fetchProspectTargets(
+      supabase,
+      tenantId,
+      targetingBrief.id,
+      targetingBrief.profileVersion,
+    ),
     fetchProspectFeedbackSummary(supabase, targetingBrief.id),
     targetMonitoringEnabled
       ? fetchProspectTargetMonitoringStatuses(supabase, targetingBrief.id)
       : Promise.resolve(null),
     fetchProspectTargetOpportunityStatuses(supabase, targetingBrief.id),
     entityResearchEnabled
-      ? fetchEntityResearchRunStatuses(supabase, tenantId, targetingBrief.id)
+      ? fetchEntityResearchRunStatuses(
+          supabase,
+          tenantId,
+          targetingBrief.id,
+          targetingBrief.profileVersion,
+        )
       : Promise.resolve<Awaited<ReturnType<typeof fetchEntityResearchRunStatuses>>>({}),
   ]);
   // An enabled flag alone is insufficient during an additive deployment: the

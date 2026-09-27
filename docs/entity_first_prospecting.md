@@ -23,10 +23,10 @@ before variable-cost or privacy-sensitive enrichment begins.
 ## Bounded Phase 2 generation
 
 The backend now supports an explicitly requested, feature-gated official-site
-generation run. It is not exposed as a dashboard button until the migration,
-FastAPI service, Redis producer, and Dramatiq worker have all been deployed.
-The hidden trusted trigger records an idempotent request before it puts only a
-tenant ID and run ID on the queue.
+generation run. The Targets dashboard exposes its explicit generation action
+only when the migration, FastAPI service, Redis producer, and Dramatiq worker
+are all deployed and the feature flag is enabled. The trusted trigger records
+an idempotent request before it puts only a tenant ID and run ID on the queue.
 
 For one approved targeting-brief revision, the worker:
 
@@ -69,6 +69,19 @@ a person or company will buy. The browser withholds a strong-signal label if
 the returned evidence does not contain cited, verified direct evaluation
 evidence.
 
+## Brief revisions are a policy boundary
+
+Every saved targeting brief has a monotonically increasing revision. The target
+desk reads assessments, evidence, research-run status, feedback summaries, and
+opportunity state only from the active revision. A changed brief therefore
+never silently relabels old generated/provider research as current.
+
+On a revision, Arcli keeps historical rows for audit but starts generated and
+provider targets over. It carries forward only a non-rejected manual target as
+a fresh `high_fit` target with no buyer evidence. Existing retained-evidence
+runs are pinned to the old revision and safely stop rather than writing into
+the new one. Active target monitors pause and must be explicitly re-enabled.
+
 ## Data boundary
 
 `scripts/entity_first_prospecting_contract.sql` creates tenant-scoped tables
@@ -98,7 +111,10 @@ writes are narrowly scoped RPCs that derive the tenant from `auth.uid()`:
 evidence projection. A review can only move pending evidence to `accepted` or
 `rejected`; an identical retry is safe and a conflicting second decision is
 rejected. Only accepted, cited evidence can affect the target assessment. It
-does not create a lead, a contact, or a CRM action.
+does not create a lead, a contact, or a CRM action. The projection uses the
+same state-first 100-target window as the desk and returns at most eight
+reviewable citations per target, so a recently researched account cannot hide
+another visible target's accepted evidence.
 
 The target desk can also record fixed human workflow outcomes—keep targeting,
 not relevant, contacted, meeting, or won—through
@@ -111,6 +127,27 @@ enough real outcomes exist.
 counts and timestamps by outcome type for the active workspace. It omits
 reviewer identities and individual target history, so it can show calibration
 readiness without creating a people or contact dataset.
+
+## Human-reviewed opportunity handoff
+
+`scripts/prospect_target_opportunity_contract.sql` adds an optional workflow
+after evidence review. A paid workspace member may create one local opportunity
+only from accepted, cited `trigger`, `problem`, or `evaluation` evidence on a
+current non-rejected target. Creating it does not export anything; it records a
+bounded `promote_to_opportunity` feedback event for later calibration.
+
+Qualification is a separate explicit decision. It can issue one best-effort,
+SSRF-protected CRM webhook only if the workspace configured one. The handoff
+contains the approved citation and the public target kind/title/URL, never a
+contact, person profile, raw source post, suggested message, or automatic
+outreach. `qualified` means the local workflow decision succeeded; it does not
+mean the receiving CRM accepted delivery, and Arcli does not retry delivery
+automatically.
+
+Changing a brief invalidates pending opportunities from its older revision.
+Qualified opportunities remain historical records. Ordinary source/evidence
+retention can remove a local opportunity through its cited-evidence foreign
+key; an external CRM record is not recalled.
 
 ## Opt-in retained-public target monitoring
 
@@ -138,11 +175,21 @@ changes a score automatically, or exports to a CRM.
 
 ## Deployment
 
-Apply the migration after the prospect intelligence and candidate-pool
-contracts:
+Apply the base migration after the prospect intelligence and candidate-pool
+contracts. On an existing entity-first deployment, rerun this idempotent script
+to add the revision-scoped assessment/evidence upgrade before deploying the
+matching web/API/worker code:
 
 ```text
 scripts/entity_first_prospecting_contract.sql
+```
+
+For the optional human opportunity handoff, apply the paid-plan guard first,
+then the handoff contract:
+
+```text
+scripts/enforce-free-plan-limits.sql
+scripts/prospect_target_opportunity_contract.sql
 ```
 
 Then redeploy the API, web application, and Dramatiq worker. Keep
@@ -152,7 +199,7 @@ the additive contract is not yet present; it does not affect existing
 public-post lead discovery.
 
 If enabling opt-in target monitoring, apply
-prospect_target_monitoring_contract.sql after this base contract and deploy its
+`scripts/prospect_target_monitoring_contract.sql` after this base contract and deploy its
 system-queue scheduler before enabling the monitoring flag. The retained
 evidence and monitoring flags must be enabled together; leave both monitoring
 surfaces disabled during a partial rollout.
@@ -201,8 +248,8 @@ Before enabling this path, apply
 `scripts/entity_first_prospecting_contract.sql` and deploy the matching API,
 database worker, and broker configuration together. Verify that the global
 public-source retention contract is already live. Keep the flag unset or
-`false` during a partial rollout; no dashboard control should imply that
-research is active before the trusted dispatch path is deployed.
+`false` during a partial rollout; the dashboard action remains unavailable
+until the trusted dispatch path is deployed.
 
 Typical production settings are:
 

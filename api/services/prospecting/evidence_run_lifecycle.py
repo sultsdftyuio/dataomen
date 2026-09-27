@@ -137,10 +137,17 @@ def _load_selected_targets(
     *,
     tenant_id: str,
     targeting_profile_id: str,
+    targeting_profile_version: int,
     entity_ids: Sequence[str],
 ) -> tuple[EvidenceCollectionTargetSnapshot, ...]:
     bindings, params = _entity_id_bindings(entity_ids)
-    params.update({"tenant_id": tenant_id, "targeting_profile_id": targeting_profile_id})
+    params.update(
+        {
+            "tenant_id": tenant_id,
+            "targeting_profile_id": targeting_profile_id,
+            "targeting_profile_version": targeting_profile_version,
+        },
+    )
     rows = conn.execute(
         text(
             f"""
@@ -154,8 +161,9 @@ def _load_selected_targets(
                       ON assessment.prospect_entity_id = entity.id
                      AND assessment.tenant_id = entity.tenant_id
              WHERE entity.tenant_id = :tenant_id
-               AND assessment.targeting_profile_id = CAST(:targeting_profile_id AS uuid)
-               AND entity.id IN ({bindings})
+                AND assessment.targeting_profile_id = CAST(:targeting_profile_id AS uuid)
+                AND assessment.targeting_profile_version = :targeting_profile_version
+                AND entity.id IN ({bindings})
              ORDER BY entity.id ASC
             """
         ),
@@ -389,11 +397,17 @@ def _create_evidence_collection_run_with_connection(
     )
     if snapshot is None:
         return EvidenceCollectionRunCreation(None, None, False, "targeting_profile_unavailable")
+    if (
+        request.expected_profile_version is not None
+        and snapshot.profile_version != request.expected_profile_version
+    ):
+        return EvidenceCollectionRunCreation(None, None, False, "targeting_profile_changed")
     try:
         targets = _load_selected_targets(
             conn,
             tenant_id=request.tenant_id,
             targeting_profile_id=snapshot.id,
+            targeting_profile_version=snapshot.profile_version,
             entity_ids=request.prospect_entity_ids,
         )
     except ValueError:
@@ -630,8 +644,9 @@ def _load_current_run_targets(
                      AND entity.tenant_id = selection.tenant_id
               INNER JOIN public.prospect_assessments AS assessment
                       ON assessment.prospect_entity_id = selection.prospect_entity_id
-                     AND assessment.tenant_id = selection.tenant_id
-                     AND assessment.targeting_profile_id = CAST(:targeting_profile_id AS uuid)
+                      AND assessment.tenant_id = selection.tenant_id
+                      AND assessment.targeting_profile_id = CAST(:targeting_profile_id AS uuid)
+                      AND assessment.targeting_profile_version = :targeting_profile_version
              WHERE selection.tenant_id = :tenant_id
                AND selection.research_run_id = CAST(:run_id AS uuid)
              ORDER BY selection.request_position ASC
@@ -641,6 +656,7 @@ def _load_current_run_targets(
             "tenant_id": run.tenant_id,
             "run_id": run.id,
             "targeting_profile_id": run.targeting_profile_id,
+            "targeting_profile_version": run.targeting_profile_version,
         },
     ).mappings()
     target_plans: list[EvidenceCollectionTargetPlan] = []

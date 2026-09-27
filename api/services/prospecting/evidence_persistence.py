@@ -90,7 +90,8 @@ def _validate_scope(
 
 
 _ACTIVE_CLAIM_SQL = """
-    SELECT run.id
+    SELECT run.id,
+           run.targeting_profile_version
       FROM public.prospect_research_runs AS run
       INNER JOIN public.targeting_profiles AS profile
               ON profile.id = run.targeting_profile_id
@@ -106,6 +107,7 @@ _ACTIVE_CLAIM_SQL = """
               ON assessment.prospect_entity_id = selection.prospect_entity_id
              AND assessment.tenant_id = selection.tenant_id
              AND assessment.targeting_profile_id = run.targeting_profile_id
+             AND assessment.targeting_profile_version = run.targeting_profile_version
      WHERE run.id = CAST(:run_id AS uuid)
        AND run.tenant_id = :tenant_id
        AND run.run_kind = 'evidence_collection'
@@ -228,6 +230,7 @@ def persist_retained_public_evidence(
             INSERT INTO public.prospect_evidence (
                 tenant_id,
                 targeting_profile_id,
+                targeting_profile_version,
                 prospect_entity_id,
                 research_run_id,
                 evidence_type,
@@ -243,6 +246,7 @@ def persist_retained_public_evidence(
             )
             SELECT :tenant_id,
                    CAST(:targeting_profile_id AS uuid),
+                   active_claim.targeting_profile_version,
                    CAST(:prospect_entity_id AS uuid),
                    CAST(:research_run_id AS uuid),
                    'evaluation',
@@ -270,10 +274,16 @@ def persist_retained_public_evidence(
                     SELECT count(*)
                       FROM public.prospect_evidence AS existing_evidence
                      WHERE existing_evidence.tenant_id = :tenant_id
-                       AND existing_evidence.research_run_id = CAST(:research_run_id AS uuid)
-                       AND existing_evidence.prospect_entity_id = CAST(:prospect_entity_id AS uuid)
-               ) < :evidence_limit
-            ON CONFLICT (tenant_id, targeting_profile_id, evidence_key)
+                        AND existing_evidence.research_run_id = CAST(:research_run_id AS uuid)
+                        AND existing_evidence.prospect_entity_id = CAST(:prospect_entity_id AS uuid)
+                        AND existing_evidence.targeting_profile_version = active_claim.targeting_profile_version
+                ) < :evidence_limit
+            ON CONFLICT (
+                tenant_id,
+                targeting_profile_id,
+                targeting_profile_version,
+                evidence_key
+            )
             DO NOTHING
             RETURNING id
             """

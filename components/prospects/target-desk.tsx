@@ -382,7 +382,10 @@ export function TargetDesk({
         const priorityDifference =
           targetAssessmentPriority(left.assessmentState) -
           targetAssessmentPriority(right.assessmentState);
-        return priorityDifference || targetTimestamp(right) - targetTimestamp(left) || left.displayName.localeCompare(right.displayName);
+        return priorityDifference ||
+          right.priorityScore - left.priorityScore ||
+          targetTimestamp(right) - targetTimestamp(left) ||
+          left.displayName.localeCompare(right.displayName);
       }),
     [targets],
   );
@@ -539,6 +542,12 @@ export function TargetDesk({
 
             <div className="mt-4 rounded-lg border p-3" style={{ borderColor: TONE_COLORS[selectedPresentation.tone].border, backgroundColor: TONE_COLORS[selectedPresentation.tone].background }}>
               <AssessmentBadge target={selectedTarget} />
+              <p className="mt-1.5 text-[11px] font-medium" style={{ color: TONE_COLORS[selectedPresentation.tone].color }}>
+                Research priority {Math.round(selectedTarget.priorityScore)} / 100
+                {selectedTarget.fitScore !== null
+                  ? " · fit " + Math.round(selectedTarget.fitScore * 100) + " / 100"
+                  : ""}
+              </p>
               <p className="mt-2 text-xs leading-5" style={{ color: TONE_COLORS[selectedPresentation.tone].color }}>
                 {selectedPresentation.description}
               </p>
@@ -604,6 +613,7 @@ export function TargetDesk({
             (onCreateOpportunity || onQualifyOpportunity) ? (
               <TargetOpportunityControls
                 assessmentId={selectedTarget.assessmentId}
+                assessmentState={selectedTarget.assessmentState}
                 evidence={evidence}
                 opportunity={selectedTarget.opportunity}
                 onCreate={onCreateOpportunity}
