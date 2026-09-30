@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
+  BellRing,
   CheckCircle2,
   FileSearch,
   Globe2,
@@ -26,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { useAsyncProvisioning } from "@/hooks/useAsyncProvisioning";
 import { C } from "@/lib/tokens";
 import type { ProspectActionResult } from "@/app/(dashboard)/dashboard/prospect-types";
+import type { ResultEmailOffer } from "./result-email-prompt";
 
 export function ResultText({ result }: { result: ProspectActionResult | null }) {
   if (!result) return null;
@@ -114,6 +116,8 @@ type WebsiteConnectStateProps = {
   websiteUrl: string;
   websiteResult: ProspectActionResult | null;
   isWebsitePending: boolean;
+  resultEmailOffer: ResultEmailOffer;
+  emailPromptAnswered: boolean;
   onWebsiteUrlChange: (value: string) => void;
   onWebsiteSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
@@ -122,6 +126,8 @@ export function WebsiteConnectState({
   websiteUrl,
   websiteResult,
   isWebsitePending,
+  resultEmailOffer,
+  emailPromptAnswered,
   onWebsiteUrlChange,
   onWebsiteSubmit,
 }: WebsiteConnectStateProps) {
@@ -251,6 +257,20 @@ export function WebsiteConnectState({
                   </p>
                 )}
               </div>
+              {resultEmailOffer.status !== "ineligible" ? (
+                <div className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+                  <BellRing className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
+                  <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+                    {resultEmailOffer.status === "on"
+                      ? `Result emails are on for ${resultEmailOffer.email}. You can change this in Settings.`
+                      : resultEmailOffer.status === "off" && !emailPromptAnswered
+                        ? "After you choose your website, you can decide whether to get optional result updates by email."
+                        : resultEmailOffer.status === "off"
+                          ? "Result emails are off. You can turn them on later in Settings."
+                          : "You can manage optional result emails in Settings after setup."}
+                  </p>
+                </div>
+              ) : null}
               <Button
                 type="submit"
                 disabled={isWebsitePending || !websiteUrl.trim()}

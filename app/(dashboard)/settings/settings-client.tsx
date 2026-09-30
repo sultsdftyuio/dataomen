@@ -81,7 +81,7 @@ export default function SettingsClient({
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Signed in as</p>
                   <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>{displayName}</p>
-                  <p className="text-xs" style={{ color: C.navySoft }}>Account owner</p>
+                  <p className="text-xs" style={{ color: C.navySoft }}>Signed-in account</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 sm:border-l sm:pl-5" style={{ borderColor: C.rule }}>
@@ -125,6 +125,7 @@ export default function SettingsClient({
           <CrawlNotificationPreferences
             initialEnabled={initialCrawlNotificationEmailsEnabled}
             eligible={canReceiveResultEmails}
+            accountEmail={user.email ?? null}
           />
           {showBillingTestControls ? (
             <BillingTestSwitcher currentStatus={planData?.planStatus} />

@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useMemo, useState, useTransition } from "rea
 import { useRouter } from "next/navigation";
 
 import { C } from "@/lib/tokens";
+import { updateResultEmailPreference } from "@/lib/result-email-client";
 import {
   createManualServiceProfile,
   saveServiceProfile,
@@ -30,19 +31,34 @@ import {
   WebsiteConnectState,
   WorkspacePendingState,
 } from "./workspace-provisioning-states";
+import { ResultEmailPrompt, type ResultEmailOffer } from "./result-email-prompt";
 
 type WorkspaceProvisioningPanelProps = {
   workspacePending?: boolean;
   initialWebsiteUrl?: string | null;
   crawlJob?: CrawlJobView | null;
   serviceProfile?: ServiceProfileView;
+  initialResultEmailOffer?: ResultEmailOffer;
 };
+
+function websiteDomainForPrompt(value: string): string | null {
+  try {
+    const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const parsed = new URL(candidate);
+    return ["http:", "https:"].includes(parsed.protocol) && parsed.hostname
+      ? parsed.hostname.replace(/^www\./i, "")
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export function WorkspaceProvisioningPanel({
   workspacePending = false,
   initialWebsiteUrl = null,
   crawlJob = null,
   serviceProfile,
+  initialResultEmailOffer = { status: "unavailable", email: null },
 }: WorkspaceProvisioningPanelProps) {
   const router = useRouter();
   const [websiteUrl, setWebsiteUrl] = useState(
@@ -59,6 +75,11 @@ export function WorkspaceProvisioningPanel({
   const [isManualPending, startManualTransition] = useTransition();
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
   const [statusNow, setStatusNow] = useState(() => Date.now());
+  const [resultEmailOffer, setResultEmailOffer] = useState(initialResultEmailOffer);
+  const [emailPromptOpen, setEmailPromptOpen] = useState(false);
+  const [emailPromptError, setEmailPromptError] = useState<string | null>(null);
+  const [pendingWebsiteUrl, setPendingWebsiteUrl] = useState<string | null>(null);
+  const [emailPromptAnswered, setEmailPromptAnswered] = useState(false);
 
   const effectiveWebsiteUrl =
     submittedWebsiteUrl ?? initialWebsiteUrl ?? serviceProfile?.websiteUrl ?? "";
@@ -126,28 +147,73 @@ export function WorkspaceProvisioningPanel({
     setProfileFields((current) => ({ ...current, [key]: value }));
   };
 
+  const queueWebsite = async (url: string) => {
+    const formData = new FormData();
+    formData.set("website_url", url);
+
+    let result: ProspectActionResult;
+    try {
+      result = await submitWebsiteForCrawl(formData);
+    } catch {
+      result = { ok: false, message: "Could not start the website analysis. Please try again." };
+    }
+    setWebsiteResult(result);
+    const now = Date.now();
+    setStatusNow(now);
+
+    if (result.ok) {
+      setSubmittedWebsiteUrl(url);
+      setSubmittedAt(now);
+      // The discovery screen owns progress for the crawl and first source scan.
+      router.replace("/onboarding/discovery?scan=1");
+      return;
+    }
+    setSubmittedAt(null);
+    router.refresh();
+  };
+
   const handleWebsiteSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData();
-    formData.set("website_url", websiteUrl);
+    const url = websiteUrl.trim();
+    const domain = websiteDomainForPrompt(url);
+    if (!domain) {
+      setWebsiteResult({ ok: false, message: "Enter a valid company website domain." });
+      return;
+    }
+    setWebsiteResult(null);
 
+    if (resultEmailOffer.status === "off" && resultEmailOffer.email && !emailPromptAnswered) {
+      setPendingWebsiteUrl(url);
+      setEmailPromptError(null);
+      setEmailPromptOpen(true);
+      return;
+    }
+    startWebsiteTransition(() => queueWebsite(url));
+  };
+
+  const confirmEmailChoice = (enable: boolean) => {
+    if (!pendingWebsiteUrl) return;
     startWebsiteTransition(async () => {
-      const result = await submitWebsiteForCrawl(formData);
-      setWebsiteResult(result);
-      const now = Date.now();
-      setStatusNow(now);
-
-      if (result.ok) {
-        setSubmittedWebsiteUrl(websiteUrl.trim());
-        setSubmittedAt(now);
-        // Keep the dashboard for the finished result. The dedicated discovery
-        // screen owns progress for the crawl, profile, and first source scan.
-        router.replace("/onboarding/discovery?scan=1");
-        return;
-      } else {
-        setSubmittedAt(null);
+      try {
+        await updateResultEmailPreference(enable);
+        setResultEmailOffer((current) => ({ ...current, status: enable ? "on" : "off" }));
+      } catch (error) {
+        if (enable) {
+          setEmailPromptError(
+            error instanceof Error ? error.message : "Could not save your email choice.",
+          );
+          return;
+        }
+        // This account was already effectively off. A preference-service
+        // failure must not block the website setup when no opt-in occurred.
+        console.warn("[RESULT_EMAIL_OPT_OUT_DURING_ONBOARDING_FAILED]");
       }
-      router.refresh();
+      setEmailPromptAnswered(true);
+      setEmailPromptOpen(false);
+      setEmailPromptError(null);
+      const url = pendingWebsiteUrl;
+      setPendingWebsiteUrl(null);
+      await queueWebsite(url);
     });
   };
 
@@ -227,13 +293,35 @@ export function WorkspaceProvisioningPanel({
 
   if (!effectiveWebsiteUrl) {
     return (
-      <WebsiteConnectState
-        websiteUrl={websiteUrl}
-        websiteResult={websiteResult}
-        isWebsitePending={isWebsitePending}
-        onWebsiteUrlChange={setWebsiteUrl}
-        onWebsiteSubmit={handleWebsiteSubmit}
-      />
+      <>
+        <WebsiteConnectState
+          websiteUrl={websiteUrl}
+          websiteResult={websiteResult}
+          isWebsitePending={isWebsitePending}
+          resultEmailOffer={resultEmailOffer}
+          emailPromptAnswered={emailPromptAnswered}
+          onWebsiteUrlChange={setWebsiteUrl}
+          onWebsiteSubmit={handleWebsiteSubmit}
+        />
+        {resultEmailOffer.email ? (
+          <ResultEmailPrompt
+            open={emailPromptOpen}
+            domain={websiteDomainForPrompt(pendingWebsiteUrl ?? "") ?? "your website"}
+            email={resultEmailOffer.email}
+            pending={isWebsitePending}
+            error={emailPromptError}
+            onOpenChange={(open) => {
+              setEmailPromptOpen(open);
+              if (!open) {
+                setPendingWebsiteUrl(null);
+                setEmailPromptError(null);
+              }
+            }}
+            onContinue={() => confirmEmailChoice(false)}
+            onEnable={() => confirmEmailChoice(true)}
+          />
+        ) : null}
+      </>
     );
   }
 
