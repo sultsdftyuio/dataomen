@@ -31,6 +31,24 @@ class HackerNewsConnectorTests(unittest.TestCase):
         self.assertEqual(post.body, "Need better billing tooling.")
         self.assertEqual(post.url, "https://news.ycombinator.com/item?id=42")
 
+    def test_linked_story_uses_discussion_permalink_as_its_evidence_url(self) -> None:
+        post = HackerNewsConnector._to_source_post(
+            {
+                "objectID": "43",
+                "_tags": ["story"],
+                "author": "alice",
+                "title": "Need a better billing system",
+                "story_text": "Our SaaS team needs a better billing system.",
+                "url": "https://example.com/unrelated-article",
+                "created_at": "2026-07-22T09:00:00Z",
+            },
+            0,
+        )
+
+        self.assertIsNotNone(post)
+        assert post is not None
+        self.assertEqual(post.url, "https://news.ycombinator.com/item?id=43")
+
     def test_deleted_and_empty_hits_are_discarded(self) -> None:
         self.assertIsNone(
             HackerNewsConnector._to_source_post(

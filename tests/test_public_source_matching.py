@@ -210,6 +210,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
                 return None
 
         def record_lead_match(*_args, **kwargs):
+            self.assertEqual(
+                [call.kwargs["status"] for call in advance_pool.call_args_list],
+                ["plausible"],
+            )
             persisted.append(kwargs)
 
         with (
@@ -378,6 +382,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
                 return None
 
         def record_lead_match(*_args, **kwargs):
+            self.assertEqual(
+                [call.kwargs["status"] for call in advance_pool.call_args_list],
+                ["plausible"],
+            )
             persisted.append(kwargs)
 
         with (

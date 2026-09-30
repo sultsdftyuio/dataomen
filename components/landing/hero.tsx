@@ -36,13 +36,13 @@ export function Hero() {
               margin: "0 0 18px",
             }}
           >
-            Find public buyer conversations
+            Find public conversations
             <br />
-            <span style={{ color: C.blue }}>worth acting on.</span>
+            <span style={{ color: C.blue }}>worth reviewing.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.navySoft, lineHeight: 1.62, maxWidth: 550, margin: "0 auto 30px" }}>
-            Arcli turns your website into a review-ready queue of relevant public conversations, with the original source, match reasoning, and a suggested first reply.
+            Build a matching brief from your website for free. On Pro, Arcli searches supported public sources and gives you the original post, the match reasoning, and a suggested way to respond.
           </p>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginBottom: 18 }}>
@@ -68,14 +68,14 @@ export function Hero() {
                 letterSpacing: "0.02em",
               }}
             >
-              Start Free Scan <ArrowRight size={16} />
+              Build Your Free Brief <ArrowRight size={16} />
             </a>
           </div>
           <Link
             href="#proof"
             style={{ color: C.navySoft, fontSize: 14, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 4 }}
           >
-            See a review-ready lead
+            See how a signal is reviewed
           </Link>
         </div>
       </div>

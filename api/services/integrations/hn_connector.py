@@ -347,16 +347,9 @@ class HackerNewsConnector:
         if not posted_at or int(posted_at.timestamp()) < since_timestamp:
             return None
 
-        raw_url = hit.get("url") if not is_comment else None
-        if not isinstance(raw_url, str) or not raw_url.strip():
-            raw_url = hit.get("story_url") if not is_comment else None
-        if isinstance(raw_url, str) and raw_url.startswith("//"):
-            raw_url = f"https:{raw_url}"
-        url = (
-            raw_url.strip()
-            if isinstance(raw_url, str) and raw_url.strip()
-            else f"https://news.ycombinator.com/item?id={source_post_id}"
-        )
+        # The article URL on a linked story is not the discussion containing
+        # this post and its author. Keep the reviewer on the source item.
+        url = f"https://news.ycombinator.com/item?id={source_post_id}"
 
         try:
             return SourcePost(

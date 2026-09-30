@@ -5,7 +5,6 @@ import { deriveBuyerGroupSuggestions } from "@/lib/buyer-group-suggestions";
 import {
   fetchBuyerDemandReport,
   fetchDiscoveryCandidates,
-  fetchLeadQueueCounts,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
   fetchScreenedMatches,
@@ -61,22 +60,25 @@ export default async function DashboardPage() {
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
     getWorkspaceEntitlements(supabase, tenantId),
   ]);
-  const buyerDemandReport = await fetchBuyerDemandReport(
-    supabase,
-    tenantId,
-    serviceProfile.id,
-    threshold,
-  );
+  const buyerDemandReport = entitlements.isPro
+    ? await fetchBuyerDemandReport(
+        supabase,
+        tenantId,
+        serviceProfile.id,
+        threshold,
+      )
+    : null;
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
   const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
   const crawlFailed = crawlStatus === "failed" || crawlStatus === "dead_lettered";
-  const discoveryRunIsActive = Boolean(
+  const discoveryRunIsActive = entitlements.isPro && Boolean(
     buyerDemandReport &&
       !buyerDemandReport.isTerminal &&
       isBuyerDemandReportCurrent(crawlJob, buyerDemandReport),
   );
   const isDiscoveryWarmingUp =
-    isServiceProfileWarmingUp(serviceProfile) || discoveryRunIsActive;
+    (entitlements.isPro && isServiceProfileWarmingUp(serviceProfile)) ||
+    discoveryRunIsActive;
   const buyerGroupSuggestions = deriveBuyerGroupSuggestions({
     targetAudience: serviceProfile.fields.target_audience,
     coreProblem: serviceProfile.fields.core_problem,
@@ -93,10 +95,19 @@ export default async function DashboardPage() {
   // An active crawl still gets the focused progress view. If a job is missing
   // or has failed, keep the dashboard available so the person can see the
   // problem and retry instead of bouncing between two loading routes.
+  if (!entitlements.isPro && crawlIsActive) {
+    redirect("/onboarding/discovery");
+  }
+
+  if (!entitlements.isPro && !serviceProfile.hasProfile) {
+    redirect("/onboarding/workspace");
+  }
+
   if (
     crawlIsActive ||
     discoveryRunIsActive ||
-    (isServiceProfileWarmingUp(serviceProfile) &&
+    (entitlements.isPro &&
+      isServiceProfileWarmingUp(serviceProfile) &&
       crawlJob !== null &&
       !crawlFailed &&
       serviceProfile.hasProfile)
@@ -105,20 +116,10 @@ export default async function DashboardPage() {
   }
 
   if (!entitlements.isPro) {
-    const counts = await fetchLeadQueueCounts(
-      supabase,
-      tenantId,
-      serviceProfile.id,
-      threshold,
-      serviceProfile.updatedAt,
-    );
     return (
       <FreeProspectPreview
         websiteUrl={websiteUrl}
-        counts={counts}
-        scanStatus={crawlStatus}
-        discoveryStatus={buyerDemandReport?.status ?? null}
-        verificationPending={buyerDemandReport?.summary.verifierPending ?? false}
+        serviceProfile={serviceProfile}
       />
     );
   }

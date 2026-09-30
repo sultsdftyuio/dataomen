@@ -41,7 +41,7 @@ export default function Footer() {
               <ul className="space-y-3">
                 <li>
                   <Link href="/#proof" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    See a Review-Ready Lead
+                    See a Public Signal
                   </Link>
                 </li>
                 <li>

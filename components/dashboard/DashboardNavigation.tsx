@@ -128,10 +128,10 @@ export function DashboardNavigation({
                   <Sparkles className="size-3" aria-hidden="true" /> Pro prospect desk
                 </div>
                 <DialogTitle className="pfd mt-3 text-3xl leading-none" style={{ color: C.navy }}>
-                  See the people behind the signal.
+                  Review the evidence behind a match.
                 </DialogTitle>
                 <DialogDescription className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-                  Buyer groups are available on Pro, alongside full match evidence and reply drafts.
+                  Buyer groups are available on Pro, alongside source-linked conversations and reply drafts when relevant matches are found.
                 </DialogDescription>
               </DialogHeader>
             </div>
@@ -139,7 +139,7 @@ export function DashboardNavigation({
             <div className="space-y-4 px-6 pb-6 pt-5">
               <ul className="grid gap-2 text-sm font-semibold" style={{ color: C.navy }}>
                 {[
-                  "Verified matches",
+                  "Source-linked conversations",
                   "Why they fit",
                   "Reply drafts",
                 ].map((feature) => (

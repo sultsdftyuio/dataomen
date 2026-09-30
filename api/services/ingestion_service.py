@@ -95,7 +95,9 @@ def process_initial_public_ingestion_job(
             service_profile_id,
             exc.__class__.__name__,
         )
-        return
+        # An unavailable billing read is not a Free-plan decision. Let the
+        # actor retry instead of acknowledging this tenant's discovery job.
+        raise RuntimeError("Unable to verify lead-discovery entitlement.") from exc
 
     if not lead_discovery_entitled:
         logger.info(

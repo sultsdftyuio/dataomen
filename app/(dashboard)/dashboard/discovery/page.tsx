@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { DiscoveryLoadingPage } from "@/components/onboarding/discovery-loading-page";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import {
   fetchBuyerDemandReport,
   fetchLatestCrawlJob,
@@ -40,10 +41,13 @@ export default async function DashboardDiscoveryPage({ searchParams }: Discovery
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
   if (!websiteUrl) redirect("/onboarding/workspace");
 
-  const [serviceProfile, crawlJob] = await Promise.all([
+  const [serviceProfile, crawlJob, entitlements] = await Promise.all([
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+    getWorkspaceEntitlements(supabase, tenantId),
   ]);
+  if (!entitlements.isPro) redirect("/onboarding/discovery");
+
   const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,
     tenantId,

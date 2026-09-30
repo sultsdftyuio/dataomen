@@ -8,7 +8,7 @@ export const metadata = {
   alternates: { canonical: "/privacy" },
 };
 
-const UPDATED_ON = "August 14, 2026";
+const UPDATED_ON = "September 30, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -41,7 +41,7 @@ export default function PrivacyPolicyPage() {
           </Section>
 
           <Section title="2. Information we collect">
-            <p><strong className="font-semibold text-slate-800">Account and workspace information.</strong> This includes account details, authentication information, billing information provided to a payment provider, your website URL, and the product description or matching brief you provide.</p>
+            <p><strong className="font-semibold text-slate-800">Account and workspace information.</strong> This includes your email address, account details, authentication information, billing information provided to a payment provider, your website URL, and the product description or matching brief you provide.</p>
             <p><strong className="font-semibold text-slate-800">Selected public-source information.</strong> We collect limited content from supported public sources: a public post’s title and text, public handle, link, source name, and publication time. We use it only to assess whether the discussion may be relevant to a customer’s product.</p>
             <p>We do not collect private accounts, private groups, direct messages, profile biographies, or contact-enrichment data. We redact clear email addresses and telephone numbers from text before storage, and exclude posts that clearly concern minors or sensitive personal topics.</p>
             <p><strong className="font-semibold text-slate-800">Service and security information.</strong> We collect technical logs needed to operate, secure, rate-limit, and troubleshoot the Service.</p>
@@ -49,7 +49,8 @@ export default function PrivacyPolicyPage() {
 
           <Section title="3. How we use information">
             <p>We use information to provide the Service, create and secure accounts, process subscriptions, understand the product a customer wants to monitor, retrieve and evaluate relevant public discussions, maintain source and rate-limit controls, and respond to support or privacy requests.</p>
-            <p>Arcli does not sell public-source personal data or use it to train Arcli models. We do not send messages to people from within Arcli. Any customer outreach is a separate, human-controlled action outside the Service.</p>
+            <p>We use your account email for sign-in, recovery, security, billing, and other messages needed to operate your account. Optional website-brief and scan-result emails are off until you opt in through Settings. We rely on that choice to send these optional emails, and you can withdraw it there at any time. They report only website hosts and aggregate outcomes and contain no promotions. We keep delivery and preference records to honor your choice, troubleshoot delivery, and prevent duplicate messages.</p>
+            <p>Arcli does not sell public-source personal data or use it to train Arcli models. We do not send outreach to authors of public posts. Any customer outreach is a separate, human-controlled action outside the Service.</p>
           </Section>
 
           <Section title="4. AI-assisted matching">
@@ -58,7 +59,7 @@ export default function PrivacyPolicyPage() {
           </Section>
 
           <Section title="5. Sharing and public-source rules">
-            <p>We share information only with service providers that help us host, secure, authenticate, process payments, or provide AI-assisted matching, and when legally required. We do not sell or rent personal information.</p>
+            <p>We share information only with service providers that help us host, secure, authenticate, deliver account and optional result emails, process payments, or provide AI-assisted matching, and when legally required. An email provider receives the destination address and message content needed for delivery. We do not sell or rent personal information.</p>
             <p>We limit collection to configured public providers and their permitted public interfaces. We may turn off a source, refuse content, or remove data when source terms, a privacy request, security concerns, or applicable law require it.</p>
           </Section>
 
@@ -70,6 +71,7 @@ export default function PrivacyPolicyPage() {
 
           <Section title="7. Your choices and privacy rights">
             <p>Depending on where you live, you may have rights to request access, correction, deletion, objection, restriction, or portability. We may need to verify your identity before acting on a request.</p>
+            <p>You can enable or disable optional result emails in <Link className="font-medium text-blue-700 underline underline-offset-4" href="/settings#result-emails">Settings</Link>. Turning them off stops future result messages and causes pending, unsent notifications to be skipped. If you change your account email, you must enable result emails again for the new address. An email already being sent cannot be recalled. Account, security, and billing messages remain separate.</p>
             <p>If a public post or public account should not appear in Arcli, use our <Link className="font-medium text-blue-700 underline underline-offset-4" href="/privacy/remove">public-source data removal form</Link>. Once we verify and complete a request, we delete matching records and suppress future collection of the same public post, handle, or link where technically possible.</p>
           </Section>
 

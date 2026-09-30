@@ -1,15 +1,9 @@
 import { FileSearch } from "lucide-react";
 
 import { C } from "@/lib/tokens";
+import { SourceExample } from "./source-example";
 
 const surfaceBorder = "1px solid rgba(15, 23, 42, 0.10)";
-const surfaceShadow = "0 20px 54px rgba(15, 23, 42, 0.14)";
-
-const walkthroughSteps = [
-  "The original buyer conversation.",
-  "Why this is a real fit.",
-  "A thoughtful way to respond.",
-];
 
 export function LeadReviewPreview() {
   return (
@@ -40,7 +34,7 @@ export function LeadReviewPreview() {
             }}
           >
             <span className="section-heading-icon" aria-hidden="true"><FileSearch size={15} /></span>
-            A review-ready lead
+            Evidence you can inspect
           </div>
           <h2
             className="pfd"
@@ -54,23 +48,25 @@ export function LeadReviewPreview() {
               margin: "0 0 18px",
             }}
           >
-            See the evidence before you decide to reach out.
+            Decide what a public signal actually means.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            Follow one public conversation from the original source to a clear match explanation
-            and thoughtful first reply—so you can decide what deserves action.
+            A relevant post is a starting point, not proof that its author is a buyer. Review the
+            original words, the fit, and what remains unknown before deciding what to do.
           </p>
         </div>
 
+        <SourceExample />
+
         <figure
           aria-describedby="lead-review-caption"
-          aria-label="Arcli lead review walkthrough"
+          aria-label="Arcli interface walkthrough"
           style={{
             background: "#FFFFFF",
             border: surfaceBorder,
             borderRadius: 18,
-            boxShadow: surfaceShadow,
-            margin: "36px auto 0",
+            boxShadow: "0 20px 54px rgba(15, 23, 42, 0.14)",
+            margin: "24px auto 0",
             maxWidth: 860,
             overflow: "hidden",
           }}
@@ -90,38 +86,15 @@ export function LeadReviewPreview() {
           <figcaption
             id="lead-review-caption"
             style={{
-              alignItems: "center",
               color: C.navySoft,
-              display: "flex",
-              flexWrap: "wrap",
               fontSize: 14,
-              gap: "10px 22px",
-              justifyContent: "center",
+              lineHeight: 1.6,
               padding: "18px 24px",
+              textAlign: "center",
             }}
           >
-            {walkthroughSteps.map((step, index) => (
-              <span key={step} style={{ alignItems: "center", display: "inline-flex", gap: 8 }}>
-                <span
-                  aria-hidden="true"
-                  style={{
-                    alignItems: "center",
-                    background: C.bluePale,
-                    borderRadius: "50%",
-                    color: C.blue,
-                    display: "inline-flex",
-                    fontSize: 11,
-                    fontWeight: 800,
-                    height: 22,
-                    justifyContent: "center",
-                    width: 22,
-                  }}
-                >
-                  {index + 1}
-                </span>
-                {step}
-              </span>
-            ))}
+            Interface walkthrough: source conversation, fit reasoning, and a suggested next step.
+            The example above is a manually selected historical discussion, not a live customer result.
           </figcaption>
         </figure>
       </div>

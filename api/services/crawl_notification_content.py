@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 _HOST_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$")
 _CRAWL_COMPLETED = "crawl_completed"
+_DISCOVERY_COMPLETED = "discovery_completed"
 _DISCOVERY_PARTIAL = "discovery_partial"
 _CRAWL_FAILED = "crawl_failed"
 
@@ -38,6 +39,21 @@ def _dashboard_url() -> str:
     return configured.rstrip("/")
 
 
+def _with_preferences_link(
+    subject: str, text_body: str, html_body: str, dashboard_url: str
+) -> tuple[str, str, str]:
+    settings_url = urlparse(dashboard_url)._replace(
+        path="/settings", params="", query="", fragment="result-emails"
+    ).geturl()
+    safe_settings_url = html.escape(settings_url, quote=True)
+    return (
+        subject,
+        f"{text_body}\n\nManage optional result emails: {settings_url}",
+        html_body
+        + f'<p><a href="{safe_settings_url}">Manage optional result emails</a></p>',
+    )
+
+
 def build_crawl_result_email(
     *,
     notification_type: str,
@@ -49,74 +65,69 @@ def build_crawl_result_email(
     safe_host = html.escape(host, quote=True)
     pages = _non_negative_int(result_summary.get("pages_crawled"))
     ready = _non_negative_int(result_summary.get("ready_for_review"))
-    source_posts = _non_negative_int(result_summary.get("source_posts_checked"))
     dashboard_url = _dashboard_url()
     safe_dashboard_url = html.escape(dashboard_url, quote=True)
 
     if notification_type == _CRAWL_COMPLETED:
-        subject = f"Arcli refresh complete for {host}"
+        subject = f"Your Arcli website brief is ready for {host}"
         text_body = (
-            f"Arcli finished refreshing {host}. We processed {pages} website "
-            f"{'page' if pages == 1 else 'pages'}. Lead discovery is available "
-            f"on Pro. View your workspace: {dashboard_url}"
+            f"Arcli prepared a website brief for {host} from {pages} website "
+            f"{'page' if pages == 1 else 'pages'}. Review the audience and problem "
+            f"criteria in your workspace. This message does not mean public "
+            f"conversations were searched. Open your workspace: {dashboard_url}"
         )
         html_body = (
-            f"<p>Arcli finished refreshing <strong>{safe_host}</strong>.</p>"
-            f"<p>We processed <strong>{pages}</strong> website "
+            f"<p>Arcli prepared a website brief for <strong>{safe_host}</strong> from "
+            f"<strong>{pages}</strong> website "
             f"{'page' if pages == 1 else 'pages'}.</p>"
-            "<p>Lead discovery is available on Pro.</p>"
+            "<p>Review the audience and problem criteria in your workspace. "
+            "This message does not mean public conversations were searched.</p>"
             f'<p><a href="{safe_dashboard_url}">Open your workspace</a></p>'
         )
-        return subject, text_body, html_body
+        return _with_preferences_link(subject, text_body, html_body, dashboard_url)
 
     if notification_type == _CRAWL_FAILED:
         subject = f"Arcli could not finish refreshing {host}"
         text_body = (
             f"Arcli could not finish refreshing {host} after its automatic "
-            f"retries. Your previous workspace results remain unchanged. "
-            f"Open your workspace: {dashboard_url}"
+            f"retries. Check the current website brief and next steps in your "
+            f"workspace: {dashboard_url}"
         )
         html_body = (
             f"<p>Arcli could not finish refreshing <strong>{safe_host}</strong> "
             "after its automatic retries.</p>"
-            "<p>Your previous workspace results remain unchanged.</p>"
-            f'<p><a href="{safe_dashboard_url}">Open your workspace</a></p>'
+            f'<p><a href="{safe_dashboard_url}">Check your website brief and next steps</a></p>'
         )
-        return subject, text_body, html_body
+        return _with_preferences_link(subject, text_body, html_body, dashboard_url)
+
+    if notification_type not in {_DISCOVERY_COMPLETED, _DISCOVERY_PARTIAL}:
+        raise ValueError("Unsupported crawl result notification type.")
 
     if ready > 0:
-        subject = f"{ready} new lead{'s' if ready != 1 else ''} ready in Arcli"
+        subject = f"Arcli scan update: {ready} signal{'s' if ready != 1 else ''} to review"
         result_line = (
-            f"{ready} lead{' is' if ready == 1 else 's are'} ready for your review."
+            f"The run reported {ready} conversation signal{'s' if ready != 1 else ''} "
+            "ready for review. Open the workspace to confirm the current queue."
         )
     else:
-        subject = f"Arcli discovery refresh complete for {host}"
-        result_line = "No new leads are ready for review in this refresh."
+        subject = f"Arcli scan update for {host}"
+        result_line = (
+            "No conversation signals were recorded as ready for review at this "
+            "checkpoint. This is not an estimate of market demand."
+        )
 
     completion_note = (
-        "Discovery finished with the available sources."
+        "The latest public-source search had incomplete coverage or reached its time limit. Candidate checks may continue."
         if notification_type == _DISCOVERY_PARTIAL
-        else "Discovery finished successfully."
-    )
-    source_line = (
-        f" We checked {source_posts} new public conversation"
-        f"{'s' if source_posts != 1 else ''}."
-        if source_posts
-        else ""
+        else "The latest public-source search reached its reporting checkpoint. Candidate checks may continue."
     )
     text_body = (
-        f"Arcli finished refreshing {host}. {completion_note} {result_line}"
-        f"{source_line} Open your workspace: {dashboard_url}"
+        f"Arcli scanned public sources for {host}. {completion_note} {result_line} "
+        f"Open your workspace: {dashboard_url}"
     )
     html_body = (
-        f"<p>Arcli finished refreshing <strong>{safe_host}</strong>.</p>"
-        f"<p>{html.escape(completion_note)} {html.escape(result_line)}"
-        + (
-            f" We checked <strong>{source_posts}</strong> new public conversation"
-            f"{'s' if source_posts != 1 else ''}."
-            if source_posts
-            else ""
-        )
-        + f'</p><p><a href="{safe_dashboard_url}">Review your workspace</a></p>'
+        f"<p>Arcli scanned public sources for <strong>{safe_host}</strong>.</p>"
+        f"<p>{html.escape(completion_note)} {html.escape(result_line)}</p>"
+        f'<p><a href="{safe_dashboard_url}">Review your workspace</a></p>'
     )
-    return subject, text_body, html_body
+    return _with_preferences_link(subject, text_body, html_body, dashboard_url)

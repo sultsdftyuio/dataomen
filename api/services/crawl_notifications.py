@@ -31,7 +31,14 @@ from api.services.integrations.email_connector import (
     EmailProviderError,
     FailureType,
 )
-from api.services.crawl_notification_content import build_crawl_result_email
+from api.services.crawl_notification_content import build_crawl_result_email as _email_copy
+from api.services.crawl_notification_config import (
+    NotificationConfigurationError,
+    crawl_result_email_enabled,
+    env_bool as _env_bool,
+    env_int as _env_int,
+    notification_email_config as _notification_email_config,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +48,7 @@ NOTIFICATION_TYPE_CRAWL_COMPLETED = "crawl_completed"
 NOTIFICATION_TYPE_DISCOVERY_COMPLETED = "discovery_completed"
 NOTIFICATION_TYPE_DISCOVERY_PARTIAL = "discovery_partial"
 NOTIFICATION_TYPE_CRAWL_FAILED = "crawl_failed"
+RESULT_EMAIL_NOTICE_VERSION = "result-emails-v1"
 
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _MAX_EVENT_KEY_LENGTH = 160
@@ -48,14 +56,6 @@ _MAX_HOST_LENGTH = 253
 
 class RetryableCrawlNotificationError(RuntimeError):
     """Raise from a worker only when the email provider can be retried safely."""
-
-
-class NotificationConfigurationError(ValueError):
-    """A safe, actionable configuration error for durable mail delivery."""
-
-    def __init__(self, error_code: str) -> None:
-        super().__init__(error_code)
-        self.error_code = error_code
 
 
 @dataclass(frozen=True)
@@ -83,20 +83,6 @@ class NotificationOutboxRecord:
     notification_type: str
     result_summary: dict[str, Any]
     event_key: str
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in {"", "0", "false", "no", "off"}
-
-
-def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
-    try:
-        return max(minimum, int(os.getenv(name, str(default))))
-    except (TypeError, ValueError):
-        return default
 
 
 def _normalize_database_url(raw_url: str) -> str:
@@ -131,12 +117,6 @@ def _database_engine() -> Engine:
             ),
         },
     )
-
-
-def crawl_result_email_enabled() -> bool:
-    """Keep outbound mail dark until a verified sender is explicitly enabled."""
-
-    return _env_bool("ARCLI_CRAWL_RESULT_EMAILS_ENABLED", default=False)
 
 
 def _table_exists(conn: Connection, table_name: str) -> bool:
@@ -212,63 +192,6 @@ def _safe_event_key(value: str) -> str:
     return normalized
 
 
-def _notification_email_config() -> EmailConfig:
-    mock = _env_bool("ARCLI_CRAWL_RESULT_EMAIL_MOCK", default=False)
-    api_key = (
-        os.getenv("ARCLI_CRAWL_RESULT_EMAIL_API_KEY")
-        or os.getenv("RESEND_API_KEY")
-        or ""
-    ).strip()
-    sender = os.getenv("ARCLI_CRAWL_RESULT_EMAIL_SENDER", "").strip()
-    provider_url = os.getenv(
-        "ARCLI_CRAWL_RESULT_EMAIL_PROVIDER_URL", "https://api.resend.com/emails"
-    ).strip()
-
-    if not api_key and not mock:
-        raise NotificationConfigurationError("configuration_api_key_missing")
-    if not sender:
-        raise NotificationConfigurationError("configuration_sender_missing")
-    parsed_provider_url = urlparse(provider_url)
-    if parsed_provider_url.scheme not in {"https", "http"} or not parsed_provider_url.netloc:
-        raise NotificationConfigurationError("configuration_provider_url_invalid")
-
-    try:
-        return EmailConfig(
-            provider_url=provider_url,
-            # Mock delivery intentionally works without a provider key so a
-            # staging smoke test cannot accidentally require production mail
-            # credentials.
-            api_key=api_key or "mock",
-            sender=sender,
-            timeout_connect=float(
-                _env_int("ARCLI_CRAWL_RESULT_EMAIL_CONNECT_TIMEOUT_SECONDS", 5, minimum=1)
-            ),
-            timeout_read=float(
-                _env_int("ARCLI_CRAWL_RESULT_EMAIL_READ_TIMEOUT_SECONDS", 10, minimum=1)
-            ),
-            timeout_write=float(
-                _env_int("ARCLI_CRAWL_RESULT_EMAIL_WRITE_TIMEOUT_SECONDS", 5, minimum=1)
-            ),
-            timeout_pool=float(
-                _env_int("ARCLI_CRAWL_RESULT_EMAIL_POOL_TIMEOUT_SECONDS", 5, minimum=1)
-            ),
-            mock=mock,
-        )
-    except Exception as exc:
-        raise NotificationConfigurationError("configuration_sender_invalid") from exc
-
-
-def _email_copy(
-    *,
-    notification_type: str,
-    result_summary: Mapping[str, Any],
-) -> tuple[str, str, str]:
-    return build_crawl_result_email(
-        notification_type=notification_type,
-        result_summary=result_summary,
-    )
-
-
 def _outbox_schema_available(conn: Connection) -> bool:
     return all(
         _table_exists(conn, table_name)
@@ -298,7 +221,10 @@ def _eligible_recipients(conn: Connection, tenant_id: str) -> list[dict[str, str
              WHERE membership.tenant_id = :tenant_id
                AND LOWER(COALESCE(membership.role, '')) IN ('owner', 'admin')
                AND COALESCE(settings.crawl_completion_email_enabled, TRUE)
-               AND COALESCE(preference.enabled, TRUE)
+               AND COALESCE(preference.enabled, FALSE)
+               AND preference.opted_in_at IS NOT NULL
+               AND LOWER(preference.opted_in_email) = LOWER(account.email)
+               AND preference.notice_version = :notice_version
                AND account.email IS NOT NULL
                AND NOT EXISTS (
                     SELECT 1
@@ -308,7 +234,7 @@ def _eligible_recipients(conn: Connection, tenant_id: str) -> list[dict[str, str
                )
             """
         ),
-        {"tenant_id": tenant_id},
+        {"tenant_id": tenant_id, "notice_version": RESULT_EMAIL_NOTICE_VERSION},
     ).mappings()
     recipients: list[dict[str, str]] = []
     for row in rows:
@@ -649,13 +575,22 @@ def _claim_outbox_record(
                             WHERE suppression.tenant_id = outbox.tenant_id
                               AND LOWER(suppression.email) = LOWER(outbox.recipient_email)
                        ) THEN 'recipient_suppressed'
-                       WHEN EXISTS (
+                       WHEN NOT EXISTS (
                            SELECT 1
                              FROM public.crawl_notification_preferences AS preference
                             WHERE preference.tenant_id = outbox.tenant_id
                               AND preference.user_id::text = outbox.user_id::text
-                              AND NOT preference.enabled
+                              AND preference.enabled
+                              AND preference.opted_in_at IS NOT NULL
+                              AND LOWER(preference.opted_in_email) = LOWER(outbox.recipient_email)
+                              AND preference.notice_version = :notice_version
                        ) THEN 'recipient_preference_disabled'
+                       WHEN NOT EXISTS (
+                           SELECT 1
+                             FROM auth.users AS account
+                            WHERE account.id::text = outbox.user_id::text
+                              AND LOWER(account.email) = LOWER(outbox.recipient_email)
+                       ) THEN 'recipient_email_changed'
                        WHEN EXISTS (
                            SELECT 1
                              FROM public.tenant_settings AS settings
@@ -676,18 +611,27 @@ def _claim_outbox_record(
                         WHERE suppression.tenant_id = outbox.tenant_id
                           AND LOWER(suppression.email) = LOWER(outbox.recipient_email)
                    )
-                   OR EXISTS (
+                   OR NOT EXISTS (
                        SELECT 1
                          FROM public.crawl_notification_preferences AS preference
                         WHERE preference.tenant_id = outbox.tenant_id
                           AND preference.user_id::text = outbox.user_id::text
-                          AND NOT preference.enabled
+                          AND preference.enabled
+                          AND preference.opted_in_at IS NOT NULL
+                          AND LOWER(preference.opted_in_email) = LOWER(outbox.recipient_email)
+                          AND preference.notice_version = :notice_version
                    )
                    OR EXISTS (
                        SELECT 1
                          FROM public.tenant_settings AS settings
                         WHERE settings.tenant_id = outbox.tenant_id
                           AND NOT COALESCE(settings.crawl_completion_email_enabled, TRUE)
+                   )
+                   OR NOT EXISTS (
+                       SELECT 1
+                         FROM auth.users AS account
+                        WHERE account.id::text = outbox.user_id::text
+                          AND LOWER(account.email) = LOWER(outbox.recipient_email)
                    )
                    OR NOT EXISTS (
                        SELECT 1
@@ -699,7 +643,7 @@ def _claim_outbox_record(
                )
             """
         ),
-        {"outbox_id": outbox_id},
+        {"outbox_id": outbox_id, "notice_version": RESULT_EMAIL_NOTICE_VERSION},
     )
     row = conn.execute(
         text(
@@ -736,18 +680,27 @@ def _claim_outbox_record(
                     WHERE suppression.tenant_id = outbox.tenant_id
                       AND LOWER(suppression.email) = LOWER(outbox.recipient_email)
                )
-               AND NOT EXISTS (
+               AND EXISTS (
                    SELECT 1
                      FROM public.crawl_notification_preferences AS preference
                     WHERE preference.tenant_id = outbox.tenant_id
                       AND preference.user_id::text = outbox.user_id::text
-                      AND NOT preference.enabled
+                      AND preference.enabled
+                      AND preference.opted_in_at IS NOT NULL
+                      AND LOWER(preference.opted_in_email) = LOWER(outbox.recipient_email)
+                      AND preference.notice_version = :notice_version
                )
                AND NOT EXISTS (
                    SELECT 1
                      FROM public.tenant_settings AS settings
                     WHERE settings.tenant_id = outbox.tenant_id
                       AND NOT COALESCE(settings.crawl_completion_email_enabled, TRUE)
+               )
+               AND EXISTS (
+                   SELECT 1
+                     FROM auth.users AS account
+                    WHERE account.id::text = outbox.user_id::text
+                      AND LOWER(account.email) = LOWER(outbox.recipient_email)
                )
                AND EXISTS (
                    SELECT 1
@@ -767,6 +720,7 @@ def _claim_outbox_record(
             "outbox_id": outbox_id,
             "claim_token": claim_token,
             "claim_timeout_seconds": claim_timeout_seconds,
+            "notice_version": RESULT_EMAIL_NOTICE_VERSION,
         },
     ).mappings().first()
     if row is None:

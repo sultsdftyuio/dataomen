@@ -1323,7 +1323,14 @@ function sourceProgressTone(source: BuyerDemandReportView["sourceProgress"][numb
   return { border: C.rule, background: C.offWhite, color: C.muted };
 }
 
-function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
+function DiscoveryScanReport({
+  report,
+  initiallyOpen = false,
+}: {
+  report: BuyerDemandReportView;
+  initiallyOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
   const summary = report.summary;
   const isRunning = !report.isTerminal;
   const isPartial = report.status === "partial";
@@ -1396,7 +1403,7 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
       style={{ borderColor: isPartial ? C.amber : isFailed ? C.red : C.blueLight }}
     >
       <CardContent className="p-0">
-        <details className="group">
+        <details className="group" open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
           <summary className="flex cursor-pointer list-none flex-col gap-3 px-4 py-4 marker:hidden sm:flex-row sm:items-start sm:justify-between sm:px-5 lg:px-6 [&::-webkit-details-marker]:hidden" style={{ backgroundColor: C.offWhite }}>
           <div className="flex min-w-0 items-start gap-3">
             <span
@@ -2992,6 +2999,7 @@ export default function ProspectDashboardClient({
         activateBuyerGroup={activateBuyerGroup}
         reviewedConversationCount={queueItems.length}
         screenedMatches={screenedMatches}
+        buyerDemandReport={buyerDemandReport}
         filteredQueueItems={filteredQueueItems}
         selectedLead={selectedLead}
         selectedLeadId={selectedLeadId}
@@ -3018,6 +3026,10 @@ export default function ProspectDashboardClient({
         onSourceChange={setQueueSource}
         onSelectLead={previewLead}
         onOpenFocusedReview={() => setDashboardView("focus")}
+        onOpenScanActivity={() => {
+          setDashboardView("overview");
+          setIsScanActivityOpen(true);
+        }}
         onFeedback={handleFeedback}
         onQualify={handleQualification}
       />
@@ -3115,7 +3127,7 @@ export default function ProspectDashboardClient({
                   <div className="mt-5 grid gap-3 border-t pt-4 sm:grid-cols-2" style={{ borderColor: C.rule }}>
                     <div className="rounded-lg border p-3" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
                       <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-                        Buyer evidence
+                        {selectedLead.evidenceExcerpt ? "Exact source quote" : "Source text · quote not verified"}
                       </p>
                       <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
                         {selectedLead.evidenceExcerpt || selectedLead.sourcePost.text}
@@ -3259,7 +3271,7 @@ export default function ProspectDashboardClient({
                   isRefreshing={isRefreshPending}
                   onRefresh={refreshDashboard}
                 />
-                {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} /> : null}
+                {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} initiallyOpen={queueItems.length === 0} /> : null}
               </div>
             </details>
           </section>

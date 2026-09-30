@@ -22,7 +22,7 @@ export function normalizedWebsiteDomain(value: string | null | undefined): strin
 }
 
 /**
- * Free workspaces get one discovery domain. Re-submitting that same domain is
+ * Free workspaces get one website-brief domain. Re-submitting that same domain is
  * allowed so an interrupted crawl can be retried, but switching or clearing
  * the saved domain requires Pro.
  */

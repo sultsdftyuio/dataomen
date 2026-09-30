@@ -8,10 +8,12 @@ import { C } from "@/lib/tokens";
 
 type CrawlNotificationPreferencesProps = {
   initialEnabled: boolean;
+  eligible: boolean;
 };
 
 export default function CrawlNotificationPreferences({
   initialEnabled,
+  eligible,
 }: CrawlNotificationPreferencesProps) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [isPending, startTransition] = useTransition();
@@ -39,10 +41,10 @@ export default function CrawlNotificationPreferences({
         }
         setEnabled(payload.enabled);
         toast({
-          title: payload.enabled ? "Refresh emails enabled" : "Refresh emails paused",
+          title: payload.enabled ? "Email preference enabled" : "Email preference disabled",
           description: payload.enabled
-            ? "You will receive completed refresh summaries for this workspace."
-            : "Arcli will no longer queue website refresh result emails for your account.",
+            ? "When result email delivery is active, your account can receive website and discovery updates."
+            : "Arcli will not queue website or discovery result emails for your account.",
         });
       } catch (error) {
         toast({
@@ -59,6 +61,7 @@ export default function CrawlNotificationPreferences({
 
   return (
     <section
+      id="result-emails"
       className="rounded-xl border bg-white p-4"
       style={{ borderColor: C.rule, boxShadow: "0 1px 3px rgba(10, 22, 40, 0.04)" }}
     >
@@ -72,10 +75,10 @@ export default function CrawlNotificationPreferences({
           </div>
           <div>
             <h2 className="text-sm font-semibold" style={{ color: C.navy }}>
-              Website refresh emails
+              Result emails
             </h2>
             <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-              Choose whether your account receives website refresh emails. Other workspace owners and admins choose separately. Pro emails include aggregate review-ready lead results; Free emails only confirm the refresh.
+              Optional updates about your website brief, scan results, and website read failures. Owners and admins can turn this on for their own account, or off to stop future emails. Delivery also depends on the service being enabled. Emails contain only aggregate updates, never public post text or a buyer contact. {!eligible ? "This option is available to workspace owners and admins." : null}
             </p>
           </div>
         </div>
@@ -83,8 +86,8 @@ export default function CrawlNotificationPreferences({
           type="button"
           role="switch"
           aria-checked={enabled}
-          aria-label="Enable website refresh emails"
-          disabled={isPending}
+          aria-label="Receive optional result emails"
+          disabled={isPending || !eligible}
           onClick={updateEnabled}
           className="relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           style={{ backgroundColor: enabled ? C.blue : C.rule }}

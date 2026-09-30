@@ -7,6 +7,7 @@ import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { areBillingTestControlsEnabled } from "@/lib/billing/test-controls";
 import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
 import { fetchTenantSettingsRow } from "@/lib/settings/server";
+import { resultEmailsEnabled } from "@/lib/result-email-preference";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 import SettingsClient from "./settings-client";
 import {
@@ -48,11 +49,12 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const tenantResult = await resolveTenantContext();
   let settings = buildSettingsSnapshot(null);
   let serviceProfile: ServiceProfileView | null = null;
-  let crawlNotificationEmailsEnabled = true;
+  let crawlNotificationEmailsEnabled = false;
+  let canReceiveResultEmails = false;
   let billingPlanData: WorkspaceBillingCardProps["planData"] = {
     planName: "Free Access",
     planStatus: "free",
-    description: "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.",
+    description: "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.",
     priceText: "$35/month",
     isProTier: false,
     amountDueCents: 3500,
@@ -82,17 +84,37 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       entitlements,
       websiteUrl,
       notificationPreference,
+      notificationMembership,
     ] = await Promise.all([
       fetchTenantSettingsRow(tenantSupabase, tenantId),
       getWorkspaceEntitlements(tenantSupabase, tenantId),
       fetchTenantWebsiteUrl(tenantSupabase, tenantId),
       tenantSupabase
         .from("crawl_notification_preferences")
-        .select("enabled")
+        .select("enabled,opted_in_at,opted_in_email,notice_version")
+        .eq("tenant_id", tenantId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      tenantSupabase
+        .from("tenant_users")
+        .select("role")
         .eq("tenant_id", tenantId)
         .eq("user_id", user.id)
         .maybeSingle(),
     ]);
+
+    if (notificationMembership.error) {
+      console.error("[CRAWL_NOTIFICATION_MEMBERSHIP_FETCH_ERROR]", {
+        event: "crawl_notification_membership_fetch_failed",
+        tenant_id: tenantId,
+        user_id: user.id,
+        error: notificationMembership.error,
+      });
+    } else {
+      canReceiveResultEmails = ["owner", "admin"].includes(
+        notificationMembership.data?.role?.toLowerCase() ?? "",
+      );
+    }
 
     if (settingsResult.error) {
       console.error("[SETTINGS_FETCH_ERROR]", settingsResult.error);
@@ -108,7 +130,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         error: notificationPreference.error,
       });
     } else {
-      crawlNotificationEmailsEnabled = notificationPreference.data?.enabled ?? true;
+      crawlNotificationEmailsEnabled = canReceiveResultEmails && resultEmailsEnabled(notificationPreference.data, user.email);
     }
 
     serviceProfile = await fetchServiceProfile(
@@ -164,6 +186,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       user={user}
       initialSettings={settings}
       initialCrawlNotificationEmailsEnabled={crawlNotificationEmailsEnabled}
+      canReceiveResultEmails={canReceiveResultEmails}
       serviceProfile={serviceProfile}
       planData={billingPlanData}
       showBillingTestControls={areBillingTestControlsEnabled()}

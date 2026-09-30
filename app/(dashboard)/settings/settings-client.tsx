@@ -17,6 +17,7 @@ type SettingsClientProps = {
   user: User;
   initialSettings: any;
   initialCrawlNotificationEmailsEnabled: boolean;
+  canReceiveResultEmails: boolean;
   serviceProfile: ServiceProfileView | null;
   planData: WorkspaceBillingCardProps["planData"];
   showBillingTestControls: boolean;
@@ -34,6 +35,7 @@ export default function SettingsClient({
   user,
   initialSettings,
   initialCrawlNotificationEmailsEnabled,
+  canReceiveResultEmails,
   serviceProfile,
   planData,
   showBillingTestControls,
@@ -122,6 +124,7 @@ export default function SettingsClient({
           <WorkspaceBillingCard planData={planData} />
           <CrawlNotificationPreferences
             initialEnabled={initialCrawlNotificationEmailsEnabled}
+            eligible={canReceiveResultEmails}
           />
           {showBillingTestControls ? (
             <BillingTestSwitcher currentStatus={planData?.planStatus} />

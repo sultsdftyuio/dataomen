@@ -1,3 +1,5 @@
+import pytest
+
 from api.services import crawl_notifications as notifications
 
 
@@ -17,11 +19,14 @@ def test_free_completion_copy_never_reports_locked_leads():
         },
     )
 
-    assert subject == "Arcli refresh complete for example.com"
+    assert subject == "Your Arcli website brief is ready for example.com"
     assert "4 website pages" in text_body
+    assert "does not mean public conversations were searched" in text_body
     assert "99" not in text_body
     assert "ready for your review" not in text_body.lower()
     assert "99" not in html_body
+    assert "/settings#result-emails" in text_body
+    assert "Manage optional result emails" in html_body
 
 
 def test_paid_completion_copy_includes_only_aggregate_result_counts():
@@ -35,10 +40,36 @@ def test_paid_completion_copy_includes_only_aggregate_result_counts():
         },
     )
 
-    assert subject == "2 new leads ready in Arcli"
-    assert "2 leads are ready for your review." in text_body
-    assert "7 new public conversations" in text_body
-    assert "2 leads are ready for your review." in html_body
+    assert subject == "Arcli scan update: 2 signals to review"
+    assert "2 conversation signals ready for review" in text_body
+    assert "Candidate checks may continue" in text_body
+    assert "2 conversation signals ready for review" in html_body
+    assert "7 new public conversations" not in text_body
+
+
+def test_partial_result_email_does_not_claim_a_finished_or_zero_demand_scan():
+    subject, text_body, html_body = notifications._email_copy(
+        notification_type=notifications.NOTIFICATION_TYPE_DISCOVERY_PARTIAL,
+        result_summary={
+            "website_host": "example.com",
+            "ready_for_review": 0,
+            "source_posts_checked": 7,
+        },
+    )
+
+    assert subject == "Arcli scan update for example.com"
+    assert "incomplete coverage or reached its time limit" in text_body
+    assert "This is not an estimate of market demand" in text_body
+    assert "finished successfully" not in text_body
+    assert "incomplete coverage or reached its time limit" in html_body
+
+
+def test_unknown_notification_type_cannot_be_sent_as_a_successful_scan():
+    with pytest.raises(ValueError, match="Unsupported crawl result notification type"):
+        notifications._email_copy(
+            notification_type="discovery_failed",
+            result_summary={"website_host": "example.com"},
+        )
 
 
 def test_email_copy_escapes_website_host_before_html_rendering():

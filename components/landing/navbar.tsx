@@ -23,7 +23,7 @@ export function Navbar() {
   }, []);
 
   const navLinks = [
-    { name: "See a lead", href: "/#proof" },
+    { name: "See a signal", href: "/#proof" },
     { name: "How it works", href: "/#pipeline" },
     { name: "How it qualifies", href: "/#quality" },
     { name: "Pricing", href: "/#pricing" },
@@ -141,7 +141,7 @@ export function Navbar() {
               (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 6px 14px rgba(27,110,191,0.22)";
             }}
           >
-            Start Free Scan
+            Build Free Brief
           </Link>
         </div>
       </div>

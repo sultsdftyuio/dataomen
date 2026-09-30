@@ -115,8 +115,8 @@ export function HowItWorks() {
             textAlign: "center",
           }}
         >
-          Core coverage begins with Hacker News and Bluesky. Arcli adds technical or community
-          sources only when they fit your product and audience.
+          Public-source discovery is available on Pro. Core coverage begins with Hacker News and
+          Bluesky; Arcli adds technical or community sources only when they fit your product and audience.
         </p>
       </div>
     </section>

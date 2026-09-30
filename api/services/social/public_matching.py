@@ -725,6 +725,19 @@ def rematch_existing_public_source_posts_for_profile(
                 continue
 
             match_status = _lead_match_status(verification)
+            with engine.begin() as conn:
+                _persist_lead_match(
+                    conn,
+                    tenant_id=normalized_tenant_id,
+                    service_profile_id=normalized_profile_id,
+                    source_post_id=candidate.post_id,
+                    post=post,
+                    similarity_score=candidate.score,
+                    verification=verification,
+                    profile_embedding_sha256=profile_embedding_sha256,
+                    verifier_model=verifier.model,
+                    verifier_policy_version=VERIFIER_POLICY_VERSION,
+                )
             if match_status == "ready_for_review":
                 ready_for_review_count += 1
             elif match_status == "discovery_candidate":
@@ -756,20 +769,6 @@ def rematch_existing_public_source_posts_for_profile(
                     ),
                 },
             )
-
-            with engine.begin() as conn:
-                _persist_lead_match(
-                    conn,
-                    tenant_id=normalized_tenant_id,
-                    service_profile_id=normalized_profile_id,
-                    source_post_id=candidate.post_id,
-                    post=post,
-                    similarity_score=candidate.score,
-                    verification=verification,
-                    profile_embedding_sha256=profile_embedding_sha256,
-                    verifier_model=verifier.model,
-                    verifier_policy_version=VERIFIER_POLICY_VERSION,
-                )
     finally:
         verifier.close()
 
@@ -1074,6 +1073,19 @@ def process_public_source_post_embedding(
                     continue
 
                 match_status = _lead_match_status(verification)
+                with engine.begin() as conn:
+                    _persist_lead_match(
+                        conn,
+                        tenant_id=tenant_id,
+                        service_profile_id=service_profile_id,
+                        source_post_id=database_post_id,
+                        post=post,
+                        similarity_score=candidate.score,
+                        verification=verification,
+                        profile_embedding_sha256=profile_embedding_sha256,
+                        verifier_model=verifier.model,
+                        verifier_policy_version=VERIFIER_POLICY_VERSION,
+                    )
                 if match_status == "ready_for_review":
                     ready_for_review_count += 1
                 elif match_status == "discovery_candidate":
@@ -1108,20 +1120,6 @@ def process_public_source_post_embedding(
                         ),
                     },
                 )
-
-                with engine.begin() as conn:
-                    _persist_lead_match(
-                        conn,
-                        tenant_id=tenant_id,
-                        service_profile_id=service_profile_id,
-                        source_post_id=database_post_id,
-                        post=post,
-                        similarity_score=candidate.score,
-                        verification=verification,
-                        profile_embedding_sha256=profile_embedding_sha256,
-                        verifier_model=verifier.model,
-                        verifier_policy_version=VERIFIER_POLICY_VERSION,
-                    )
                 if match_status == "ready_for_review":
                     try:
                         from api.services.social.verified_comment_scan import (

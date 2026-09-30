@@ -8,14 +8,14 @@ import { Reveal, RevealWords } from "@/components/landing/reveal";
 
 const freeFeatures = [
   "Learn from one website",
-  "One discovery domain",
-  "A live count of matched conversations",
+  "Review and edit your matching brief",
+  "Prepare one buyer and problem profile",
   "Standard email support",
 ];
 
 const proFeatures = [
-  "Ongoing discovery across public conversations",
-  "Verified prospect queue and match evidence",
+  "Ongoing search across supported public sources",
+  "Source-linked conversation review queue",
   "Buyer groups and reusable matching criteria",
   "Refresh your brief as your product evolves",
 ];
@@ -76,11 +76,11 @@ export default function ArcliPricingCards() {
               marginBottom: 18,
             }}
           >
-            <RevealWords text="Validate the signal first. Upgrade when you are ready to act." />
+            <RevealWords text="Prepare your brief for free. Search public conversations on Pro." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62 }}>
-            Start with a free market check. Pro turns that signal into ongoing discovery and a
-            review-ready prospect queue.
+            Free helps you describe your buyer and problem from your website. Pro runs public-source
+            discovery and shows evidence when a conversation fits.
           </p>
         </Reveal>
 
@@ -97,11 +97,11 @@ export default function ArcliPricingCards() {
               Free
             </span>
             <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
-              Validate the signal.
+              Prepare your brief.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              See whether buyer conversations exist in your market. Free shows the live match
-              count; it does not unlock the underlying queue.
+              Let Arcli read your public website, then correct its picture of your offer and buyer.
+              Free does not search public conversations or show a live match count.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.rule }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$0</span>
@@ -113,7 +113,7 @@ export default function ArcliPricingCards() {
               className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg border text-sm font-semibold transition-colors hover:bg-[#F7FBFF]"
               style={{ borderColor: C.ruleDark, color: C.navy, textDecoration: "none" }}
             >
-              Get started free <ArrowRight className="size-4" />
+              Build free brief <ArrowRight className="size-4" />
             </Link>
             </article>
           </Reveal>
@@ -131,11 +131,11 @@ export default function ArcliPricingCards() {
               <Sparkles className="size-3" aria-hidden="true" /> Pro
             </span>
             <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
-              Turn signal into pipeline.
+              Start evidence-backed discovery.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              Unlock matched conversations, source evidence, and ongoing discovery as new buyer
-              signals surface.
+              Search supported public sources and review matched conversations with source context.
+              The number of useful results depends on your market and source coverage.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.blueLight }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>

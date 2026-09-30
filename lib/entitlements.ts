@@ -140,7 +140,7 @@ function buildEntitlements(
       ? `Pro subscription active at $${PRO_MONTHLY_PRICE}/month.`
       : isPastDue
         ? "Payment is past due. Update billing to restore Pro features."
-      : "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.";
+      : "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.";
 
   return {
     tenantId,

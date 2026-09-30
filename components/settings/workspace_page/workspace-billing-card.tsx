@@ -102,7 +102,7 @@ export default function WorkspaceBillingCard({
   planData = {
     planName: "Free Access",
     planStatus: "free",
-    description: "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.",
+    description: "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.",
     priceText: "$35/month",
     isProTier: false,
   },
@@ -138,7 +138,7 @@ export default function WorkspaceBillingCard({
       : planData.description ??
         (planStatus === "active"
             ? "Pro billing active at $35/month."
-            : "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.");
+            : "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.");
   const autoCheckoutAttempted = useRef(false);
 
   useEffect(() => {

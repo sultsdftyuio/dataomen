@@ -17,7 +17,7 @@ const trustSteps = [
     icon: FileCheck2,
     label: "02 / Reviewable evidence",
     title: "Shows you why it surfaced.",
-    copy: "Each review-ready lead keeps the original public conversation and the specific buyer signal alongside the match.",
+    copy: "Each match links back to its public conversation and shows the reason Arcli surfaced it, so you can check the claim yourself.",
   },
   {
     icon: SlidersHorizontal,

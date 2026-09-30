@@ -175,12 +175,12 @@ def _outbox_diagnostic(limit: int) -> dict[str, Any]:
 
 
 def _next_action(configuration: Mapping[str, Any]) -> str:
-    if not configuration["feature_enabled"]:
-        return "Set ARCLI_CRAWL_RESULT_EMAILS_ENABLED=true in the worker."
     if configuration["error_code"]:
         return f"Correct {configuration['error_code']} and rerun this diagnostic."
     if configuration["mock_enabled"]:
         return "Mock delivery is enabled; disable it before expecting Resend delivery."
+    if not configuration["feature_enabled"]:
+        return "Set ARCLI_CRAWL_RESULT_EMAILS_ENABLED=true in the worker."
     return "Configuration is valid; inspect recent_records for an outbox error code."
 
 

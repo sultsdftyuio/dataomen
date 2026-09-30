@@ -448,9 +448,24 @@ def _persist_lead_match(
         return
 
     columns = _table_columns(conn, "lead_matches")
-    if not {"tenant_id", "match_status"}.issubset(columns):
-        logger.info("lead_match_persistence_skipped skip_reason=%s", "table_missing")
-        return
+    required_columns = {
+        "tenant_id",
+        "service_profile_id",
+        "source_post_id",
+        "match_status",
+        "verifier_score",
+        "verification",
+        "source_post",
+        "updated_at",
+    }
+    missing_columns = required_columns.difference(columns)
+    if missing_columns:
+        # The caller reports a successful match only after this write. A
+        # missing contract must fail the actor and remain visible to operators.
+        raise RuntimeError(
+            "lead_matches storage contract is incomplete: "
+            + ", ".join(sorted(missing_columns))
+        )
 
     now = datetime.now(timezone.utc).isoformat()
     verifier_score = float(getattr(verification, "confidence", 0.0) or 0.0)

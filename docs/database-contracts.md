@@ -19,28 +19,30 @@ because it exists.
    used by the active event-ingestion service.
 7. `scripts/crawl_pipeline_reliability.sql` — website-crawl jobs, pages, and
    service-profile embeddings.
-8. `scripts/hn_source_posts_global_contract.sql`
-9. `scripts/lead_match_qualification_guard.sql`
-10. `scripts/prospect_intelligence_contract.sql`
-11. `scripts/discovery_candidate_pool_contract.sql` - apply after steps 5,
-    8, and 10; it stores raw and plausible discovery candidates before they
+8. `scripts/website_recrawl_scheduler.sql` - durable initial-crawl backlog
+   and recurring scheduler. Apply before accepting website crawl triggers.
+9. `scripts/hn_source_posts_global_contract.sql`
+10. `scripts/lead_match_qualification_guard.sql`
+11. `scripts/prospect_intelligence_contract.sql`
+12. `scripts/discovery_candidate_pool_contract.sql` - apply after steps 5,
+    9, and 11; it stores raw and plausible discovery candidates before they
     become verified leads.
-12. `scripts/buyer_language_research_contract.sql`
-13. `scripts/watchlists_contract.sql`
-14. `scripts/entity_first_prospecting_contract.sql` — tenant-scoped target
+13. `scripts/buyer_language_research_contract.sql`
+14. `scripts/watchlists_contract.sql`
+15. `scripts/entity_first_prospecting_contract.sql` — tenant-scoped target
     briefs, accounts, builders, projects, evidence, assessments, feedback, and
     lease-safe candidate-generation and retained-public evidence runs pinned to
     an approved brief revision. It also defines the immutable
     `prospect_research_run_entities` selection mapping and tenant-scoped
     evidence listing/review RPCs.
-15. `scripts/service_profile_website_scope.sql`
-16. `scripts/enforce-free-plan-limits.sql`
-17. `scripts/prospect_target_opportunity_contract.sql` — optional human-reviewed
+16. `scripts/service_profile_website_scope.sql`
+17. `scripts/enforce-free-plan-limits.sql`
+18. `scripts/prospect_target_opportunity_contract.sql` — optional human-reviewed
     target opportunities and server-only CRM handoff guards; apply after steps
-    14 and 16.
-18. `scripts/stripe.sql` — only when Stripe Connect is enabled.
-19. `scripts/public_data_compliance_contract.sql`
-20. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
+    15 and 17.
+19. `scripts/stripe.sql` — only when Stripe Connect is enabled.
+20. `scripts/public_data_compliance_contract.sql`
+21. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
     recovery-unsubscribe route remains enabled.
 
 Detailed prospect-intelligence migration guidance is also in

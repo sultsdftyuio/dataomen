@@ -118,6 +118,9 @@ export type Database = {
           tenant_id: string;
           user_id: string;
           enabled: boolean;
+          opted_in_at: string | null;
+          opted_in_email: string | null;
+          notice_version: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -125,6 +128,9 @@ export type Database = {
           tenant_id: string;
           user_id: string;
           enabled?: boolean;
+          opted_in_at?: string | null;
+          opted_in_email?: string | null;
+          notice_version?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -132,6 +138,9 @@ export type Database = {
           tenant_id?: string;
           user_id?: string;
           enabled?: boolean;
+          opted_in_at?: string | null;
+          opted_in_email?: string | null;
+          notice_version?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };

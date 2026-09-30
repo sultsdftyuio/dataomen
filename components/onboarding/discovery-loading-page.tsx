@@ -43,12 +43,12 @@ const STAGES: DiscoveryStage[] = [
     detail: "Using your website to understand the problems you solve.",
   },
   {
-    label: "Look for new customers",
-    detail: "Finding people online who may need what you offer.",
+    label: "Search public conversations",
+    detail: "Checking supported sources for relevant problem statements.",
   },
   {
-    label: "Check the best matches",
-    detail: "Making sure the results are worth your time.",
+    label: "Verify candidates",
+    detail: "Assessing evidence before a conversation enters your review queue.",
   },
 ];
 
@@ -191,8 +191,14 @@ function statusMessage({
   if (buyerDemandReport?.isTerminal) {
     return {
       kind: "ready" as const,
-      title: mode === "scan" ? "Your fresh results are ready." : "Your first results are ready.",
-      detail: "Taking you to your dashboard now.",
+      title: buyerDemandReport.status === "failed" || buyerDemandReport.status === "skipped"
+        ? "The public-source search needs attention."
+        : buyerDemandReport.status === "partial" || buyerDemandReport.status === "degraded"
+          ? "The public-source search had partial coverage."
+          : "The public-source search has finished.",
+      detail: buyerDemandReport.summary.verifierPending
+        ? "Candidate checks may continue after source collection. Opening the scan report now."
+        : "Opening the scan report and review queue. A finished search does not guarantee a reviewable match.",
     };
   }
 
@@ -269,6 +275,10 @@ export function DiscoveryLoadingPage({
   const domain = useMemo(() => websiteDomain(websiteUrl), [websiteUrl]);
   const hasError = status.kind === "error";
   const isReady = status.kind === "ready";
+  const hasCoverageWarning = Boolean(
+    buyerDemandReport?.isTerminal &&
+      ["partial", "degraded", "failed", "skipped"].includes(buyerDemandReport.status ?? ""),
+  );
   const isQueued = status.kind === "working" && status.queued === true;
   const lastUpdate = relativeTime(
     crawlJob?.lastHeartbeatAt ??
@@ -324,12 +334,12 @@ export function DiscoveryLoadingPage({
         <div
           className="mx-auto flex size-10 items-center justify-center rounded-full border"
           style={{
-            borderColor: hasError ? "rgba(220, 38, 38, 0.22)" : isReady ? "rgba(16, 185, 129, 0.22)" : C.blueLight,
-            backgroundColor: hasError ? "#FEF2F2" : isReady ? C.greenPale : C.bluePale,
-            color: hasError ? C.red : isReady ? C.green : C.blue,
+            borderColor: hasError ? "rgba(220, 38, 38, 0.22)" : hasCoverageWarning ? C.amber : isReady ? "rgba(16, 185, 129, 0.22)" : C.blueLight,
+            backgroundColor: hasError ? "#FEF2F2" : hasCoverageWarning ? C.amberPale : isReady ? C.greenPale : C.bluePale,
+            color: hasError ? C.red : hasCoverageWarning ? C.amber : isReady ? C.green : C.blue,
           }}
         >
-          {hasError ? (
+          {hasError || hasCoverageWarning ? (
             <AlertCircle className="size-[18px]" aria-hidden="true" />
           ) : isReady ? (
             <Check className="size-[18px]" aria-hidden="true" />
@@ -440,11 +450,11 @@ export function DiscoveryLoadingPage({
               : "You can leave this page — we will keep checking in the background."}
             </p>
             <Link
-              href="/dashboard"
+              href={serviceProfile.hasProfile ? "/dashboard/brief" : "/settings"}
               className="font-semibold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
               style={{ color: C.blue }}
             >
-              View results while scan continues
+              {serviceProfile.hasProfile ? "Review matching brief" : "Check website settings"}
             </Link>
           </div>
         ) : null}

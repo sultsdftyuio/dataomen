@@ -14,11 +14,23 @@ ALTER TABLE public.tenant_settings
 CREATE TABLE IF NOT EXISTS public.crawl_notification_preferences (
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    opted_in_at TIMESTAMPTZ,
+    opted_in_email TEXT,
+    notice_version TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (tenant_id, user_id)
 );
+
+-- Reapplying this contract also changes the default on an existing install.
+-- Existing stored choices remain, but sending requires a fresh opt-in record.
+ALTER TABLE public.crawl_notification_preferences
+    ALTER COLUMN enabled SET DEFAULT FALSE;
+ALTER TABLE public.crawl_notification_preferences
+    ADD COLUMN IF NOT EXISTS opted_in_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS opted_in_email TEXT,
+    ADD COLUMN IF NOT EXISTS notice_version TEXT;
 
 CREATE TABLE IF NOT EXISTS public.crawl_notification_suppressions (
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,

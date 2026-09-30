@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { DiscoveryLoadingPage } from "@/components/onboarding/discovery-loading-page";
+import { BriefLoadingPage } from "@/components/onboarding/brief-loading-page";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import {
   fetchBuyerDemandReport,
   fetchLatestCrawlJob,
@@ -17,8 +19,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "Preparing your discovery | Arcli",
-  description: "Arcli is crawling your website and preparing your first discovery results.",
+  title: "Preparing your workspace | Arcli",
+  description: "Follow website brief preparation and, on Pro, public discovery.",
 };
 
 type DiscoveryPageProps = {
@@ -40,10 +42,24 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
   if (!websiteUrl) redirect("/onboarding/workspace");
 
-  const [serviceProfile, crawlJob] = await Promise.all([
+  const [serviceProfile, crawlJob, entitlements] = await Promise.all([
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+    getWorkspaceEntitlements(supabase, tenantId),
   ]);
+  const resolvedSearchParams = await searchParams;
+  const scanWasJustRequested = Boolean(resolvedSearchParams.scan);
+  if (!entitlements.isPro) {
+    return (
+      <BriefLoadingPage
+        websiteUrl={websiteUrl}
+        crawlJob={crawlJob}
+        serviceProfile={serviceProfile}
+        scanWasJustRequested={scanWasJustRequested}
+      />
+    );
+  }
+
   const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,
     tenantId,
@@ -56,8 +72,6 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
   )
     ? buyerDemandReport
     : null;
-  const resolvedSearchParams = await searchParams;
-  const scanWasJustRequested = Boolean(resolvedSearchParams.scan);
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
   const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
 

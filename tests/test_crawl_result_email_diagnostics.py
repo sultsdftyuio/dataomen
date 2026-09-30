@@ -34,6 +34,7 @@ def test_diagnostic_identifies_missing_sender_without_database_access(monkeypatc
     )
 
     assert report["notification_configuration"]["error_code"] == "configuration_sender_missing"
+    assert report["next_action"] == "Correct configuration_sender_missing and rerun this diagnostic."
     assert report["outbox"] == {
         "checked": False,
         "reason": "database_url_missing",

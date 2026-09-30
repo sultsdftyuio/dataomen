@@ -11,7 +11,7 @@ const items = [
   },
   {
     q: "Where do I review results?",
-    a: "Review every match in your Prospect Inbox. Workspace owners and admins can also choose to receive website refresh emails; Pro summaries include aggregate review-ready lead results.",
+    a: "On Pro, review source-linked matches in your Prospect Inbox. Free gives you a website-based matching brief to review before starting discovery.",
   },
   {
     q: "Which public sources does Arcli cover?",
@@ -27,7 +27,7 @@ const items = [
   },
   {
     q: "What changes when I upgrade to Pro?",
-    a: "Free lets you validate market signal with a live count of matched conversations. Pro unlocks the review-ready queue, match evidence, and ongoing discovery.",
+    a: "Free prepares a website-based matching brief you can review and edit. It does not run public-conversation discovery or show a live match count. Pro starts source searches and opens the evidence-backed review queue when matches are found.",
   },
 ];
 

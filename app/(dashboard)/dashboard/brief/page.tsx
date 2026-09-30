@@ -54,13 +54,15 @@ export default async function MatchingBriefPage() {
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
     getWorkspaceEntitlements(supabase, tenantId),
   ]);
-  const buyerDemandReport = await fetchBuyerDemandReport(
-    supabase,
-    tenantId,
-    serviceProfile.id,
-    verifierScoreThreshold(),
-  );
-  const latestScan = isBuyerDemandReportCurrent(crawlJob, buyerDemandReport)
+  const buyerDemandReport = entitlements.isPro
+    ? await fetchBuyerDemandReport(
+        supabase,
+        tenantId,
+        serviceProfile.id,
+        verifierScoreThreshold(),
+      )
+    : null;
+  const latestScan = buyerDemandReport && isBuyerDemandReportCurrent(crawlJob, buyerDemandReport)
     ? buyerDemandReport
     : null;
   const targetingBrief = await fetchTargetingBrief(

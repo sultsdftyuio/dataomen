@@ -110,7 +110,11 @@ def ready_for_review_count_since(
     service_profile_id: str,
     started_at: str,
 ) -> int:
-    """Count new user-visible finds created during this activation run."""
+    """Count ready finds evaluated during this activation run.
+
+    A previously seen source post is upserted under its existing lead-match
+    ID. Its creation time predates this run, but its verification is current.
+    """
 
     with _database_engine().begin() as conn:
         result = conn.execute(
@@ -121,7 +125,7 @@ def ready_for_review_count_since(
                  WHERE tenant_id = :tenant_id
                    AND service_profile_id::TEXT = :service_profile_id
                    AND match_status = 'ready_for_review'
-                   AND created_at >= CAST(:started_at AS timestamptz)
+                   AND updated_at >= CAST(:started_at AS timestamptz)
                 """
             ),
             {

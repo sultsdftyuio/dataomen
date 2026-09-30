@@ -48,7 +48,7 @@ def test_next_monitor_waits_for_the_minimum_then_stops_at_the_maximum() -> None:
     assert run_control.next_monitor_delay_seconds(elapsed_seconds=300, limits=limits) is None
 
 
-def test_count_only_includes_new_ready_for_review_posts() -> None:
+def test_count_includes_ready_matches_reevaluated_in_this_run() -> None:
     class _Result:
         def scalar_one(self) -> int:
             return 2
@@ -78,7 +78,8 @@ def test_count_only_includes_new_ready_for_review_posts() -> None:
 
     assert count == 2
     assert "match_status = 'ready_for_review'" in connection.statement
-    assert "created_at >=" in connection.statement
+    assert "updated_at >=" in connection.statement
+    assert "created_at >=" not in connection.statement
     assert connection.params["tenant_id"] == TENANT_ID
     assert connection.params["service_profile_id"] == PROFILE_ID
 

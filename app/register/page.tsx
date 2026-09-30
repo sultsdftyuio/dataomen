@@ -228,6 +228,10 @@ function RegisterForm() {
               </span>
             </div>
           </form>
+          <p className="mt-5 text-center text-xs leading-5" style={{ color: C.muted }}>
+            We use your email for sign-in and important account messages. Optional result emails are off until you enable them in Settings. Read our{" "}
+            <Link href="/privacy" className="font-semibold underline underline-offset-2" style={{ color: C.blue }}>Privacy Policy</Link>.
+          </p>
         </div>
 
         <p className="text-center mt-8 text-sm" style={{ color: C.muted }}>

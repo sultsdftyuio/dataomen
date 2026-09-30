@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
+import { EmptyQueue } from "@/components/prospects/empty-queue";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import {
   isPotentialBuyer,
@@ -32,6 +33,7 @@ import {
 } from "@/app/(dashboard)/dashboard/lead-queue-filter";
 import type {
   BuyerGroupActivationAction,
+  BuyerDemandReportView,
   LeadFeedbackValue,
   ProspectActionResult,
   QualifiedLeadView,
@@ -53,6 +55,7 @@ type ProspectLeadDeskProps = {
   activateBuyerGroup: BuyerGroupActivationAction;
   reviewedConversationCount: number;
   screenedMatches: QualifiedLeadView[];
+  buyerDemandReport: BuyerDemandReportView | null;
   filteredQueueItems: QualifiedLeadView[];
   selectedLead: QualifiedLeadView | null;
   selectedLeadId: string | null;
@@ -79,6 +82,7 @@ type ProspectLeadDeskProps = {
   onSourceChange: (value: string) => void;
   onSelectLead: (leadId: string) => void;
   onOpenFocusedReview: () => void;
+  onOpenScanActivity: () => void;
   onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
   onQualify: (leadId: string) => void;
 };
@@ -311,6 +315,7 @@ export function ProspectLeadDesk({
   activateBuyerGroup,
   reviewedConversationCount,
   screenedMatches,
+  buyerDemandReport,
   filteredQueueItems,
   selectedLead,
   selectedLeadId,
@@ -337,6 +342,7 @@ export function ProspectLeadDesk({
   onSourceChange,
   onSelectLead,
   onOpenFocusedReview,
+  onOpenScanActivity,
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
@@ -346,9 +352,8 @@ export function ProspectLeadDesk({
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
   const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
-  const evidence = selectedLead
-    ? selectedLead.evidenceExcerpt ?? selectedLead.sourcePost.text
-    : null;
+  const exactEvidence = selectedLead?.evidenceExcerpt?.trim() || null;
+  const sourceText = selectedLead?.sourcePost.text?.trim() || null;
   const isScreenedAudit = queueFilter === "screened";
   const hasActiveFilters =
     queueQuery.length > 0 ||
@@ -586,7 +591,7 @@ export function ProspectLeadDesk({
           <div className="hidden shrink-0 grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
             <span>Source &amp; conversation</span>
             <span>Signal</span>
-            <span>Latest evidence</span>
+            <span>Source text</span>
             <span>Match strength</span>
             <span>Age</span>
             <span>Status</span>
@@ -606,8 +611,12 @@ export function ProspectLeadDesk({
           ) : (
             <EmptyQueue
               hasProfile={serviceProfile.hasProfile}
+              hasActiveFilters={hasActiveFilters}
               screenedMatchCount={screenedMatches.length}
               showingScreenedAudit={isScreenedAudit}
+              report={buyerDemandReport}
+              onClearFilters={clearFilters}
+              onOpenScanActivity={onOpenScanActivity}
               onOpenScreenedAudit={() => {
                 onQueryChange("");
                 onConfidenceChange("all");
@@ -739,12 +748,20 @@ export function ProspectLeadDesk({
                   ) : null}
 
                   {detailTab === "evidence" ? (
-                    <DetailSection title="Source excerpt">
-                      <blockquote className="border-l-2 pl-3 text-sm leading-6" style={{ borderColor: C.blueLight, color: C.navySoft }}>
-                        “{evidence}”
-                      </blockquote>
+                    <DetailSection title={exactEvidence ? "Exact source excerpt" : "Original source text"}>
+                      {exactEvidence ? (
+                        <blockquote className="border-l-2 pl-3 text-sm leading-6" style={{ borderColor: C.blueLight, color: C.navySoft }}>
+                          “{exactEvidence}”
+                        </blockquote>
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: C.navySoft }}>
+                          {sourceText ?? "No source text was retained for this record."}
+                        </p>
+                      )}
                       <p className="mt-3 text-xs leading-5" style={{ color: C.muted }}>
-                        This excerpt is retained from the original public post.
+                        {exactEvidence
+                          ? "This quote was checked against the original public post."
+                          : "No exact quote was captured. Read the original post before deciding whether to act."}
                       </p>
                     </DetailSection>
                   ) : null}
@@ -1091,64 +1108,6 @@ function VerificationMetric({ label, value }: { label: string; value: string }) 
     <div className="min-w-0 px-2.5 py-2.5 first:pl-3 last:pr-3">
       <dt className="text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
       <dd className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>{value}</dd>
-    </div>
-  );
-}
-
-function EmptyQueue({
-  hasProfile,
-  screenedMatchCount,
-  showingScreenedAudit,
-  onOpenScreenedAudit,
-}: {
-  hasProfile: boolean;
-  screenedMatchCount: number;
-  showingScreenedAudit: boolean;
-  onOpenScreenedAudit: () => void;
-}) {
-  const hasScreenedMatches = screenedMatchCount > 0;
-  const screenedRecordLabel = screenedMatchCount === 1 ? "record" : "records";
-  const title = showingScreenedAudit
-    ? "No screened-out records match these filters"
-    : hasProfile && hasScreenedMatches
-      ? "No strong signals match these filters"
-      : hasProfile
-        ? "No signals match these filters"
-        : "Your matching brief needs a little more detail";
-  const detail = showingScreenedAudit
-    ? "Try clearing a filter, or refresh after the next public-source scan completes."
-    : hasProfile && hasScreenedMatches
-      ? `${screenedMatchCount} screened-out ${screenedRecordLabel} remain available in the audit, separate from strong and relevant opportunities.`
-      : hasProfile
-        ? "Try clearing a filter, or refresh after the next public-source scan completes."
-        : "Add the buyer, problem, and value proposition you want discovery to look for.";
-
-  return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
-      <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-        <Search className="size-5" aria-hidden="true" />
-      </span>
-      <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>
-        {title}
-      </h2>
-      <p className="mt-2 max-w-sm text-sm leading-6" style={{ color: C.muted }}>
-        {detail}
-      </p>
-      {!showingScreenedAudit && hasScreenedMatches ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-4 border-[#C8D9E8]"
-          onClick={onOpenScreenedAudit}
-        >
-          Open screened-out audit
-        </Button>
-      ) : (
-        <Button asChild variant="outline" size="sm" className="mt-4 border-[#C8D9E8]">
-          <Link href="/dashboard/brief">Edit targeting</Link>
-        </Button>
-      )}
     </div>
   );
 }
