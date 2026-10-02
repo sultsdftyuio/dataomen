@@ -1,10 +1,11 @@
--- Run as a trusted migration role in staging. All fixtures roll back.
+-- Run as a trusted migration role in staging after
+-- scripts/pilot_application_contract.sql. All fixtures roll back.
 BEGIN;
 
 DO $$
 BEGIN
     IF to_regclass('public.pilot_applications') IS NULL THEN
-        RAISE EXCEPTION 'pilot_applications table is missing';
+        RAISE EXCEPTION 'pilot_applications table is missing; apply scripts/pilot_application_contract.sql before this verification';
     END IF;
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.pilot_applications'::regclass) THEN
         RAISE EXCEPTION 'pilot_applications RLS is disabled';

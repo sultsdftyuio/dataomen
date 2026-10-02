@@ -21,7 +21,7 @@ BEGIN
     IF to_regclass('public.assisted_prospect_candidates') IS NULL
        OR to_regclass('public.assisted_candidate_observations') IS NULL
        OR to_regclass('public.assisted_prospect_deliveries') IS NULL THEN
-        RAISE EXCEPTION 'apply the assisted delivery and candidate migrations first';
+        RAISE EXCEPTION 'apply scripts/entity_first_prospecting_contract.sql, scripts/assisted_prospect_delivery_contract.sql, then scripts/assisted_candidate_intake_contract.sql before this staging verification';
     END IF;
     IF has_table_privilege('authenticated', 'public.assisted_prospect_candidates', 'SELECT')
        OR has_table_privilege('authenticated', 'public.assisted_candidate_observations', 'SELECT')

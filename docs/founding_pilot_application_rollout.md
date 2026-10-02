@@ -2,6 +2,12 @@
 
 The landing page offers three distinct paths: a free website brief, the existing $35/month public-conversation scanner, and an application-based reviewed prospect pilot. The new pilot form does not enroll a workspace, start a subscription, or promise a weekly quantity.
 
+## Database setup for the application form
+
+First use a dedicated staging project. In its Supabase SQL editor, open `scripts/pilot_application_contract.sql`, paste its full contents, and run it. Then run the full contents of `scripts/verify_pilot_application_contract.sql` in the same staging project. The verification script checks the installed table and rolls back its test application. Once staging passes, apply `scripts/pilot_application_contract.sql` to the production project through its normal migration path. Running verification before the migration, or in a different project, produces a missing-table error.
+
+The application form does not depend on the assisted prospect delivery or candidate contracts. `scripts/verify_assisted_candidate_contract.sql` belongs to the separate in-app prospect pilot; use it only in a dedicated staging database after the three migrations listed in `docs/assisted_prospect_pilot_rollout.md`.
+
 ## Before sending traffic
 
 1. Apply `scripts/pilot_application_contract.sql` through the normal database migration path. Run `scripts/verify_pilot_application_contract.sql` in staging, then verify with actual anon/authenticated API credentials that neither role can read or write `public.pilot_applications` while the server service role can insert and read it.

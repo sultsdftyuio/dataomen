@@ -1,8 +1,12 @@
 # Database contract guide
 
-Arcli's SQL scripts are manual, idempotent database contracts. Apply them in
-the listed order to a new workspace; do not run every file in `scripts/` just
-because it exists.
+Arcli's SQL scripts are manual, idempotent database contracts. The list below
+records the historical full-install order; do not run every file in `scripts/`
+just because it exists. For a table-by-table inventory, the minimal public
+pilot application path, and the legacy retirement candidates, see
+[`database_table_audit.md`](database_table_audit.md). Applying the full legacy
+base scripts still creates their old churn and recovery tables; merely skipping
+their `CREATE TABLE` statements would break later views, policies, and jobs.
 
 ## Current Arcli product contracts
 
@@ -24,6 +28,9 @@ because it exists.
 9. `scripts/hn_source_posts_global_contract.sql`
 10. `scripts/lead_match_qualification_guard.sql`
 11. `scripts/prospect_intelligence_contract.sql`
+11a. `scripts/crawl_result_notifications.sql` — apply after steps 7 and 11
+     when crawl/discovery completion email is enabled. The current settings
+     page and notification worker use its three tables.
 12. `scripts/discovery_candidate_pool_contract.sql` - apply after steps 5,
     9, and 11; it stores raw and plausible discovery candidates before they
     become verified leads.
@@ -58,6 +65,11 @@ because it exists.
      service role can read or write applications.
 21. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
     recovery-unsubscribe route remains enabled.
+
+22. `scripts/retire_legacy_tables.sql` - apply last to remove the 24
+    repository-unused tables and their legacy dependent objects. This
+    permanently deletes any rows in those tables. Do not reapply the older
+    base contracts afterward; they recreate retired objects.
 
 Detailed prospect-intelligence migration guidance is also in
 [`prospect-intelligence-production.md`](prospect-intelligence-production.md).
