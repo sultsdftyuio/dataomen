@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { DashboardNavigation } from "@/components/dashboard/DashboardNavigation";
 import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { assistedProspectPilotEnrolled } from "@/lib/assisted-prospect-pilot";
 import Logo from "@/components/ui/logo";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
@@ -48,6 +49,8 @@ export default async function DashboardLayout({
     redirect("/onboarding/workspace");
   }
 
+  const assistedPilot = await assistedProspectPilotEnrolled(supabase, tenantId);
+
   return (
     <div
       className="flex h-dvh flex-col overflow-hidden font-sans"
@@ -70,7 +73,7 @@ export default async function DashboardLayout({
               <WorkspaceTopNav />
             </div>
             <div className="hidden min-w-0 items-center border-l pl-3 md:flex" style={{ borderColor: C.rule }}>
-              <DashboardNavigation isPro={entitlements.isPro} />
+              <DashboardNavigation isPro={entitlements.isPro} assistedPilot={assistedPilot} />
             </div>
           </div>
 
@@ -85,7 +88,7 @@ export default async function DashboardLayout({
         className="shrink-0 border-t bg-white md:hidden"
         style={{ borderColor: C.rule }}
       >
-        <DashboardNavigation compact isPro={entitlements.isPro} />
+        <DashboardNavigation compact isPro={entitlements.isPro} assistedPilot={assistedPilot} />
       </div>
     </div>
   );

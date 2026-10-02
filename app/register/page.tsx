@@ -119,7 +119,7 @@ function RegisterForm() {
             Get Started
           </h1>
           <p className="text-center" style={{ color: C.muted }}>
-            Deploy your first AI agent on{" "}
+            Create a targeting brief on{" "}
             <span className="font-semibold" style={{ color: C.navy }}>
               arcli.tech
             </span>

@@ -23,9 +23,9 @@ export function Navbar() {
   }, []);
 
   const navLinks = [
-    { name: "See a signal", href: "/#proof" },
+    { name: "See a prospect", href: "/#proof" },
     { name: "How it works", href: "/#pipeline" },
-    { name: "How it qualifies", href: "/#quality" },
+    { name: "Evidence standards", href: "/#quality" },
     { name: "Pricing", href: "/#pricing" },
   ];
 
@@ -112,7 +112,7 @@ export function Navbar() {
           </Link>
 
           <Link 
-            href="/register" 
+            href="/pilot"
             style={{ 
               height: 40,
               padding: "0 16px",
@@ -141,7 +141,7 @@ export function Navbar() {
               (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 6px 14px rgba(27,110,191,0.22)";
             }}
           >
-            Build Free Brief
+            <span className="hidden sm:inline">Request Coverage Review</span><span className="sm:hidden">Apply</span>
           </Link>
         </div>
       </div>

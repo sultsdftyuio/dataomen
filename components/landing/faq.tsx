@@ -7,27 +7,31 @@ import { Reveal, RevealWords } from "@/components/landing/reveal";
 const items = [
   {
     q: "What do I need to get started?",
-    a: "Start with your website. Arcli uses your public pages to build a focused picture of your offer, audience, buyer problems, and language to look for.",
+    a: "Start with your website. Arcli drafts a picture of your offer and audience for you to review. You approve the target accounts, buyer roles, and exclusions before a founding pilot begins.",
   },
   {
-    q: "Where do I review results?",
-    a: "On Pro, review source-linked matches in your Prospect Inbox. Free gives you a website-based matching brief to review before starting discovery.",
+    q: "What is the founding prospect pilot?",
+    a: "It is a separately scoped, service-assisted prospect feed for selected markets. We check source coverage and agree on the targeting, delivery scope, and price before starting. Pilot access is separate from the $35 Pro plan.",
   },
   {
-    q: "Which public sources does Arcli cover?",
-    a: "Core coverage begins with Hacker News and Bluesky. Arcli may add technical or community sources, including Lemmy, Stack Exchange, and GitHub, when they fit your product and audience.",
+    q: "Does every prospect have a recent buying signal?",
+    a: "No. We label direct buyer intent, timely opportunities, and high-fit prospects separately. A high-fit account can be useful without a fresh event, and its card states when no recent buying signal was observed.",
   },
   {
-    q: "How does Arcli keep weak matches out of the queue?",
-    a: "Arcli evaluates the surrounding conversation, not just a matching word. You see the original source and match reasoning before you act, and your feedback helps improve what rises to the top.",
+    q: "What makes a pilot prospect worth reviewing?",
+    a: "The account must match the approved brief, have reviewable source evidence, a specific reason to approach it, and a plausible action route. Raw company-list entries do not count as delivered prospects.",
   },
   {
     q: "Does Arcli automate cold outreach?",
     a: "No. Arcli helps you find and understand useful opportunities. It does not send mass messages, read your inbox, or make outreach decisions for you.",
   },
   {
-    q: "What changes when I upgrade to Pro?",
-    a: "Free prepares a website-based matching brief you can review and edit. It does not run public-conversation discovery or show a live match count. Pro starts source searches and opens the evidence-backed review queue when matches are found.",
+    q: "How is $35 Pro different from the pilot?",
+    a: "Pro is the existing self-serve public-conversation scanner. It opens source-linked matches when supported discussions fit your brief; results vary by market. The reviewed account pilot has a separate application and commercial scope.",
+  },
+  {
+    q: "Is there a weekly prospect guarantee?",
+    a: "There is no general weekly-volume promise today. We assess your market and agree on realistic scope before a pilot starts, and report shortfalls rather than filling a target with weak accounts.",
   },
 ];
 

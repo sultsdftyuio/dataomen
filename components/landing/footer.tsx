@@ -28,7 +28,7 @@ export default function Footer() {
               <Logo className="h-7 w-auto group-hover:scale-[1.02] transition-transform" />
             </Link>
             <p className="text-slate-600 mb-6 max-w-md text-[14px] leading-relaxed">
-              Buyer-intent discovery for SaaS founders, grounded in original public conversations and human review.
+              Evidence-backed prospect research for teams that want a clear reason to reach out. Start with a free brief or request a founding-pilot coverage review.
             </p>
           </div>
 
@@ -41,7 +41,7 @@ export default function Footer() {
               <ul className="space-y-3">
                 <li>
                   <Link href="/#proof" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    See a Public Signal
+                    See a Prospect File
                   </Link>
                 </li>
                 <li>
@@ -51,7 +51,7 @@ export default function Footer() {
                 </li>
                 <li>
                   <Link href="/#quality" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    How Matches Qualify
+                    Evidence Standards
                   </Link>
                 </li>
                 <li>
@@ -61,7 +61,7 @@ export default function Footer() {
                 </li>
                 <li>
                   <Link href="/resources" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Buyer Intent Resources
+                    Prospecting Resources
                   </Link>
                 </li>
               </ul>
@@ -72,8 +72,13 @@ export default function Footer() {
               <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">App Portal</h3>
               <ul className="space-y-3">
                 <li>
+                  <Link href="/pilot" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    Request Coverage Review
+                  </Link>
+                </li>
+                <li>
                   <Link href="/register" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Create Workspace
+                    Create Free Brief
                   </Link>
                 </li>
                 <li>
@@ -132,7 +137,7 @@ export default function Footer() {
         {/* Bottom Section */}
         <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
           <p className="text-sm text-slate-500">
-            &copy; {currentYear} Arcli. All rights reserved. Prospect Finder for SaaS.
+            &copy; {currentYear} Arcli. All rights reserved. Evidence-backed prospect discovery.
           </p>
           <div className="flex items-center gap-6 text-sm text-slate-500">
             <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-[#1B6EBF] transition-colors flex items-center gap-2 font-medium text-slate-600">

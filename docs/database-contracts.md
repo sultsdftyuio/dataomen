@@ -40,8 +40,22 @@ because it exists.
 18. `scripts/prospect_target_opportunity_contract.sql` — optional human-reviewed
     target opportunities and server-only CRM handoff guards; apply after steps
     15 and 17.
+18a. `scripts/assisted_prospect_delivery_contract.sql` — optional assisted
+     prospect pilot. Apply after step 15. Adds service-owned, expiring cohort
+     enrollment and reviewed deliveries, a bounded
+     customer projection, and tenant-scoped feedback RPCs. It is independent
+     of target opportunities.
+18b. `scripts/assisted_candidate_intake_contract.sql` — optional private
+     account candidate intake after 18a. Adds tenant-domain suppressions,
+     brief-revision candidates, source observations, publication guards, and
+     a customer read gate for revoked, expired, or suppressed accounts.
+     Imported rows are research work, not delivered prospects.
 19. `scripts/stripe.sql` — only when Stripe Connect is enabled.
 20. `scripts/public_data_compliance_contract.sql`
+20a. `scripts/pilot_application_contract.sql` — private, public-form intake for
+     founding-pilot coverage reviews. It is independent of the assisted
+     delivery contracts. Apply before linking advertising to `/pilot`; only the
+     service role can read or write applications.
 21. `scripts/recovery_unsubscribe_compat.sql` — only while the retained
     recovery-unsubscribe route remains enabled.
 

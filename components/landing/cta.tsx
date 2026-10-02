@@ -24,12 +24,12 @@ export function CTA() {
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: 640, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(34px, 4vw, 46px)", marginBottom: 12, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
-          <RevealWords text="Start with a free" />
+          <RevealWords text="Find out what your" />
           <br />
-          <RevealWords text="website brief." delay={160} />
+          <RevealWords text="market can support." delay={160} />
         </h2>
         <p style={{ fontSize: 16, marginBottom: 26, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-          Add your website, review who you want to reach, and start public-source discovery on Pro.
+          Tell us what you sell and who you want to reach. We’ll assess coverage before discussing a reviewed prospect pilot.
         </p>
 
 
@@ -37,7 +37,7 @@ export function CTA() {
         <Reveal delay={180}>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 22 }}>
             <a
-              href="/register"
+              href="/pilot"
               style={{
                 height: 40,
                 padding: "0 16px",
@@ -55,7 +55,7 @@ export function CTA() {
                 letterSpacing: "0.02em",
               }}
             >
-              Build Your Free Brief <ArrowRight size={14} />
+              Request a Coverage Review <ArrowRight size={14} />
             </a>
           </div>
         </Reveal>
@@ -63,7 +63,7 @@ export function CTA() {
         {/* Trust nudges */}
         <Reveal delay={260}>
           <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: "0.03em", textTransform: "uppercase", flexWrap: "wrap", justifyContent: "center" }}>
-          {["Simple $35/month Pro", "Cancel anytime", "No per-seat fees"].map((t, i) => (
+          {["No obligation to apply", "Scope agreed before payment", "Human-reviewed pilot"].map((t, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <CheckCircle2 size={14} /> {t}
             </span>

@@ -22,6 +22,8 @@ class FastCheckQueryOutcome:
     hits_found: int = 0
     plausible_hits: int = 0
     inserted_count: int = 0
+    admission_rejections: dict[str, int] = field(default_factory=dict)
+    governance_excluded: int = 0
     error_type: str | None = None
     status_code: int | None = None
     # Keep retrieval provenance with each query. The candidate pool can then
@@ -47,6 +49,18 @@ class FastCheckSourceResult:
     @property
     def inserted_count(self) -> int:
         return sum(item.inserted_count for item in self.query_outcomes)
+
+    @property
+    def admission_rejections(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for item in self.query_outcomes:
+            for reason, count in item.admission_rejections.items():
+                counts[reason] = counts.get(reason, 0) + count
+        return counts
+
+    @property
+    def governance_excluded(self) -> int:
+        return sum(item.governance_excluded for item in self.query_outcomes)
 
     @property
     def plausible_query_types(self) -> set[str]:
@@ -127,6 +141,12 @@ def _source_result_for_hackernews(
                 hits_found=max(0, int(result.hits_found)),
                 plausible_hits=max(0, int(result.plausible_hits)),
                 inserted_count=max(0, int(result.inserted_count)),
+                admission_rejections=dict(
+                    getattr(result, "admission_rejections", {})
+                ),
+                governance_excluded=max(
+                    0, int(getattr(result, "governance_excluded", 0))
+                ),
                 source_post_refs=query_refs,
             )
         )
@@ -246,6 +266,12 @@ def _source_result_for_additional_source(
                     hits_found=max(0, int(result.hits_found)),
                     plausible_hits=max(0, int(result.plausible_hits)),
                     inserted_count=max(0, int(result.inserted_count)),
+                    admission_rejections=dict(
+                        getattr(result, "admission_rejections", {})
+                    ),
+                    governance_excluded=max(
+                        0, int(getattr(result, "governance_excluded", 0))
+                    ),
                     source_post_refs=query_refs,
                 )
             )

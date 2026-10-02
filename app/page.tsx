@@ -13,16 +13,16 @@ import Footer from "@/components/landing/footer";
 import { DEFAULT_OG_IMAGE_URL, SITE_URL } from "@/lib/site";
 
 const description =
-  "Find public conversations where potential B2B buyers describe the problem you solve, then review the evidence before you reach out.";
+  "Know who to reach out to and why. Arcli starts with your website and helps prepare evidence-backed prospect recommendations for a reviewed founding pilot.";
 
 export const metadata: Metadata = {
-  title: "Arcli | Buyer Intent Discovery for B2B Founders",
+  title: "Arcli | Know Who to Reach Out To and Why",
   description,
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Arcli | Buyer Intent Discovery for B2B Founders",
+    title: "Arcli | Know Who to Reach Out To and Why",
     description,
     url: SITE_URL,
     siteName: "Arcli",
@@ -32,13 +32,13 @@ export const metadata: Metadata = {
         url: DEFAULT_OG_IMAGE_URL,
         width: 1200,
         height: 630,
-        alt: "Arcli helps B2B founders review buyer-intent evidence from public conversations",
+        alt: "Arcli helps teams review evidence-backed prospects",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Arcli | Buyer Intent Discovery for B2B Founders",
+    title: "Arcli | Know Who to Reach Out To and Why",
     description,
     images: [DEFAULT_OG_IMAGE_URL],
   },
@@ -60,8 +60,8 @@ const structuredData = [
     url: SITE_URL,
     description,
     featureList: [
-      "Website-led buyer-language research",
-      "Public-conversation matching",
+      "Website-led targeting brief",
+      "Public-conversation matching on Pro",
       "Evidence-backed prospect review",
     ],
   },

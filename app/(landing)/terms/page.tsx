@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 
 export const metadata = {
   title: "Terms of Service | Arcli",
-  description: "Terms and acceptable use rules for Arcli's public-conversation monitoring service.",
+  description: "Terms and acceptable use rules for Arcli's prospect research and public-conversation service.",
   alternates: { canonical: "/terms" },
 };
 
-const UPDATED_ON = "August 14, 2026";
+const UPDATED_ON = "October 2, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return <section className="space-y-3"><h2 className="text-xl font-semibold tracking-tight text-slate-950">{title}</h2><div className="space-y-3 text-[15px] leading-7 text-slate-600">{children}</div></section>;
@@ -28,7 +28,7 @@ export default function TermsOfServicePage() {
 
         <article className="mt-8 space-y-10 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
           <Section title="1. The Service">
-            <p>Arcli helps customers identify potentially relevant, publicly available conversations about the problem their product solves. It learns from information the customer supplies, checks selected public-source content, and presents a lead brief and optional suggested reply for human review.</p>
+            <p>Arcli helps customers research potentially relevant accounts and public conversations. It learns from information the customer supplies, checks selected sources, and presents evidence and possible next steps for human review. The $35 Pro plan covers self-serve public-conversation scanning. Any assisted prospect pilot has a separate agreed scope and commercial terms.</p>
             <p>Arcli is not a data broker, contact-enrichment service, outreach automation tool, or guarantee of sales, leads, accuracy, availability, or results.</p>
           </Section>
           <Section title="2. Your account and information">
@@ -39,7 +39,7 @@ export default function TermsOfServicePage() {
             <p>We may limit, remove, or stop collecting content or a source at any time to protect people, honour a removal request, comply with source requirements, or manage legal and security risk.</p>
           </Section>
           <Section title="4. Human review and outreach">
-            <p>Arcli does not automatically send messages. A lead brief or suggested reply is only an assistive output. You must review the original public post and decide whether any outreach is appropriate.</p>
+            <p>Arcli does not automatically send messages. A prospect file, lead brief, or suggested reply is only an assistive output. You must review its cited sources and decide whether any outreach is appropriate.</p>
             <p>If you contact someone, you are responsible for the message, lawful basis, disclosures, opt-out handling, and compliance with anti-spam, privacy, consumer-protection, and platform rules that apply to you and the recipient.</p>
           </Section>
           <Section title="5. Acceptable use">

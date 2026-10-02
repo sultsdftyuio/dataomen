@@ -148,6 +148,8 @@ class AdditionalPublicSourceIngestionResult:
     inserted_source_post_ids: list[str]
     matchable_source_post_refs: list[PublicSourcePostRef] = field(default_factory=list)
     plausible_hits: int = 0
+    admission_rejections: dict[str, int] = field(default_factory=dict)
+    governance_excluded: int = 0
 
 
 _TECHNICAL_DISCOVERY_QUERY_TOKENS = frozenset(
@@ -390,6 +392,7 @@ def ingest_additional_public_source_posts(
             if _post_matches_community_selector(post, normalized_selector)
         ]
     admission_reasons_by_ref: dict[tuple[str, str], tuple[str, ...]] = {}
+    admission_rejections: Counter[str] = Counter()
     if not posts:
         result = AdditionalPublicSourceIngestionResult(
             source=normalized_source,
@@ -410,6 +413,7 @@ def ingest_additional_public_source_posts(
                 query_type=query_type,
             )
             if not admission.accepted:
+                admission_rejections[admission.reasons[0]] += 1
                 continue
             plausible_posts.append(post)
             admission_reasons_by_ref[(post.source.casefold(), post.source_post_id)] = (
@@ -436,9 +440,11 @@ def ingest_additional_public_source_posts(
                 admission_reasons_by_ref=admission_reasons_by_ref,
             ),
             plausible_hits=len(plausible_posts),
+            admission_rejections=dict(admission_rejections),
+            governance_excluded=max(0, len(plausible_posts) - len(governed_posts)),
         )
     logger.info(
-        "additional_public_source_ingestion_completed source=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s admission_signals=%s",
+        "additional_public_source_ingestion_completed source=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s admission_signals=%s admission_rejections=%s",
         result.source,
         query_type,
         result.hits_found,
@@ -451,6 +457,7 @@ def ingest_additional_public_source_posts(
                 for reason in reasons
             )
         ),
+        result.admission_rejections,
     )
     return result
 

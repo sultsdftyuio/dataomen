@@ -8,7 +8,7 @@ export const metadata = {
   alternates: { canonical: "/privacy" },
 };
 
-const UPDATED_ON = "September 30, 2026";
+const UPDATED_ON = "October 2, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -31,7 +31,7 @@ export default function PrivacyPolicyPage() {
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><ShieldCheck className="h-6 w-6" /></div>
           <h1 className="mt-6 text-3xl font-bold tracking-tight sm:text-4xl">Arcli Privacy Policy</h1>
           <p className="mt-3 text-sm text-slate-500">Last updated {UPDATED_ON}</p>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-slate-600">Arcli helps businesses find relevant public conversations about problems their product may solve. This policy explains what we collect, why we use it, and how to ask us to remove public-source content.</p>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-slate-600">Arcli helps businesses research potential prospects and relevant public conversations. This policy explains what we collect, why we use it, and how to ask us to remove public-source content.</p>
         </header>
 
         <article className="mt-8 space-y-10 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-10">
@@ -42,6 +42,7 @@ export default function PrivacyPolicyPage() {
 
           <Section title="2. Information we collect">
             <p><strong className="font-semibold text-slate-800">Account and workspace information.</strong> This includes your email address, account details, authentication information, billing information provided to a payment provider, your website URL, and the product description or matching brief you provide.</p>
+            <p><strong className="font-semibold text-slate-800">Pilot applications.</strong> If you request a coverage review, we collect your email, company website, description of your offer and ideal customer, and any buyer-role or geography details you provide. We also keep a limited, pseudonymous rate-limit identifier to prevent abuse.</p>
             <p><strong className="font-semibold text-slate-800">Selected public-source information.</strong> We collect limited content from supported public sources: a public post’s title and text, public handle, link, source name, and publication time. We use it only to assess whether the discussion may be relevant to a customer’s product.</p>
             <p>We do not collect private accounts, private groups, direct messages, profile biographies, or contact-enrichment data. We redact clear email addresses and telephone numbers from text before storage, and exclude posts that clearly concern minors or sensitive personal topics.</p>
             <p><strong className="font-semibold text-slate-800">Service and security information.</strong> We collect technical logs needed to operate, secure, rate-limit, and troubleshoot the Service.</p>
@@ -49,6 +50,7 @@ export default function PrivacyPolicyPage() {
 
           <Section title="3. How we use information">
             <p>We use information to provide the Service, create and secure accounts, process subscriptions, understand the product a customer wants to monitor, retrieve and evaluate relevant public discussions, maintain source and rate-limit controls, and respond to support or privacy requests.</p>
+            <p>We use pilot-application details to assess source coverage, decide whether a pilot is suitable, respond to the applicant, and agree on scope if both sides wish to proceed. Applying does not create a paid subscription or opt you into marketing emails.</p>
             <p>We use your account email for sign-in, recovery, security, billing, and other messages needed to operate your account. Optional website-brief and scan-result emails are off until you opt in through Settings. We rely on that choice to send these optional emails, and you can withdraw it there at any time. They report only website hosts and aggregate outcomes and contain no promotions. We keep delivery and preference records to honor your choice, troubleshoot delivery, and prevent duplicate messages.</p>
             <p>Arcli does not sell public-source personal data or use it to train Arcli models. We do not send outreach to authors of public posts. Any customer outreach is a separate, human-controlled action outside the Service.</p>
           </Section>
@@ -66,6 +68,7 @@ export default function PrivacyPolicyPage() {
           <Section title="6. Retention and deletion">
             <p>Our default public-source retention period is 30 days. When that period ends, Arcli deletes the public-source record and the related copies in lead briefs and buyer-language research. We may retain a small amount of operational information for security, dispute handling, or legal obligations where necessary.</p>
             <p>After a removal request is resolved, we anonymise the requester’s email, rate-limit identifier, and free-form explanation after 90 days while keeping only the public-source suppression identity needed to avoid collecting the same item again.</p>
+            <p>We delete pilot applications after 180 days unless the applicant becomes a customer or a shorter retention request applies. Account or contract records then follow the customer retention terms below.</p>
             <p>We retain customer account and workspace data for as long as the account is active and for a limited period afterwards as needed to provide the Service, meet legal obligations, resolve disputes, and enforce agreements.</p>
           </Section>
 

@@ -1,51 +1,48 @@
-import { ExternalLink, FileSearch, ShieldAlert } from "lucide-react";
+import { FileSearch, Route, ShieldAlert } from "lucide-react";
 
 import { C } from "@/lib/tokens";
 
-const SOURCE_URL = "https://news.ycombinator.com/item?id=43755094";
-
-/** A cited public example of relevance that stops short of claiming purchase intent. */
+/** Illustrative prospect-file layout; it does not represent a delivered customer result. */
 export function SourceExample() {
   return (
     <article className="mx-auto mt-9 max-w-[860px] overflow-hidden rounded-[18px] border bg-white shadow-sm" style={{ borderColor: C.rule }}>
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4 sm:px-6" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue }}>Public discussion example</p>
-          <h3 className="mt-1 text-lg font-semibold" style={{ color: C.navy }}>How to find users to talk to</h3>
-          <p className="mt-1 text-xs" style={{ color: C.muted }}>Hacker News · v1log · April 21, 2025 · historical example</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue }}>Illustrative prospect file</p>
+          <h3 className="mt-1 text-lg font-semibold" style={{ color: C.navy }}>Example software company</h3>
+          <p className="mt-1 text-xs" style={{ color: C.muted }}>High-fit account · facts from an official company page</p>
         </div>
-        <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ backgroundColor: C.amberPale, color: C.amber }}>
-          Research signal, not a qualified buyer
+        <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ backgroundColor: C.greenPale, color: C.green }}>
+          Fit-based prospect
         </span>
       </div>
 
       <div className="grid gap-5 px-5 py-5 sm:grid-cols-2 sm:px-6">
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold" style={{ color: C.navy }}>
-            <FileSearch className="size-4" style={{ color: C.blue }} aria-hidden="true" /> Original evidence
+            <FileSearch className="size-4" style={{ color: C.blue }} aria-hidden="true" /> Why it fits
           </p>
-          <blockquote className="mt-3 border-l-2 pl-3 text-sm leading-6" style={{ borderColor: C.blueLight, color: C.navySoft }}>
-            “My question is how do you find users and customers?”
-          </blockquote>
-          <a href={SOURCE_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
-            Read the original discussion <ExternalLink className="size-3.5" aria-hidden="true" />
-          </a>
+          <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
+            A cited product fact matches the offer and account criteria in the approved targeting brief.
+          </p>
+          <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>A real delivery includes the source link and the date it was checked.</p>
         </div>
 
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold" style={{ color: C.navy }}>
-            <ShieldAlert className="size-4" style={{ color: C.amber }} aria-hidden="true" /> Review before outreach
+            <Route className="size-4" style={{ color: C.blue }} aria-hidden="true" /> How to act
           </p>
           <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-            The author describes a customer-discovery problem. The post does not show that they
-            want to buy a monitoring tool, and it is too old to treat as a fresh opportunity.
+            Use the documented workflow as a specific opening angle. A business contact or public reply route is checked before delivery.
           </p>
-          <p className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>Useful for research; not sales-ready.</p>
+          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.amber }}>
+            <ShieldAlert className="size-3.5" aria-hidden="true" /> No recent buying signal observed
+          </p>
         </div>
       </div>
 
       <p className="border-t px-5 py-3 text-xs leading-5 sm:px-6" style={{ borderColor: C.rule, color: C.muted }}>
-        Manually selected to illustrate evidence and uncertainty. This is not a result produced by Arcli or a claim about current lead volume.
+        This is an illustrative format, not a live prospect, customer result, or volume claim. A delivered card must cite real sources and state what remains unknown.
       </p>
     </article>
   );

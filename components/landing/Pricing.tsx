@@ -63,7 +63,7 @@ export default function ArcliPricingCards() {
             }}
           >
             <span className="section-heading-icon" aria-hidden="true"><Activity size={14} /></span>
-            SIMPLE PRICING
+            WAYS TO START
           </div>
           <h2
             className="pfd"
@@ -76,11 +76,11 @@ export default function ArcliPricingCards() {
               marginBottom: 18,
             }}
           >
-            <RevealWords text="Prepare your brief for free. Search public conversations on Pro." />
+            <RevealWords text="Start with a brief. Choose the research path that fits." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62 }}>
-            Free helps you describe your buyer and problem from your website. Pro runs public-source
-            discovery and shows evidence when a conversation fits.
+            Free helps you shape your buyer brief. Pro scans public conversations. A separately scoped
+            founding pilot adds reviewed account research after a coverage check.
           </p>
         </Reveal>
 
@@ -131,11 +131,11 @@ export default function ArcliPricingCards() {
               <Sparkles className="size-3" aria-hidden="true" /> Pro
             </span>
             <h3 className="pfd mt-4 text-2xl leading-none" style={{ color: C.navy }}>
-              Start evidence-backed discovery.
+              Scan public conversations.
             </h3>
             <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-              Search supported public sources and review matched conversations with source context.
-              The number of useful results depends on your market and source coverage.
+              Scan supported public discussions and review matched conversations with source context.
+              Useful results vary by market and source coverage; this is separate from the reviewed pilot.
             </p>
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.blueLight }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>
@@ -148,13 +148,26 @@ export default function ArcliPricingCards() {
               className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors hover:brightness-95"
               style={{ backgroundColor: C.blue, color: C.white, textDecoration: "none" }}
             >
-              Get Pro <ArrowRight className="size-4" />
+              Explore Pro <ArrowRight className="size-4" />
             </Link>
             <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: C.muted }}>
               <ShieldCheck className="size-3.5" style={{ color: C.blue }} aria-hidden="true" /> No commission on revenue
             </p>
             </article>
           </Reveal>
+        </div>
+        <div className="mt-6 flex flex-col gap-5 rounded-lg border bg-white p-6 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: C.blueLight, boxShadow: surfaceShadow }}>
+          <div className="max-w-[640px]">
+            <span className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: C.blue }}>Founding prospect pilot</span>
+            <h3 className="pfd mt-2 text-2xl" style={{ color: C.navy }}>A reviewed prospect feed for a defined market.</h3>
+            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+              We assess source coverage, agree on your targeting brief, and set the delivery scope and price together.
+              There is no public weekly-volume guarantee.
+            </p>
+          </div>
+          <Link href="/pilot" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold text-white transition-colors hover:brightness-95" style={{ backgroundColor: C.blue }}>
+            Request coverage review <ArrowRight className="size-4" />
+          </Link>
         </div>
       </div>
     </section>

@@ -36,18 +36,18 @@ export function Hero() {
               margin: "0 0 18px",
             }}
           >
-            Find public conversations
+            Know who to reach out to.
             <br />
-            <span style={{ color: C.blue }}>worth reviewing.</span>
+            <span style={{ color: C.blue }}>Know why.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.navySoft, lineHeight: 1.62, maxWidth: 550, margin: "0 auto 30px" }}>
-            Build a matching brief from your website for free. On Pro, Arcli searches supported public sources and gives you the original post, the match reasoning, and a suggested way to respond.
+            Start with your website. Arcli helps shape your targeting brief, then researches prospects with source-linked facts, a reason they fit, and a practical next step. Apply for our reviewed founding pilot.
           </p>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginBottom: 18 }}>
             <a
-              href="/register"
+              href="/pilot"
               style={{
                 height: 40,
                 padding: "0 16px",
@@ -68,14 +68,26 @@ export function Hero() {
                 letterSpacing: "0.02em",
               }}
             >
-              Build Your Free Brief <ArrowRight size={16} />
+              Request a Coverage Review <ArrowRight size={16} />
             </a>
+            <Link
+              href="/register?tier=free"
+              style={{
+                height: 40, padding: "0 16px", borderRadius: 8,
+                border: `1px solid ${C.ruleDark}`, background: C.white,
+                color: C.navy, fontSize: 14, fontWeight: 700,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                textDecoration: "none", whiteSpace: "nowrap",
+              }}
+            >
+              Build a Free Brief
+            </Link>
           </div>
           <Link
             href="#proof"
             style={{ color: C.navySoft, fontSize: 14, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 4 }}
           >
-            See how a signal is reviewed
+            See what a prospect file includes
           </Link>
         </div>
       </div>

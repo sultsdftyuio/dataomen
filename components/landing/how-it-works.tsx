@@ -18,26 +18,26 @@ const steps: Array<{
   {
     icon: Globe2,
     label: "01 / Understand",
-    title: "Understand your offer.",
-    copy: "Arcli builds a focused picture of what you sell, who it is for, and the buyer problems you solve.",
-    signal: "Product context ready",
-    detail: "Audience · problems · buyer language",
+    title: "Start with your website.",
+    copy: "Arcli drafts your offer and likely audience from your website. You correct it and approve the targeting brief.",
+    signal: "Targeting brief approved",
+    detail: "Offer · buyers · exclusions",
   },
   {
     icon: SearchCheck,
     label: "02 / Find",
-    title: "Find buyer language.",
-    copy: "It looks for public discussions where people are actively describing a problem your product could genuinely help solve.",
-    signal: "Buyer signal found",
-    detail: "Conversation · context · intent",
+    title: "Research fitting accounts.",
+    copy: "The founding pilot checks permitted account sources and relevant public signals against your approved brief.",
+    signal: "Candidates researched",
+    detail: "Accounts · source facts · signals",
   },
   {
     icon: BadgeCheck,
     label: "03 / Review",
-    title: "Review the evidence.",
-    copy: "You receive the original post, the reason it matches, and a suggested way to start a useful conversation.",
-    signal: "Ready to review",
-    detail: "Source · why it fits · reply",
+    title: "Decide what to act on.",
+    copy: "A reviewed prospect file explains the fit, links the evidence, and shows a practical way to approach the account.",
+    signal: "Prospect file ready",
+    detail: "Evidence · angle · route",
   },
 ];
 
@@ -85,11 +85,11 @@ export function HowItWorks() {
               margin: "0 0 16px",
             }}
           >
-            <RevealWords text="Turn public conversations into review-ready opportunities." />
+            <RevealWords text="A clear path from your website to a reviewed prospect." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            One clear workflow: define what matters, find the right public conversations, then
-            review the evidence before you act.
+            Start with your offer, approve the accounts you want to reach, and review the evidence
+            before you decide to act.
           </p>
         </Reveal>
 
@@ -115,8 +115,8 @@ export function HowItWorks() {
             textAlign: "center",
           }}
         >
-          Public-source discovery is available on Pro. Core coverage begins with Hacker News and
-          Bluesky; Arcli adds technical or community sources only when they fit your product and audience.
+          The reviewed account workflow is currently an application-based founding pilot. The $35 Pro
+          plan separately searches supported public conversations, with results that vary by market.
         </p>
       </div>
     </section>

@@ -358,6 +358,7 @@ class HackerNewsIngestionTests(unittest.TestCase):
         self.assertEqual(result.inserted_source_post_ids, ["first"])
         self.assertEqual(result.matchable_source_post_ids, ["first"])
         self.assertEqual(result.plausible_hits, 1)
+        self.assertEqual(result.admission_rejections, {"insufficient_query_context": 1})
         self.assertEqual(len(client.calls), 1)
         first_payload, first_options = client.calls[0]
         self.assertNotIn("tenant_id", first_payload[0])

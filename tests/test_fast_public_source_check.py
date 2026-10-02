@@ -40,6 +40,8 @@ class FastPublicSourceCheckTests(unittest.TestCase):
                 hits_found=2,
                 plausible_hits=1,
                 inserted_count=1,
+                admission_rejections={"missing_buyer_context": 1},
+                governance_excluded=0,
                 matchable_source_post_refs=[],
             )
 
@@ -77,6 +79,8 @@ class FastPublicSourceCheckTests(unittest.TestCase):
 
         self.assertEqual(completed_sources, ["bluesky", "hackernews"])
         self.assertEqual({result.source for result in results}, {"bluesky", "hackernews"})
+        bluesky = next(result for result in results if result.source == "bluesky")
+        self.assertEqual(bluesky.admission_rejections, {"missing_buyer_context": 1})
 
     def test_empty_additional_source_response_releases_the_query_claim(self) -> None:
         """An empty search must not hide a newly indexed post until cache expiry."""
@@ -197,6 +201,8 @@ class FastPublicSourceCheckTests(unittest.TestCase):
                     outcome="completed",
                     hits_found=2,
                     plausible_hits=1,
+                    admission_rejections={"missing_buyer_context": 1},
+                    governance_excluded=1,
                 ),
             ),
         )
@@ -221,7 +227,7 @@ class FastPublicSourceCheckTests(unittest.TestCase):
                 return_value="rematch-message",
             ) as rematch_enqueue,
             patch.object(actors, "_complete_discovery_run", complete_run),
-            patch.object(actors, "_record_discovery_event"),
+            patch.object(actors, "_record_discovery_event") as record_event,
             patch.object(actors, "_close_actor_openai_clients"),
         ):
             actors.ingest_initial_public_sources_fast_job.fn(
@@ -242,6 +248,21 @@ class FastPublicSourceCheckTests(unittest.TestCase):
             complete_run.call_args.kwargs["summary"]["source_completion"]
             ["all_sources_finished"]
         )
+        self.assertEqual(
+            complete_run.call_args.kwargs["summary"]["admission_rejections_by_source"],
+            {"hackernews": {}, "bluesky": {"missing_buyer_context": 1}},
+        )
+        search_events = [
+            item.kwargs
+            for item in record_event.call_args_list
+            if item.kwargs.get("phase") == "search"
+            and item.kwargs.get("source") == "bluesky"
+        ]
+        self.assertEqual(
+            search_events[0]["details"]["admission_rejections"],
+            {"missing_buyer_context": 1},
+        )
+        self.assertEqual(search_events[0]["details"]["governance_excluded"], 1)
         rematch_enqueue.assert_called_once_with(
             "tenant-1",
             "profile-1",

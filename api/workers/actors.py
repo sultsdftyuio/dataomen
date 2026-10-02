@@ -459,6 +459,7 @@ def ingest_initial_public_sources_fast_job(
     )
 
     source_counts: dict[str, int] = {}
+    admission_rejections_by_source: dict[str, dict[str, int]] = {}
     source_failure_details: dict[str, dict[str, int | str | None]] = {}
     total_hits = 0
     total_plausible_hits = 0
@@ -558,6 +559,7 @@ def ingest_initial_public_sources_fast_job(
 
         source = str(result.source)
         source_counts[source] = result.hits_found
+        admission_rejections_by_source[source] = result.admission_rejections
         total_hits += result.hits_found
         total_plausible_hits += result.plausible_hits
         total_new_inserts += result.inserted_count
@@ -649,6 +651,8 @@ def ingest_initial_public_sources_fast_job(
                     "hits_found": query_result.hits_found,
                     "plausible_hits": query_result.plausible_hits,
                     "new_inserts": query_result.inserted_count,
+                    "admission_rejections": query_result.admission_rejections,
+                    "governance_excluded": query_result.governance_excluded,
                 }
             elif query_result.outcome == "failed":
                 details = {
@@ -687,6 +691,8 @@ def ingest_initial_public_sources_fast_job(
                 "new_inserts": result.inserted_count,
                 "matching_source_posts": len(result.source_post_refs),
                 "candidate_pool_observations": candidate_pool_observations,
+                "admission_rejections": result.admission_rejections,
+                "governance_excluded": result.governance_excluded,
             },
         )
 
@@ -825,6 +831,7 @@ def ingest_initial_public_sources_fast_job(
             "source_failure_details": source_failure_details,
             "hits_found": total_hits,
             "plausible_hits": total_plausible_hits,
+            "admission_rejections_by_source": admission_rejections_by_source,
             "plausible_query_types": sorted(plausible_query_types),
             "new_inserts": total_new_inserts,
             "matching_source_posts": total_matching_source_posts,

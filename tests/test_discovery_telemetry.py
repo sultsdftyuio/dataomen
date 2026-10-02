@@ -164,6 +164,33 @@ def test_completion_is_tenant_scoped_and_sanitizes_summary(
     assert json.loads(str(params["summary"]))["source_post"] == "[redacted]"
 
 
+def test_rejection_counts_survive_telemetry_scrubbing_without_source_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    monkeypatch.setattr(discovery_telemetry, "_database_engine", lambda: _Engine(connection))
+
+    discovery_telemetry.record_discovery_event(
+        "e7b9e545-7778-4808-a470-6375d7a9b759",
+        TENANT_ID,
+        "hackernews",
+        "buyer_pain",
+        "need more customers",
+        "search",
+        "completed",
+        {
+            "admission_rejections": {"insufficient_query_context": 3},
+            "governance_excluded": 1,
+            "source_post": "private or removed source text",
+        },
+    )
+
+    details = json.loads(str(connection.calls[0][1]["details"]))
+    assert details["admission_rejections"] == {"insufficient_query_context": 3}
+    assert details["governance_excluded"] == 1
+    assert details["source_post"] == "[redacted]"
+
+
 def test_missing_contract_never_breaks_discovery_and_opens_a_short_circuit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

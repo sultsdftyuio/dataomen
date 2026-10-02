@@ -9,21 +9,21 @@ import { C } from "@/lib/tokens";
 const trustSteps = [
   {
     icon: Radar,
-    label: "01 / Buyer intent",
-    title: "Looks for a real problem in context.",
-    copy: "A useful lead is someone describing a problem your product can help solve—not merely using a familiar word.",
+    label: "01 / Direct buyer intent",
+    title: "A linked request or problem.",
+    copy: "A public source shows someone asking for help or describing a need related to your offer.",
   },
   {
     icon: FileCheck2,
-    label: "02 / Reviewable evidence",
-    title: "Shows you why it surfaced.",
-    copy: "Each match links back to its public conversation and shows the reason Arcli surfaced it, so you can check the claim yourself.",
+    label: "02 / Timely opportunity",
+    title: "A dated reason to approach.",
+    copy: "A relevant company event can create an outreach angle without proving purchase intent.",
   },
   {
     icon: SlidersHorizontal,
-    label: "03 / Feedback loop",
-    title: "Improves priority without narrowing discovery.",
-    copy: "Your feedback helps similar signals surface sooner without turning discovery into a rigid keyword filter.",
+    label: "03 / High-fit prospect",
+    title: "Strong fit without a fresh event.",
+    copy: "Current company facts match your targeting brief. The card says when no recent buying signal was observed.",
   },
 ];
 
@@ -71,11 +71,11 @@ export function DeepDiveFeatures() {
               margin: "0 0 16px",
             }}
           >
-            <RevealWords text="A lead is more than a matching word." />
+            <RevealWords text="Clear labels for the evidence we actually have." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            Arcli surfaces conversations with a credible buyer problem—not generic mentions—and
-            keeps source evidence visible for human review.
+            A useful recommendation needs a reason to act. Arcli separates direct buyer intent,
+            timely opportunities, and high-fit accounts so you can judge each one fairly.
           </p>
         </Reveal>
 

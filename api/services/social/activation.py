@@ -824,28 +824,6 @@ def _source_post_discovery_admission(
 
 
 
-@dataclass(frozen=True)
-class HnIngestionResult:
-    query: str
-    since_timestamp: int
-    hits_found: int
-    inserted_count: int
-    inserted_source_post_ids: list[str]
-    # Public posts are globally deduplicated. Existing rows must still be
-    # matched to a newly activated service profile, so actor handoffs use this
-    # complete hit set rather than only fresh database inserts.
-    matchable_source_post_ids: list[str] = field(default_factory=list)
-    # This is a cheap coverage signal, not a lead qualification.  It lets the
-    # HN-first actor decide whether an X fallback is warranted without using a
-    # raw provider hit count as evidence of relevance.
-    plausible_hits: int = 0
-    # New queue handoffs retain the provider namespace.  Keep the legacy raw
-    # ID field above for deserializing already-scheduled jobs and older tests;
-    # it is never used as the primary identity for new work.
-    matchable_source_post_refs: list[PublicSourcePostRef] = field(default_factory=list)
-
-
-
 def _hn_batch_size() -> int:
     return max(1, min(1_000, env_int("ARCLI_HN_INSERT_BATCH_SIZE", 100)))
 
@@ -904,6 +882,7 @@ def ingest_hn_posts(
         return result
 
     admission_reasons_by_ref: dict[tuple[str, str], tuple[str, ...]] = {}
+    admission_rejections: Counter[str] = Counter()
     plausible_posts: list[SourcePost] = []
     for post in posts:
         admission = _source_post_discovery_admission(
@@ -912,6 +891,7 @@ def ingest_hn_posts(
             query_type=query_type,
         )
         if not admission.accepted:
+            admission_rejections[admission.reasons[0]] += 1
             continue
         plausible_posts.append(post)
         admission_reasons_by_ref[(post.source.casefold(), post.source_post_id)] = (
@@ -938,13 +918,15 @@ def ingest_hn_posts(
         inserted_source_post_ids=inserted_source_post_ids,
         matchable_source_post_ids=_matchable_source_post_ids(governed_posts),
         plausible_hits=len(plausible_posts),
+        admission_rejections=dict(admission_rejections),
+        governance_excluded=max(0, len(plausible_posts) - len(governed_posts)),
         matchable_source_post_refs=prioritized_source_post_refs(
             governed_posts,
             admission_reasons_by_ref=admission_reasons_by_ref,
         ),
     )
     logger.info(
-        "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s admission_signals=%s",
+        "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s admission_signals=%s admission_rejections=%s",
         result.query,
         query_type,
         result.hits_found,
@@ -957,12 +939,14 @@ def ingest_hn_posts(
                 for reason in reasons
             )
         ),
+        result.admission_rejections,
     )
     return result
 
 # Cross-module helper imports for static analysis and direct module use.
 from .models import (
     DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+    HnIngestionResult,
     InitialPublicSourceIngestionPlan,
     PublicSourcePostRef,
     _normalize_space,

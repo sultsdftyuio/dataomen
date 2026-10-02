@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   ClipboardList,
+  ClipboardCheck,
   LockKeyhole,
   Settings2,
   Sparkles,
@@ -32,6 +33,7 @@ import {
 
 const ICONS: Record<string, LucideIcon> = {
   "/dashboard": ClipboardList,
+  "/dashboard/today": ClipboardCheck,
   "/dashboard/watchlists": UsersRound,
   "/dashboard/brief": BriefcaseBusiness,
   "/dashboard/targets": Target,
@@ -41,14 +43,27 @@ const ICONS: Record<string, LucideIcon> = {
 type DashboardNavigationProps = {
   compact?: boolean;
   isPro: boolean;
+  assistedPilot?: boolean;
 };
 
 export function DashboardNavigation({
   compact = false,
   isPro,
+  assistedPilot = false,
 }: DashboardNavigationProps) {
   const pathname = usePathname();
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+  const items = assistedPilot
+    ? [
+        dashboardNavigationItems[0],
+        {
+          href: "/dashboard/today",
+          label: "Today's prospects",
+          description: "Review delivered, evidence-backed prospects.",
+        },
+        ...dashboardNavigationItems.slice(1),
+      ]
+    : dashboardNavigationItems;
 
   const navigationItemClassName = (isActive: boolean) =>
     cn(
@@ -72,11 +87,11 @@ export function DashboardNavigation({
         aria-label="Product navigation"
         className={
           compact
-            ? "grid w-full grid-cols-5 items-center"
+            ? `grid w-full ${assistedPilot ? "grid-cols-6" : "grid-cols-5"} items-center`
             : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
         }
       >
-        {dashboardNavigationItems.map((item) => {
+        {items.map((item) => {
           const Icon = ICONS[item.href];
           const isActive = isDashboardNavigationItemActive(pathname, item.href);
           const isLocked = !isPro && item.href === "/dashboard/watchlists";

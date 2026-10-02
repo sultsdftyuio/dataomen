@@ -237,6 +237,22 @@ class PublicSourcePostRef:
         }
 
 
+@dataclass(frozen=True)
+class HnIngestionResult:
+    query: str
+    since_timestamp: int
+    hits_found: int
+    inserted_count: int
+    inserted_source_post_ids: list[str]
+    # Existing global rows must still be matched to a newly activated tenant.
+    matchable_source_post_ids: list[str] = field(default_factory=list)
+    plausible_hits: int = 0
+    matchable_source_post_refs: list[PublicSourcePostRef] = field(default_factory=list)
+    # One primary reason per rejected hit; counts never include source content.
+    admission_rejections: dict[str, int] = field(default_factory=dict)
+    governance_excluded: int = 0
+
+
 
 @dataclass(frozen=True)
 class SocialPost:

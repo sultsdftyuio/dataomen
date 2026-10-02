@@ -48,11 +48,11 @@ export function LeadReviewPreview() {
               margin: "0 0 18px",
             }}
           >
-            Decide what a public signal actually means.
+            See the evidence before you decide to reach out.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62, margin: 0 }}>
-            A relevant post is a starting point, not proof that its author is a buyer. Review the
-            original words, the fit, and what remains unknown before deciding what to do.
+            A useful prospect file gives you the reason an account fits, the source behind that
+            reason, a practical route, and a clear account of what remains unknown.
           </p>
         </div>
 
@@ -93,8 +93,8 @@ export function LeadReviewPreview() {
               textAlign: "center",
             }}
           >
-            Interface walkthrough: source conversation, fit reasoning, and a suggested next step.
-            The example above is a manually selected historical discussion, not a live customer result.
+            Current Pro conversation-scanner walkthrough: source discussion, match reasoning, and a suggested next step.
+            The illustrative prospect file above shows the separate founding-pilot review standard.
           </figcaption>
         </figure>
       </div>
