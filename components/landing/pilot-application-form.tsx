@@ -9,7 +9,7 @@ type SubmissionState = "idle" | "submitting" | "received" | "error";
 const fieldClass = "w-full rounded-lg border border-[#C8D9E8] bg-white px-3.5 py-3 text-sm text-[#0A1628] outline-none transition-colors placeholder:text-[#91A4B7] focus:border-[#1B6EBF] focus:ring-[3px] focus:ring-[#DBECFA]";
 const labelClass = "mb-2 block text-sm font-semibold text-[#1E3A5F]";
 
-export function PilotApplicationForm() {
+export function PilotApplicationForm({ initialWebsiteUrl = "" }: { initialWebsiteUrl?: string }) {
   const [status, setStatus] = useState<SubmissionState>("idle");
   const [error, setError] = useState("");
 
@@ -54,7 +54,7 @@ export function PilotApplicationForm() {
       <h2 className="pfd text-[1.75rem] leading-tight">Request your coverage review</h2>
       <p className="mt-2 text-sm leading-6 text-[#546F8A]">Tell us enough to assess your market. We can refine the brief together later.</p>
       <div className="mt-7 grid gap-5 sm:grid-cols-2">
-        <div className="sm:col-span-2"><label htmlFor="pilot-website" className={labelClass}>Your company website *</label><input id="pilot-website" name="websiteUrl" type="url" required maxLength={2048} autoComplete="url" placeholder="https://yourcompany.com" className={fieldClass} /></div>
+        <div className="sm:col-span-2"><label htmlFor="pilot-website" className={labelClass}>Your company website *</label><input id="pilot-website" name="websiteUrl" type="url" required maxLength={2048} autoComplete="url" placeholder="https://yourcompany.com" defaultValue={initialWebsiteUrl} className={fieldClass} /></div>
         <div className="sm:col-span-2"><label htmlFor="pilot-email" className={labelClass}>Your work email *</label><input id="pilot-email" name="email" type="email" required maxLength={320} autoComplete="email" placeholder="you@yourcompany.com" className={fieldClass} /></div>
         <div className="sm:col-span-2"><label htmlFor="pilot-offer" className={labelClass}>What do you sell? *</label><textarea id="pilot-offer" name="offer" required minLength={10} maxLength={500} rows={3} placeholder="A short description of your product and the problem it solves" className={fieldClass} /></div>
         <div className="sm:col-span-2"><label htmlFor="pilot-customer" className={labelClass}>Which companies are a good fit? *</label><textarea id="pilot-customer" name="idealCustomer" required minLength={10} maxLength={700} rows={3} placeholder="Industry, size, stage, technology, or other must-have criteria" className={fieldClass} /></div>

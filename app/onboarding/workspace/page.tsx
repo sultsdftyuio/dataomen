@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { WorkspaceProvisioningPanel } from "@/components/onboarding/workspace-provisioning-panel";
+import { normalizeWebsite } from "@/components/landing/redesign/website-link";
 import type { ResultEmailOffer } from "@/components/onboarding/result-email-prompt";
 import { fetchTenantWebsiteUrl } from "@/app/(dashboard)/dashboard/data";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";
@@ -15,7 +16,9 @@ export const metadata: Metadata = {
   description: "Connect your website and approve the prospect intelligence profile.",
 };
 
-export default async function WorkspaceOnboardingPage() {
+export default async function WorkspaceOnboardingPage({ searchParams }: { searchParams: Promise<{ website?: string }> }) {
+  const { website } = await searchParams;
+  const suggestedWebsiteUrl = normalizeWebsite(website ?? "");
   const tenantResult = await resolveTenantContext();
 
   if ("response" in tenantResult) {
@@ -26,7 +29,7 @@ export default async function WorkspaceOnboardingPage() {
     }
 
     if (status === 202) {
-      return <WorkspaceProvisioningPanel workspacePending />;
+      return <WorkspaceProvisioningPanel workspacePending initialWebsiteUrl={suggestedWebsiteUrl} />;
     }
 
     redirect("/error");
@@ -73,7 +76,7 @@ export default async function WorkspaceOnboardingPage() {
 
   return (
     <WorkspaceProvisioningPanel
-      initialWebsiteUrl={websiteUrl}
+      initialWebsiteUrl={websiteUrl ?? suggestedWebsiteUrl}
       initialResultEmailOffer={resultEmailOffer}
     />
   );

@@ -3,6 +3,7 @@ import { ArrowLeft, BadgeCheck, FileSearch, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 import { PilotApplicationForm } from "@/components/landing/pilot-application-form";
+import { normalizeWebsite } from "@/components/landing/redesign/website-link";
 import { Navbar } from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
 
@@ -18,7 +19,9 @@ const points = [
   { icon: ShieldCheck, title: "You keep the decision", copy: "Every delivered item is for your review. Arcli does not send outreach for you." },
 ];
 
-export default function PilotPage() {
+export default async function PilotPage({ searchParams }: { searchParams: Promise<{ website?: string }> }) {
+  const { website } = await searchParams;
+  const initialWebsiteUrl = normalizeWebsite(website ?? "") ?? "";
   return (
     <main className="min-h-screen bg-[#F6FAFE] text-[#0A1628]">
       <Navbar />
@@ -28,7 +31,7 @@ export default function PilotPage() {
       </div>
       <div className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[.78fr_1.22fr] lg:gap-14 lg:py-16">
         <aside className="lg:pt-4"><h2 className="pfd text-2xl leading-tight text-[#0A1628]">What happens next</h2><div className="mt-7 space-y-6">{points.map(({ icon: Icon, title, copy }) => <div key={title} className="flex gap-3.5"><span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#EBF4FD] text-[#1B6EBF]"><Icon className="size-4" /></span><div><h3 className="text-sm font-semibold text-[#0A1628]">{title}</h3><p className="mt-1 text-sm leading-6 text-[#546F8A]">{copy}</p></div></div>)}</div><div className="mt-9 rounded-lg border border-[#DDE8F2] bg-white p-5 text-sm leading-6 text-[#546F8A]">The pilot has no public weekly volume guarantee. We’ll agree on a realistic scope after reviewing your market.</div></aside>
-        <PilotApplicationForm />
+        <PilotApplicationForm initialWebsiteUrl={initialWebsiteUrl} />
       </div>
       <Footer />
     </main>

@@ -1,0 +1,425 @@
+/* Source ribbon and the annotated file. */
+.ae-ribbon {
+  padding: 26px 0 18px;
+  border-block: 1px solid #e5edf3;
+  background: #fff;
+  overflow: hidden;
+}
+.ae-ribbon-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(1200px, calc(100% - 48px));
+  margin: 0 auto 10px;
+}
+.ae-ribbon-head strong {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ae-ribbon-head span {
+  color: var(--arc-muted);
+  font:
+    11px var(--font-geist-mono),
+    monospace;
+}
+.ae-ribbon-items {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  min-width: max-content;
+}
+.ae-ribbon-item {
+  display: grid;
+  grid-template-columns: 22px auto;
+  align-items: center;
+  column-gap: 9px;
+  min-width: 155px;
+  padding: 10px 15px;
+  border-radius: 10px;
+  color: #0a1628;
+}
+.ae-ribbon-item:hover {
+  background: #f6fafe;
+}
+.ae-logo-mark {
+  grid-row: span 2;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+.ae-ribbon-item strong {
+  font-size: 15px;
+  letter-spacing: -0.03em;
+}
+.ae-ribbon-item small {
+  color: #6b8094;
+  font-size: 10px;
+}
+.ae-ribbon-item small span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #10b981;
+}
+.ae-section {
+  padding: clamp(76px, 9vw, 120px) 0;
+}
+.ae-intro h2 {
+  max-width: 750px;
+  margin: 0;
+  font-size: clamp(34px, 4.4vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.ae-intro-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid var(--arc-rule);
+}
+.ae-intro-row p {
+  max-width: 510px;
+  margin: 0;
+  color: var(--arc-navy-soft);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.ae-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.ae-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--arc-rule);
+  border-radius: 50px;
+  background: #fff;
+  color: #516b82;
+  font-size: 12px;
+  font-weight: 650;
+}
+.ae-legend button.active {
+  border-color: currentColor;
+  background: #f6fafe;
+}
+.ae-legend button span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ae-legend-fit {
+  color: #1b6ebf !important;
+}
+.ae-legend-source {
+  color: #047857 !important;
+}
+.ae-legend-route {
+  color: #6d5bd0 !important;
+}
+.ae-legend-unknown {
+  color: #b45309 !important;
+}
+.ae-stage {
+  position: relative;
+  margin-top: 56px;
+  padding: 50px 32px;
+  overflow: hidden;
+  border: 1px solid var(--arc-rule);
+  border-radius: 22px;
+  background: #f7fafe;
+}
+.ae-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(#0a16280d 1px, transparent 1px);
+  background-size: 20px 20px;
+  mask-image: radial-gradient(ellipse at center, #000, transparent 75%);
+}
+.ae-stage-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 8% 15%, #d7eafe, transparent 36%),
+    radial-gradient(circle at 90% 80%, #e8defa, transparent 30%);
+}
+.ae-anatomy {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 500px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+}
+.ae-callouts {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-self: stretch;
+}
+.ae-callouts button {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  opacity: 0.7;
+}
+.ae-callouts button:hover,
+.ae-callouts button.active {
+  background: #ffffffc9;
+  opacity: 1;
+}
+.ae-callouts span {
+  color: var(--arc-blue);
+  font:
+    700 12px var(--font-geist-mono),
+    monospace;
+}
+.ae-callouts strong {
+  font-family: var(--font-playfair), Georgia, serif;
+  font-size: 19px;
+  line-height: 1.2;
+}
+.ae-callouts small {
+  color: #516b82;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ae-callouts-right button:first-child span {
+  color: #047857;
+}
+.ae-callouts-left button:last-child span {
+  color: #6d5bd0;
+}
+.ae-callouts-right button:last-child span {
+  color: #b45309;
+}
+.ae-file {
+  overflow: hidden;
+  border: 1px solid #d7e3ed;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 27px 70px #0a162820;
+}
+.ae-color-rule {
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    #1b6ebf 0 25%,
+    #10b981 25% 50%,
+    #6d5bd0 50% 75%,
+    #f59e0b 75%
+  );
+}
+.ae-file-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--arc-rule);
+}
+.ae-company-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 39px;
+  height: 39px;
+  border: 1px solid var(--arc-rule);
+  border-radius: 10px;
+  background: #f3f7fb;
+  color: #1b6ebf;
+  font-weight: 800;
+}
+.ae-file-head > div:nth-child(2) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.ae-file-head strong {
+  font-size: 14px;
+}
+.ae-file-head small {
+  color: #8295a6;
+  font-size: 11px;
+}
+.ae-file-part {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--arc-rule);
+  transition:
+    background 0.2s,
+    opacity 0.2s;
+}
+.ae-file-part.active {
+  background: #f5faff;
+}
+.ae-file-part.dim {
+  opacity: 0.48;
+}
+.ae-file-part h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font:
+    750 10px var(--font-geist-sans),
+    sans-serif;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.ae-file-part h3 b {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  color: #fff;
+  font:
+    700 10px var(--font-geist-mono),
+    monospace;
+}
+.ae-file-part p {
+  margin: 8px 0 0;
+  color: #405d76;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ae-fit h3 {
+  color: #1b6ebf;
+}
+.ae-fit h3 b {
+  background: #1b6ebf;
+}
+.ae-fit mark {
+  background: linear-gradient(transparent 60%, #beddf8 60%);
+  color: inherit;
+}
+.ae-source h3 {
+  color: #047857;
+}
+.ae-source h3 b {
+  background: #047857;
+}
+.ae-source mark {
+  background: #bef1d6;
+  color: inherit;
+}
+.ae-source-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.ae-quote {
+  overflow: hidden;
+  margin-top: 8px;
+  border: 1px solid #cdebdc;
+  border-radius: 8px;
+  background: #f7fcf9;
+}
+.ae-quote > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #cdebdc;
+  color: #047857;
+  font:
+    10px var(--font-geist-mono),
+    monospace;
+}
+.ae-quote small {
+  color: #7e968b;
+}
+.ae-quote p {
+  margin: 0;
+  padding: 9px 10px;
+  font-family: var(--font-playfair), Georgia, serif;
+  font-style: italic;
+}
+.ae-route h3 {
+  color: #6d5bd0;
+}
+.ae-route h3 b {
+  background: #6d5bd0;
+}
+.ae-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+.ae-tags span {
+  padding: 4px 8px;
+  border: 1px solid #dfd7fc;
+  border-radius: 50px;
+  background: #f7f4ff;
+  color: #5a49b2;
+  font-size: 10px;
+  font-weight: 650;
+}
+.ae-unknown h3 {
+  color: #b45309;
+}
+.ae-unknown h3 b {
+  background: #b45309;
+}
+.ae-unknown p {
+  padding: 9px 10px;
+  border: 1px dashed #f4c960;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+.ae-file-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 13px 20px 16px;
+}
+.ae-file-foot > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ae-file-foot button {
+  padding: 5px 9px;
+  border: 1px solid #dce5ee;
+  border-radius: 50px;
+  background: #fff;
+  color: #415a72;
+  font-size: 10px;
+}
+.ae-file-foot button.selected {
+  border-color: #91bcdf;
+  background: #eaf4fd;
+  color: #145b9f;
+}
+.ae-file-foot small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #73899a;
+  font-size: 10px;
+}
+

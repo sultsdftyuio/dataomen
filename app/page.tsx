@@ -1,26 +1,19 @@
 import type { Metadata } from "next";
-import "../styles/globals.css";
 
-import { Navbar } from "@/components/landing/navbar";
-import { Hero } from "@/components/landing/hero";
-import { LeadReviewPreview } from "@/components/landing/lead-review-preview";
-import { HowItWorks } from "@/components/landing/how-it-works";
-import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import Pricing from "@/components/landing/Pricing"; 
-import { FAQ } from "@/components/landing/faq";
-import { CTA } from "@/components/landing/cta";
-import Footer from "@/components/landing/footer";
+import { LandingHeader } from "@/components/landing/redesign/landing-header";
+import { ProspectEvidence } from "@/components/landing/redesign/prospect-evidence";
+import { ResearchWorkflow } from "@/components/landing/redesign/research-workflow";
+import { LandingConversion } from "@/components/landing/redesign/landing-conversion";
 import { DEFAULT_OG_IMAGE_URL, SITE_URL } from "@/lib/site";
+import "./landing.css";
 
 const description =
-  "Know who to reach out to and why. Arcli starts with your website and helps prepare evidence-backed prospect recommendations for a reviewed founding pilot.";
+  "Know who to reach out to and why. Arcli turns your website into a targeting brief, then helps you review prospects with source-linked evidence.";
 
 export const metadata: Metadata = {
   title: "Arcli | Know Who to Reach Out To and Why",
   description,
-  alternates: {
-    canonical: "/",
-  },
+  alternates: { canonical: "/" },
   openGraph: {
     title: "Arcli | Know Who to Reach Out To and Why",
     description,
@@ -32,7 +25,7 @@ export const metadata: Metadata = {
         url: DEFAULT_OG_IMAGE_URL,
         width: 1200,
         height: 630,
-        alt: "Arcli helps teams review evidence-backed prospects",
+        alt: "Arcli prospect research",
       },
     ],
   },
@@ -69,44 +62,15 @@ const structuredData = [
 
 export default function Page() {
   return (
-    // ALIGNED: Switched base to match exact custom text color (#0B1120) and a sharper selection highlight
-    <main className="bg-[#FAFAFA] text-[#0B1120] font-sans antialiased selection:bg-blue-500/20 selection:text-blue-900">
+    <main className="arcli-home" id="top">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <Navbar />
-      
-      <div className="relative isolate overflow-hidden">
-        
-        {/* AESTHETIC UPGRADE:
-          Replaced the "floaty" blurred background blobs with a highly precise, 
-          structural dot-grid to match the "deterministic engineering" brand promise.
-        */}
-        <div 
-          aria-hidden="true" 
-          className="absolute inset-0 pointer-events-none z-0"
-          style={{
-            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(0,0,0,0.06) 1px, transparent 0)',
-            backgroundSize: '32px 32px',
-            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 10%, transparent 90%)',
-            WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 10%, transparent 90%)'
-          }}
-        />
-
-        {/* Page Content Flow */}
-        <div className="relative z-10 flex flex-col">
-          <Hero />
-          <LeadReviewPreview />
-          <HowItWorks />
-          <DeepDiveFeatures />
-          <Pricing />
-          <FAQ />
-          <CTA />
-        </div>
-      </div>
-      
-      <Footer />
+      <LandingHeader />
+      <ProspectEvidence />
+      <ResearchWorkflow />
+      <LandingConversion />
     </main>
   );
 }
