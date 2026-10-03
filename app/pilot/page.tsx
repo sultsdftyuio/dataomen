@@ -3,7 +3,7 @@ import { ArrowLeft, BadgeCheck, FileSearch, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 import { PilotApplicationForm } from "@/components/landing/pilot-application-form";
-import { normalizeWebsite } from "@/components/landing/redesign/website-link";
+import { normalizeWebsite } from "@/lib/website-url";
 import { Navbar } from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
 

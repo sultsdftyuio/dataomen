@@ -1,0 +1,25 @@
+:root{
+  --font-sans:"Geist","Geist Fallback",system-ui,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,monospace;
+  --font-display:"Playfair Display",Georgia,serif;
+
+  /* Display (Playfair 600, tight tracking) */
+  --type-hero-size:clamp(38px,5vw,48px); --type-hero-lh:1.04; --type-hero-track:-0.02em;
+  --type-h2-size:clamp(32px,4vw,42px); --type-h2-lh:1.08; --type-h2-track:-0.015em;
+  --type-h3-size:21px; --type-h3-lh:1.15; --type-h3-track:-0.01em;
+  --type-card-title-size:24px;
+  --type-page-title-size:24px;
+  /* Body (Geist) */
+  --type-lead-size:16px; --type-lead-lh:1.62;
+  --type-body-size:15px; --type-body-lh:1.58;
+  --type-ui-size:14px;
+  --type-small-size:13px;
+  --type-caption-size:12px;
+  --type-micro-size:11px;
+  --type-nano-size:10px;
+  /* Eyebrows: uppercase, bold, wide tracking */
+  --type-eyebrow-size:12px; --type-eyebrow-track:0.08em;
+  --type-eyebrow-app-size:10px; --type-eyebrow-app-track:0.12em;
+  --type-nav-size:13px; --type-nav-track:0.04em;
+  --weight-regular:400; --weight-medium:500; --weight-semibold:600; --weight-bold:700; --weight-extrabold:800;
+}

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { WorkspaceProvisioningPanel } from "@/components/onboarding/workspace-provisioning-panel";
-import { normalizeWebsite } from "@/components/landing/redesign/website-link";
+import { normalizeWebsite } from "@/lib/website-url";
 import type { ResultEmailOffer } from "@/components/onboarding/result-email-prompt";
 import { fetchTenantWebsiteUrl } from "@/app/(dashboard)/dashboard/data";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";

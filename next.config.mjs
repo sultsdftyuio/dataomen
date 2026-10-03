@@ -122,6 +122,11 @@ const nextConfig = {
       // 🚨 CRITICAL FIX: 'beforeFiles' forces Next.js to proxy these routes 
       // BEFORE it looks inside your local app/api/ folder.
       beforeFiles: [
+        // Serve the supplied v3 design export at the public root.
+        {
+          source: '/',
+          destination: '/landing/index.html',
+        },
         {
           source: '/api/v1/:path*',
           destination: `${backendUrl}/api/v1/:path*`,

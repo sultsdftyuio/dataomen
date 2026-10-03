@@ -1,0 +1,83 @@
+/* Source: lib/tokens.ts (C) + app/globals.css (:root, strict light mode) */
+:root{
+  /* Navy ink */
+  --arc-navy:#0A1628;
+  --arc-navy-mid:#142038;
+  --arc-navy-soft:#1E3A5F;
+  --arc-navy-logo:#0A192F;
+  /* Blue */
+  --arc-blue:#1B6EBF;
+  --arc-blue-mid:#2580D4;
+  --arc-blue-light:#3B9AE8;
+  --arc-blue-deep:#0F4F91;
+  --arc-blue-logo:#3B82F6;
+  --arc-blue-pale:#EBF4FD;
+  --arc-blue-tint:#F0F7FF;
+  --arc-blue-wash:#F4F8FF;
+  /* Neutrals */
+  --arc-white:#FFFFFF;
+  --arc-off-white:#F6FAFE;
+  --arc-paper:#FAFAFA;
+  --arc-rule:#DDE8F2;
+  --arc-rule-dark:#C8D9E8;
+  --arc-muted:#546F8A;
+  --arc-faint:#8BADC4;
+  /* Status (darkened for small-size legibility) */
+  --arc-green:#047857;
+  --arc-green-pale:#D1FAE5;
+  --arc-green-bright:#10B981;
+  --arc-amber:#B45309;
+  --arc-amber-pale:#FEF3C7;
+  --arc-amber-spark:#FCD34D;
+  --arc-red:#B91C1C;
+  --arc-red-pale:#FEE2E2;
+  --arc-error-text:#B42318;
+  --arc-error-bg:#FFF6F5;
+  --arc-error-border:#FECDCA;
+
+  /* shadcn semantic layer (app/globals.css) */
+  --background:oklch(0.99 0 0);
+  --foreground:oklch(0.13 0.02 260);
+  --card:oklch(1 0 0);
+  --primary:oklch(0.55 0.18 260);
+  --primary-foreground:oklch(0.98 0 0);
+  --secondary:oklch(0.96 0.01 260);
+  --muted:oklch(0.96 0.01 260);
+  --muted-foreground:oklch(0.45 0.02 260);
+  --destructive:oklch(0.577 0.245 27.325);
+  --border:oklch(0.91 0.01 260);
+  --ring:oklch(0.55 0.18 260);
+  --chart-1:oklch(0.45 0.18 260);
+  --chart-2:oklch(0.55 0.15 290);
+  --chart-3:oklch(0.5 0.12 230);
+  --chart-4:oklch(0.6 0.18 270);
+  --chart-5:oklch(0.4 0.15 250);
+
+  /* Semantic aliases */
+  --text-heading:var(--arc-navy);
+  --text-body:var(--arc-navy-soft);
+  --text-muted:var(--arc-muted);
+  --text-faint:var(--arc-faint);
+  --text-link:var(--arc-blue);
+  --text-on-accent:#FFFFFF;
+  --surface-page:var(--arc-paper);
+  --surface-app:var(--arc-off-white);
+  --surface-card:var(--arc-white);
+  --surface-subtle:var(--arc-off-white);
+  --surface-accent:var(--arc-blue-pale);
+  --surface-accent-tint:var(--arc-blue-tint);
+  --border-default:var(--arc-rule);
+  --border-strong:var(--arc-rule-dark);
+  --border-hairline:rgba(10,22,40,0.10);
+  --border-soft:rgba(0,0,0,0.08);
+  --border-accent:rgba(27,110,191,0.16);
+  --action-primary:var(--arc-blue);
+  --action-primary-hover:var(--arc-blue-mid);
+  --action-strong:var(--arc-navy);
+  --action-strong-hover:var(--arc-navy-mid);
+  --gradient-cta:linear-gradient(135deg,#1B6EBF 0%,#0F4F91 100%); /* @kind color */
+  --gradient-hero:linear-gradient(180deg,#FFFFFF 0%,#F4F8FF 100%); /* @kind color */
+  --gradient-pricing:linear-gradient(180deg,#F7FBFF 0%,#FFFFFF 100%); /* @kind color */
+  --gradient-footer:linear-gradient(180deg,#FFFFFF 0%,#F6FAFE 100%); /* @kind color */
+  --focus-ring:#1B6EBF;
+}
