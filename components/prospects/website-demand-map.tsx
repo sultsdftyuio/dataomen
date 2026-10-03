@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import { C } from "@/lib/tokens";
+import "./website-demand-map.css";
 
 type WebsiteDemandMapProps = {
   suggestions: BuyerGroupSuggestion[];
@@ -31,7 +32,7 @@ export function WebsiteDemandMap({
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [isPending, startTransition] = useTransition();
 
   if (suggestions.length === 0) return null;
@@ -53,30 +54,31 @@ export function WebsiteDemandMap({
   };
 
   const suggestionCards = (
-    <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3" style={{ borderColor: C.rule }}>
+    <div className="arc-buyer-suggestions">
       {suggestions.map((suggestion) => {
         const isActivating = pendingId === suggestion.id;
         return (
-          <article key={suggestion.id} className="min-w-0 p-3">
-            <div className="flex items-start gap-2">
+          <article key={suggestion.id} className="arc-buyer-suggestions__card">
+            <div className="flex flex-wrap items-start gap-2">
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
-                  Website-derived hypothesis
+                  SUGGESTED DIRECTION
                 </p>
-                <h3 className="mt-0.5 truncate text-sm font-semibold leading-5" title={suggestion.name} style={{ color: C.navy }}>
+                <h3 className="mt-1 text-sm font-semibold leading-5" title={suggestion.name} style={{ color: C.navy }}>
                   {suggestion.name}
                 </h3>
               </div>
               <Button
                 type="button"
                 size="sm"
-                className="h-7 min-w-[8.5rem] shrink-0 bg-[#1B6EBF] px-2.5 text-[11px] text-white hover:bg-[#155a9f]"
+                variant="outline"
+                className="h-7 shrink-0 border-[#B8D8EE] bg-white px-2.5 text-[11px] text-[#1B6EBF] hover:bg-[#F0F7FD]"
                 disabled={isPending || pendingId !== null}
                 aria-busy={isActivating}
                 onClick={() => activate(suggestion.id)}
               >
                 <Radar className="size-3" aria-hidden="true" />
-                {isActivating ? "Starting..." : "Start focused scan"}
+                {isActivating ? "Starting..." : "Start scan"}
               </Button>
             </div>
 
@@ -84,7 +86,7 @@ export function WebsiteDemandMap({
               <span className="font-semibold" style={{ color: C.muted }}>Audience: </span>
               {suggestion.targetBuyer}
             </p>
-            <p className="mt-0.5 truncate text-[11px] leading-4" title={suggestion.problemToSolve} style={{ color: C.navySoft }}>
+            <p className="mt-1 text-[11px] leading-4" title={suggestion.problemToSolve} style={{ color: C.navySoft }}>
               <span className="font-semibold" style={{ color: C.muted }}>Tests: </span>
               {suggestion.problemToSolve}
             </p>
@@ -120,7 +122,7 @@ export function WebsiteDemandMap({
     return (
       <section
         aria-labelledby="website-demand-map-heading"
-        className="shrink-0 overflow-hidden rounded-xl border"
+        className="arc-buyer-suggestions__section shrink-0 overflow-hidden rounded-xl border"
         style={{ borderColor: C.ruleDark, backgroundColor: C.white }}
       >
         <button
@@ -140,25 +142,12 @@ export function WebsiteDemandMap({
             </span>
             <div className="min-w-0">
               <h2 id="website-demand-map-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-                Buyer group ideas
+                Suggested from your website
               </h2>
               <p className="text-[11px]" style={{ color: C.muted }}>
-                Target customers from your website
+                Starting audiences worth testing against public conversations.
               </p>
             </div>
-          </div>
-
-          <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 lg:justify-end">
-            {suggestions.slice(0, 3).map((suggestion) => (
-              <span
-                key={suggestion.id}
-                title={suggestion.targetBuyer}
-                className="max-w-full truncate rounded-full border px-2.5 py-1 text-[11px] font-medium"
-                style={{ borderColor: C.rule, backgroundColor: C.offWhite, color: C.navySoft }}
-              >
-                {suggestion.targetBuyer}
-              </span>
-            ))}
           </div>
 
           <ChevronDown
@@ -169,9 +158,6 @@ export function WebsiteDemandMap({
         </button>
         {isExpanded ? (
           <div id="website-demand-map-suggestions" className="border-t" style={{ borderColor: C.rule }}>
-            <p className="px-4 py-3 text-xs leading-5" style={{ color: C.navySoft }}>
-              These are hypotheses, not leads. Start a focused scan for one direction worth testing.
-            </p>
             {suggestionCards}
             {activationNotice}
           </div>

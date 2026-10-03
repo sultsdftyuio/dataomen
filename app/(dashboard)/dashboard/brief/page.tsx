@@ -5,6 +5,7 @@ import { Target } from "lucide-react";
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
 import { TargetingBriefEditor } from "@/components/settings/workspace_page/targeting-brief-editor";
+import { TargetingOverview } from "@/components/settings/workspace_page/targeting-overview";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { saveTargetingBrief } from "../targeting-actions";
@@ -81,20 +82,26 @@ export default async function MatchingBriefPage() {
         icon={Target}
       />
 
-      <ServiceProfileSettings
-        serviceProfile={serviceProfile}
-        crawlJob={crawlJob}
-        websiteUrl={websiteUrl}
-        isPro={entitlements.isPro}
-        latestScan={latestScan}
-        layout="progressive"
-      />
+      <TargetingOverview profile={serviceProfile} brief={targetingBrief} />
+
+      <div id="targeting-editor" className="scroll-mt-5">
+        <ServiceProfileSettings
+          serviceProfile={serviceProfile}
+          crawlJob={crawlJob}
+          websiteUrl={websiteUrl}
+          isPro={entitlements.isPro}
+          latestScan={latestScan}
+          layout="progressive"
+        />
+      </div>
 
       {serviceProfile.hasProfile ? (
-        <TargetingBriefEditor
-          initialBrief={targetingBrief}
-          onSave={saveBrief}
-        />
+        <div id="targeting-universe-editor" className="scroll-mt-5">
+          <TargetingBriefEditor
+            initialBrief={targetingBrief}
+            onSave={saveBrief}
+          />
+        </div>
       ) : null}
     </div>
   );

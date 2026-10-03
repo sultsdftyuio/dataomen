@@ -47,6 +47,7 @@ import {
   targetEvidencePresentation,
   targetEvidenceReviewPresentation,
 } from "./target-presentation";
+import "./target-desk.css";
 
 export type TargetDeskProps = {
   /** Tenant-scoped, server-assessed targets. This component never fetches or scores targets. */
@@ -203,43 +204,29 @@ function TargetListItem({
       type="button"
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className="w-full border-b px-3 py-3 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset sm:px-4"
+      className="arc-target-table__row"
       style={{
         borderColor: C.rule,
         backgroundColor: selected ? C.blueTint : C.white,
         outlineColor: C.blue,
       }}
     >
-      <div className="flex min-w-0 items-start gap-2.5">
+      <div className="arc-target-table__identity">
         <TargetKindMark kind={target.entityKind} />
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-[13px] font-semibold" title={target.displayName} style={{ color: C.navy }}>
-              {target.displayName}
-            </p>
-            {selected ? (
-              <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-                Selected
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-0.5 truncate text-[11px]" style={{ color: C.muted }}>
+        <div className="min-w-0">
+          <p className="truncate text-[12px] font-semibold" title={target.displayName} style={{ color: C.navy }}>
+            {target.displayName}
+          </p>
+          <p className="mt-0.5 truncate text-[10px]" style={{ color: C.muted }}>
             {targetEntityKindLabel(target.entityKind)}
             {target.subtitle ? ` · ${target.subtitle}` : domain ? ` · ${domain}` : ""}
           </p>
-          <div className="mt-2">
-            <AssessmentBadge target={target} />
-          </div>
-          {reasonSummary ? (
-            <p className="mt-1.5 line-clamp-2 text-[11px] leading-4" style={{ color: C.navySoft }}>
-              {reasonSummary}
-            </p>
-          ) : null}
-          <p className="mt-1 text-[10px]" style={{ color: C.muted }}>
-            {target.evidence.length === 1 ? "1 public observation" : `${target.evidence.length} public observations`}
-          </p>
         </div>
       </div>
+      <div className="arc-target-table__status"><AssessmentBadge target={target} /></div>
+      <p className="arc-target-table__reason">{reasonSummary || "Assessment pending"}</p>
+      <p className="arc-target-table__source">{target.evidence.length} {target.evidence.length === 1 ? "source" : "sources"}</p>
+      <p className="arc-target-table__date">{target.assessedAt ? formatObservedAt(target.assessedAt) : "Pending"}</p>
     </button>
   );
 }
@@ -489,17 +476,12 @@ export function TargetDesk({
         ) : null}
       </header>
 
-      <div className="grid min-h-[480px] lg:grid-cols-[minmax(16rem,0.75fr)_minmax(0,1.25fr)]">
-        <section className="min-w-0 border-b lg:border-b-0 lg:border-r" style={{ borderColor: C.rule }} aria-label="Targets">
-          <div className="flex items-center justify-between border-b px-3 py-2.5 sm:px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
-              Targets
-            </p>
-            <span className="text-[11px]" style={{ color: C.muted }}>
-              {sortedTargets.length}
-            </span>
+      <div className="arc-target-table">
+        <section className="min-w-0 border-b" style={{ borderColor: C.rule }} aria-label="Targets">
+          <div className="arc-target-table__heading" aria-hidden="true">
+            <span>ACCOUNT / TARGET</span><span>STATUS</span><span>WHY IT FITS</span><span>SOURCES</span><span>RESEARCHED</span>
           </div>
-          <div className="max-h-[540px] overflow-y-auto">
+          <div className="arc-target-table__rows">
             {sortedTargets.map((target) => (
               <TargetListItem
                 key={target.id}
@@ -512,7 +494,7 @@ export function TargetDesk({
         </section>
 
         {selectedTarget && selectedPresentation ? (
-          <aside className="min-w-0 p-4 sm:p-5" aria-label={`${selectedTarget.displayName} assessment`}>
+          <aside className="arc-target-table__detail min-w-0 p-4 sm:p-5" aria-label={`${selectedTarget.displayName} assessment`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
                 <TargetKindMark kind={selectedTarget.entityKind} size="large" />
@@ -551,6 +533,26 @@ export function TargetDesk({
               <p className="mt-2 text-xs leading-5" style={{ color: TONE_COLORS[selectedPresentation.tone].color }}>
                 {selectedPresentation.description}
               </p>
+            </div>
+
+            <div className="arc-target-summary" aria-label="Target research summary">
+              <div>
+                <span>WHY IT FITS</span>
+                <p>{displayedReasons.reasons[0] ?? "No display-safe assessment reason is available yet."}</p>
+              </div>
+              <div>
+                <span>SOURCE</span>
+                <p>{evidence[0]?.sourceLabel?.trim() || displayDomain(selectedTarget.canonicalUrl) || "Source pending"}</p>
+                <small>{evidence.length === 1 ? "1 public observation" : `${evidence.length} public observations`}</small>
+              </div>
+              <div>
+                <span>STILL UNKNOWN</span>
+                <p>{selectedPresentation.requiresEvidenceReview
+                  ? "Public evidence still needs review."
+                  : evidence.length === 0
+                    ? "A public buyer signal has not been observed."
+                    : "Whether this target is ready to buy."}</p>
+              </div>
             </div>
 
             <section className="mt-5" aria-labelledby="target-assessment-reasons">

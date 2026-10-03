@@ -12,6 +12,7 @@ import CrawlNotificationPreferences from "@/components/settings/workspace_page/c
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
 import LogoutButton from "@/components/dashboard/logout-button";
 import { C } from "@/lib/tokens";
+import "./settings-client.css";
 
 type SettingsClientProps = {
   user: User;
@@ -75,52 +76,35 @@ export default function SettingsClient({
           <a href="#support">Support</a>
         </nav>
         <div className="arc-settings-page__sections">
-          <section id="profile" className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10,22,40,0.04)" }}>
-            <div className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>Account</h2>
-              <p className="mt-1 text-xs" style={{ color: C.muted }}>The account currently signed in to this workspace.</p>
+          <section id="profile" className="arc-settings-account" aria-labelledby="settings-account-title">
+            <div className="arc-settings-account__heading">
+              <h2 id="settings-account-title">Profile</h2>
+              <p>The account currently signed in to this workspace.</p>
             </div>
-            <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-                  <CircleUserRound className="size-5" aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Signed in as</p>
-                  <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>{displayName}</p>
-                  <p className="text-xs" style={{ color: C.navySoft }}>Signed-in account</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 sm:border-l sm:pl-5" style={{ borderColor: C.rule }}>
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.offWhite, color: C.navySoft }}>
-                  <Building2 className="size-5" aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Workspace</p>
-                  <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>{workspaceName}</p>
-                  <p className="flex items-center gap-1 truncate text-xs" style={{ color: C.navySoft }}>
-                    <Globe2 className="size-3 shrink-0" aria-hidden="true" />
-                    {websiteUrl ? websiteDomain(websiteUrl) : "Website not connected"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex min-w-0 items-start gap-3 rounded-lg border px-3 py-3 sm:col-span-2" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.blue }}>
-                  <Mail className="size-4" aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Account email</p>
-                  <p className="mt-1 break-all text-sm font-semibold leading-5" style={{ color: C.navy }}>{user.email ?? "No email available"}</p>
-                  <p className="mt-1 text-xs leading-4" style={{ color: C.navySoft }}>Used for sign-in and account updates.</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 sm:col-span-2" style={{ borderColor: C.rule }}>
-                <div>
-                  <p className="text-xs font-semibold" style={{ color: C.navy }}>Signed-in session</p>
-                  <p className="mt-0.5 text-xs" style={{ color: C.navySoft }}>Sign out securely from this device.</p>
-                </div>
-                <LogoutButton />
-              </div>
+            <div className="arc-settings-account__row">
+              <span className="arc-settings-account__icon"><CircleUserRound size={18} aria-hidden="true" /></span>
+              <div><strong>Name</strong><small>Your account display name</small></div>
+              <span className="arc-settings-account__value">{displayName}</span>
+            </div>
+            <div className="arc-settings-account__row">
+              <span className="arc-settings-account__icon"><Mail size={18} aria-hidden="true" /></span>
+              <div><strong>Email address</strong><small>Used for sign-in and account updates</small></div>
+              <span className="arc-settings-account__value">{user.email ?? "No email available"}</span>
+            </div>
+            <div className="arc-settings-account__row">
+              <span className="arc-settings-account__icon"><Building2 size={18} aria-hidden="true" /></span>
+              <div><strong>Workspace</strong><small>Your current workspace</small></div>
+              <span className="arc-settings-account__value">{workspaceName}</span>
+            </div>
+            <div className="arc-settings-account__row">
+              <span className="arc-settings-account__icon"><Globe2 size={18} aria-hidden="true" /></span>
+              <div><strong>Website</strong><small>The source for your brief</small></div>
+              <span className="arc-settings-account__value">{websiteUrl ? websiteDomain(websiteUrl) : "Website not connected"}</span>
+            </div>
+            <div className="arc-settings-account__row">
+              <span className="arc-settings-account__icon"><CircleUserRound size={18} aria-hidden="true" /></span>
+              <div><strong>Session</strong><small>Signed in on this device</small></div>
+              <span className="arc-settings-account__value"><LogoutButton /></span>
             </div>
           </section>
 

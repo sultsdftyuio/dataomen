@@ -1,0 +1,7 @@
+.arc-buyer-suggestions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 12px; }
+.arc-buyer-suggestions__card { min-width: 0; padding: 14px; border: 1px dashed #b9d3e8; border-radius: 7px; background: #fff; }
+.arc-buyer-suggestions__card:hover { border-color: #1b6ebf; background: #f9fcff; }
+.arc-buyer-suggestions__card h3 { white-space: normal; }
+.arc-buyer-suggestions__section .arc-buyer-suggestions__card { min-height: 183px; }
+@media (max-width: 1000px) { .arc-buyer-suggestions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 650px) { .arc-buyer-suggestions { grid-template-columns: 1fr; } .arc-buyer-suggestions__section .arc-buyer-suggestions__card { min-height: 0; } }

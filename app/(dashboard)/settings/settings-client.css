@@ -1,0 +1,12 @@
+.arc-settings-account { overflow: hidden; border: 1px solid #dde8f2; border-radius: 9px; background: #fff; box-shadow: 0 5px 20px rgba(10, 22, 40, .035); }
+.arc-settings-account__heading { padding: 17px 20px; border-bottom: 1px solid #dde8f2; }
+.arc-settings-account__heading h2 { color: #0a1628; font-size: 14px; font-weight: 700; }
+.arc-settings-account__heading p { margin-top: 4px; color: #7b94a9; font-size: 11px; }
+.arc-settings-account__row { display: grid; grid-template-columns: 31px minmax(120px, 1fr) minmax(0, 1.2fr); align-items: center; gap: 12px; min-height: 62px; padding: 11px 20px; border-bottom: 1px solid #e7eff6; }
+.arc-settings-account__row:last-child { border-bottom: 0; }
+.arc-settings-account__icon { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 6px; color: #1b6ebf; background: #edf6fd; }
+.arc-settings-account__row strong, .arc-settings-account__row small { display: block; }
+.arc-settings-account__row strong { color: #0a1628; font-size: 12px; font-weight: 700; }
+.arc-settings-account__row small { margin-top: 2px; color: #8aa3b9; font-size: 10px; }
+.arc-settings-account__value { min-width: 0; overflow-wrap: anywhere; color: #244c72; font-size: 12px; text-align: right; }
+@media (max-width: 560px) { .arc-settings-account__row { grid-template-columns: 29px minmax(0, 1fr); gap: 9px; padding: 12px 14px; } .arc-settings-account__value { grid-column: 2; text-align: left; } }

@@ -33,7 +33,7 @@ export function DashboardPageIntro({
         <h1
           id="dashboard-page-title"
           className={`pfd text-[27px] font-semibold leading-tight sm:text-[31px] ${eyebrow ? "mt-1" : ""}`}
-          style={{ color: C.navy }}
+          style={{ color: C.navy, fontSize: "clamp(27px, 2.7vw, 31px)" }}
         >
           {title}
         </h1>

@@ -33,6 +33,7 @@ import type {
   WatchlistView,
 } from "./prospect-types";
 import { WatchlistDetail, scanLabel } from "./watchlist-detail";
+import "./watchlists-panel.css";
 
 const SOURCE_OPTIONS = [
   { value: "hackernews", label: "Hacker News", detail: "Founder and builder discussions" },
@@ -695,15 +696,15 @@ export default function WatchlistsPanel({
         </div>
       </div>
       {notice ? <p role="status" className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: C.rule, backgroundColor: C.white, color: C.navySoft }}>{notice}</p> : null}
-      <div className="grid gap-4 xl:min-h-0 xl:grid-cols-[minmax(300px,0.72fr)_minmax(520px,1.45fr)]">
+      <div className="arc-buyer-groups__layout">
         <section
           aria-labelledby="watch-list-heading"
-          className="overflow-hidden rounded-xl border bg-white"
-          style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
+          className="arc-buyer-groups__list overflow-hidden rounded-xl border bg-white"
+          style={{ borderColor: C.rule }}
         >
           <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-            <h2 id="watch-list-heading" className="pfd text-lg leading-none" style={{ color: C.navy }}>
-              On your radar
+            <h2 id="watch-list-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+              Your buyer groups
             </h2>
             <span className="rounded-full px-2 py-1 text-[10px] font-bold" style={{ color: C.blue, backgroundColor: C.bluePale }}>
               {watchlists.length} {watchlists.length === 1 ? "group" : "groups"}
@@ -725,7 +726,7 @@ export default function WatchlistsPanel({
                     role="listitem"
                     aria-pressed={selected}
                     onClick={() => setSelectedWatchlistId(watchlist.id)}
-                    className="w-full border-b border-l-[3px] px-4 py-3.5 text-left transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
+                    className="arc-buyer-groups__item w-full border-b border-l-[3px] px-4 py-3.5 text-left transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
                     style={{
                       borderColor: C.rule,
                       borderLeftColor: selected ? C.blue : "transparent",
@@ -734,17 +735,20 @@ export default function WatchlistsPanel({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="pfd truncate text-lg leading-none" style={{ color: C.navy }}>
+                        <p className="truncate text-[13px] font-semibold leading-5" style={{ color: C.navy }}>
                           {watchlist.name}
                         </p>
-                        <p className="mt-2 line-clamp-2 text-xs leading-5" style={{ color: C.navySoft }}>
+                        <p className="mt-1 line-clamp-1 text-[11px] leading-4" style={{ color: C.navySoft }}>
                           {watchlist.targetBuyer}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-[11px] leading-4" style={{ color: C.muted }}>
+                          {watchlist.problemToSolve}
                         </p>
                       </div>
                       <ArrowRight className="mt-1 size-4 shrink-0" style={{ color: selected ? C.blue : C.faint }} aria-hidden="true" />
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="font-semibold" style={{ color: watchlist.isActive ? C.green : C.muted }}>
+                      <span className="arc-buyer-groups__status" style={{ color: watchlist.isActive ? C.green : C.muted }}>
                         {watchlist.isActive ? scanLabel(watchlist.scanStatus) : "Paused"}
                       </span>
                       <span style={{ color: C.muted }}>
