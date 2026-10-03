@@ -1,13 +1,9 @@
-import React from "react";
-import Link from "next/link";
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
-import { DashboardNavigation } from "@/components/dashboard/DashboardNavigation";
-import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { assistedProspectPilotEnrolled } from "@/lib/assisted-prospect-pilot";
-import Logo from "@/components/ui/logo";
-import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { fetchTenantWebsiteUrl } from "./dashboard/data";
 
@@ -17,7 +13,7 @@ export const revalidate = 0;
 export default async function DashboardLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const tenantResult = await resolveTenantContext();
 
@@ -40,56 +36,32 @@ export default async function DashboardLayout({
   }
 
   const { supabase, tenantId } = tenantResult.context;
-  const [websiteUrl, entitlements] = await Promise.all([
+  const [websiteUrl, entitlements, assistedPilot, workspaceResult, userResult] = await Promise.all([
     fetchTenantWebsiteUrl(supabase, tenantId),
     getWorkspaceEntitlements(supabase, tenantId),
+    assistedProspectPilotEnrolled(supabase, tenantId),
+    supabase.from("tenants").select("display_name, name").eq("tenant_id", tenantId).maybeSingle(),
+    supabase.auth.getUser(),
   ]);
 
   if (!websiteUrl) {
     redirect("/onboarding/workspace");
   }
 
-  const assistedPilot = await assistedProspectPilotEnrolled(supabase, tenantId);
+  const user = userResult.data.user;
+  const workspaceName = workspaceResult.data?.display_name ?? workspaceResult.data?.name ?? "Workspace";
+  const profileName = user?.user_metadata?.full_name;
+  const userName = typeof profileName === "string" && profileName.trim()
+    ? profileName.trim()
+    : user?.email?.split("@")[0] || "You";
 
   return (
-    <div
-      className="flex h-dvh flex-col overflow-hidden font-sans"
-      style={{ backgroundColor: C.offWhite, color: C.text }}
-    >
-      <header
-        className="sticky top-0 z-50 border-b bg-white shadow-sm"
-        style={{ borderColor: C.rule }}
-      >
-        <div className="mx-auto flex h-12 w-full max-w-[1800px] items-center gap-3 px-3 sm:px-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex min-w-0 items-center">
-              <Link
-                href="/dashboard"
-                className="flex items-center transition-opacity hover:opacity-90"
-              >
-                <Logo className="h-7" iconOnly={false} />
-              </Link>
-
-              <WorkspaceTopNav />
-            </div>
-            <div className="hidden min-w-0 items-center border-l pl-3 md:flex" style={{ borderColor: C.rule }}>
-              <DashboardNavigation isPro={entitlements.isPro} assistedPilot={assistedPilot} />
-            </div>
-          </div>
-
-        </div>
-      </header>
-
-      <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-2.5 animate-in fade-in duration-300 sm:p-3">
-        {children}
-      </main>
-
-      <div
-        className="shrink-0 border-t bg-white md:hidden"
-        style={{ borderColor: C.rule }}
-      >
-        <DashboardNavigation compact isPro={entitlements.isPro} assistedPilot={assistedPilot} />
-      </div>
-    </div>
+    <DashboardShell
+      workspaceName={workspaceName}
+      userName={userName}
+      userEmail={user?.email ?? ""}
+      entitlements={entitlements}
+      assistedPilot={assistedPilot}
+    >{children}</DashboardShell>
   );
 }

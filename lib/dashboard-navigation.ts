@@ -15,11 +15,6 @@ export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
     description: "Review the conversations that need a next step.",
   },
   {
-    href: "/dashboard/watchlists",
-    label: "Buyer groups",
-    description: "Focus discovery on a specific audience and problem.",
-  },
-  {
     href: "/dashboard/brief",
     label: "Targeting",
     description: "Define who to look for and the signals that matter.",
@@ -28,6 +23,11 @@ export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
     href: "/dashboard/targets",
     label: "Targets",
     description: "Research accounts, builders, and projects before intent is explicit.",
+  },
+  {
+    href: "/dashboard/watchlists",
+    label: "Buyer groups",
+    description: "Focus discovery on a specific audience and problem.",
   },
   {
     href: "/settings",

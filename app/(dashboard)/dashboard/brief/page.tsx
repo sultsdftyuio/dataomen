@@ -73,11 +73,11 @@ export default async function MatchingBriefPage() {
   const saveBrief = saveTargetingBrief.bind(null, serviceProfile.id);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col gap-4 overflow-y-auto pr-1">
+    <div className="arc-workspace-page arc-workspace-page--targeting">
       <DashboardPageIntro
-        eyebrow="Discovery setup"
-        title="Targeting"
-        description="Define the buyer, problem, and public signals that make a conversation worth reviewing."
+        eyebrow="Targeting"
+        title="Who to look for, and why."
+        description="This brief guides every search. Changes apply to future research, not to prospects already delivered."
         icon={Target}
       />
 

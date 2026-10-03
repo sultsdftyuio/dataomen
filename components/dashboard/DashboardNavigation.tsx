@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type CSSProperties } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -42,12 +42,14 @@ const ICONS: Record<string, LucideIcon> = {
 
 type DashboardNavigationProps = {
   compact?: boolean;
+  variant?: "sidebar";
   isPro: boolean;
   assistedPilot?: boolean;
 };
 
 export function DashboardNavigation({
   compact = false,
+  variant,
   isPro,
   assistedPilot = false,
 }: DashboardNavigationProps) {
@@ -70,7 +72,7 @@ export function DashboardNavigation({
       "flex items-center rounded-md bg-[var(--nav-background)] text-xs font-semibold text-[var(--nav-foreground)] transition-colors hover:bg-[var(--nav-hover-background)] hover:text-[var(--nav-hover-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2",
       compact
         ? "h-12 flex-col justify-center gap-0.5 px-1 text-[10px]"
-        : "h-9 shrink-0 gap-1.5 px-3",
+        : variant === "sidebar" ? "h-9 w-full gap-2.5 px-3" : "h-9 shrink-0 gap-1.5 px-3",
     );
 
   const navigationItemStyle = (isActive: boolean) =>
@@ -85,21 +87,24 @@ export function DashboardNavigation({
     <>
       <nav
         aria-label="Product navigation"
+        style={compact ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` } : undefined}
         className={
           compact
-            ? `grid w-full ${assistedPilot ? "grid-cols-6" : "grid-cols-5"} items-center`
-            : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+            ? assistedPilot ? "grid w-full grid-cols-6 items-center" : "grid w-full grid-cols-5 items-center"
+            : variant === "sidebar" ? "arc-sidebar-nav flex min-h-0 flex-col items-stretch gap-1 overflow-y-auto px-2" : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
         }
       >
         {items.map((item) => {
           const Icon = ICONS[item.href];
           const isActive = isDashboardNavigationItemActive(pathname, item.href);
           const isLocked = !isPro && item.href === "/dashboard/watchlists";
+          const group = variant === "sidebar" && (item.href === "/dashboard" ? "Review" : item.href === "/dashboard/brief" ? "Research" : item.href === "/settings" ? "Workspace" : null);
 
           if (isLocked) {
             return (
+              <Fragment key={item.href}>
+              {group ? <span className="arc-sidebar-nav__group">{group}</span> : null}
               <button
-                key={item.href}
                 type="button"
                 onClick={() => setIsUpgradeOpen(true)}
                 aria-haspopup="dialog"
@@ -112,12 +117,14 @@ export function DashboardNavigation({
                   {item.label}
                 </span>
               </button>
+              </Fragment>
             );
           }
 
           return (
+            <Fragment key={item.href}>
+            {group ? <span className="arc-sidebar-nav__group">{group}</span> : null}
             <Link
-              key={item.href}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               title={item.description}
@@ -129,6 +136,7 @@ export function DashboardNavigation({
                 {item.label}
               </span>
             </Link>
+            </Fragment>
           );
         })}
       </nav>

@@ -77,11 +77,11 @@ export default async function WatchlistsPage() {
     threshold,
   );
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col gap-4 overflow-y-auto pr-1">
+    <div className="arc-workspace-page arc-workspace-page--buyers">
       <DashboardPageIntro
-        eyebrow="Focused search"
-        title="Buyer groups"
-        description="Keep a small number of audience-and-problem hypotheses, then review the public conversations they surface."
+        eyebrow="Pro"
+        title="Focus discovery on one audience."
+        description="A buyer group pairs who you want to reach with the problem they describe. Arcli searches supported public sources for that pair."
         icon={UsersRound}
       />
 

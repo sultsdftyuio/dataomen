@@ -113,11 +113,11 @@ export default async function TargetsPage() {
   const createTarget = createManualProspectTarget.bind(null, serviceProfile.id);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col gap-4 overflow-y-auto pr-1">
+    <div className="arc-workspace-page arc-workspace-page--targets">
       <DashboardPageIntro
-        eyebrow="Entity-first discovery"
-        title="Targets"
-        description="Research accounts, builders, and projects that fit your market before they explicitly post buyer intent."
+        eyebrow="Research"
+        title="Accounts to research."
+        description="Add an account you already have in mind. Arcli checks it against your brief and tells you plainly whether it fits. You can also research builders and projects."
         icon={Crosshair}
       />
 

@@ -28,9 +28,9 @@ import {
   ProfileReviewState,
 } from "./workspace-provisioning-profile";
 import {
-  WebsiteConnectState,
   WorkspacePendingState,
 } from "./workspace-provisioning-states";
+import { WebsiteConnectState } from "./website-connect-state";
 import { ResultEmailPrompt, type ResultEmailOffer } from "./result-email-prompt";
 
 type WorkspaceProvisioningPanelProps = {

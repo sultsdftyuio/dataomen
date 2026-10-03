@@ -412,11 +412,11 @@ export function ProspectLeadDesk({
   };
 
   return (
-    <main className="flex w-full flex-col gap-1.5 sm:gap-2 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
+    <main className="arc-pro-lead-desk flex w-full flex-col gap-2.5 sm:gap-3 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
       <header className="flex shrink-0 flex-col gap-2 border-b pb-2 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
         <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
           <h1 className="pfd shrink-0 text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
-            Opportunities
+            Prospects
           </h1>
           <p className="max-w-4xl text-[12px] leading-5" style={{ color: C.navySoft }}>
             Arcli ranks public conversations worth your time, not guaranteed customers. Match strength measures relevance to your website—not purchase likelihood.
@@ -549,7 +549,7 @@ export function ProspectLeadDesk({
 
       <section
         aria-label="Lead review workspace"
-        className="grid min-h-[600px] overflow-hidden rounded-lg border bg-white xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(350px,.85fr)]"
+        className="grid min-h-[600px] overflow-hidden rounded-xl border bg-white xl:flex-1 xl:grid-cols-[minmax(300px,.8fr)_minmax(420px,1.2fr)]"
         style={{ borderColor: C.rule }}
       >
         <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>

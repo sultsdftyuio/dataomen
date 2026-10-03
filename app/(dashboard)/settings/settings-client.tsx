@@ -47,7 +47,7 @@ export default function SettingsClient({
   const displayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col gap-5 overflow-y-auto pb-6">
+    <div className="arc-workspace-page arc-settings-page">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b pb-5" style={{ borderColor: C.rule }}>
         <div>
           <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
@@ -66,9 +66,16 @@ export default function SettingsClient({
         </div>
       </header>
 
-      <div className="grid min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="space-y-5">
-          <section className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10,22,40,0.04)" }}>
+      <div className="arc-settings-page__layout">
+        <nav className="arc-settings-page__nav" aria-label="Settings sections">
+          <a href="#profile">Profile</a>
+          <a href="#workspace">Workspace and website</a>
+          <a href="#billing">Plan and billing</a>
+          <a href="#email-updates">Email updates</a>
+          <a href="#support">Support</a>
+        </nav>
+        <div className="arc-settings-page__sections">
+          <section id="profile" className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10,22,40,0.04)" }}>
             <div className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
               <h2 className="text-sm font-semibold" style={{ color: C.navy }}>Account</h2>
               <p className="mt-1 text-xs" style={{ color: C.muted }}>The account currently signed in to this workspace.</p>
@@ -117,21 +124,18 @@ export default function SettingsClient({
             </div>
           </section>
 
-          <WorkspaceTab initialData={initialData} serviceProfile={serviceProfile} />
-        </div>
-
-        <aside className="min-w-0 space-y-3 xl:sticky xl:top-0 xl:self-start">
-          <WorkspaceBillingCard planData={planData} />
-          <CrawlNotificationPreferences
+          <div id="workspace"><WorkspaceTab initialData={initialData} serviceProfile={serviceProfile} /></div>
+          <div id="billing"><WorkspaceBillingCard planData={planData} /></div>
+          <div id="email-updates"><CrawlNotificationPreferences
             initialEnabled={initialCrawlNotificationEmailsEnabled}
             eligible={canReceiveResultEmails}
             accountEmail={user.email ?? null}
-          />
+          /></div>
           {showBillingTestControls ? (
             <BillingTestSwitcher currentStatus={planData?.planStatus} />
           ) : null}
 
-          <section className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5" style={{ borderColor: C.rule }}>
+          <section id="support" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5" style={{ borderColor: C.rule }}>
             <MessageCircleMore className="size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
             <p className="text-xs leading-5" style={{ color: C.muted }}>
               Need help or have a suggestion?{" "}
@@ -145,7 +149,7 @@ export default function SettingsClient({
               .
             </p>
           </section>
-        </aside>
+        </div>
       </div>
     </div>
   );
