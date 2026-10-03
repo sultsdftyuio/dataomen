@@ -22,6 +22,8 @@ redis>=5.0.0
 supabase>=2.4.0               
 postgrest>=0.10.0
 psycopg2-binary>=2.9.9        
+# Production DATABASE_URL uses postgresql+psycopg; this requires Psycopg 3.
+psycopg[binary]==3.3.6
 asyncpg>=0.29.0               
 sqlalchemy>=2.0.27            
 # Pin the schema generator alongside the OpenAI SDK. Structured-output schemas

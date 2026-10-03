@@ -41,7 +41,8 @@ COPY requirements.txt .
 
 # We use --no-cache-dir to keep the final image size as small as possible
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    python -c "import psycopg, psycopg2; from sqlalchemy import create_engine; create_engine('postgresql+psycopg://smoke:smoke@localhost/smoke').dispose()"
 
 # ------------------------------------------------------------------------------
 # Application Code

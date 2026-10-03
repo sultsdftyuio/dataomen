@@ -25,6 +25,7 @@ COPY Crawl4AI/requirements.txt ./Crawl4AI/requirements.txt
 # download browser binaries or retain runtime state.
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt -r Crawl4AI/requirements.txt && \
+    python -c "import psycopg, psycopg2; from sqlalchemy import create_engine; create_engine('postgresql+psycopg://smoke:smoke@localhost/smoke').dispose()" && \
     python -m playwright install --with-deps chromium && \
     rm -rf /var/lib/apt/lists/* /root/.cache/pip
 
