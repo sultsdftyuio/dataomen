@@ -2799,7 +2799,20 @@ def dispatch_due_website_recrawls() -> None:
     )
 
     next_delay_seconds = DEFAULT_SCHEDULER_TICK_SECONDS
-    claimed_delay_seconds = claim_website_recrawl_scheduler_tick()
+    try:
+        claimed_delay_seconds = claim_website_recrawl_scheduler_tick()
+    except Exception as exc:
+        # Keep one delayed recovery attempt alive while PostgreSQL is down.
+        # A later tick can claim the singleton state after connectivity returns.
+        dispatch_due_website_recrawls.send_with_options(
+            delay=DEFAULT_SCHEDULER_TICK_SECONDS * 1_000,
+        )
+        logger.warning(
+            "website_recrawl_scheduler_claim_retry_scheduled error_type=%s delay_seconds=%s",
+            exc.__class__.__name__,
+            DEFAULT_SCHEDULER_TICK_SECONDS,
+        )
+        return
     if claimed_delay_seconds is None:
         logger.debug(
             "website_recrawl_scheduler_tick_skipped reason=%s",

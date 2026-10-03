@@ -304,7 +304,9 @@ def bootstrap_website_recrawl_scheduler() -> bool:
             exc.__class__.__name__,
             exc,
         )
-        return False
+        # The caller must retry an unavailable database. Returning False also
+        # means a healthy future tick exists, which silently strands new crawls.
+        raise
 
 
 def claim_website_recrawl_scheduler_tick() -> int | None:
@@ -355,7 +357,7 @@ def claim_website_recrawl_scheduler_tick() -> int | None:
             exc.__class__.__name__,
             exc,
         )
-        return None
+        raise
 
 
 def release_website_recrawl_scheduler_tick() -> None:

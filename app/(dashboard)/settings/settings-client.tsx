@@ -12,6 +12,7 @@ import CrawlNotificationPreferences from "@/components/settings/workspace_page/c
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
 import LogoutButton from "@/components/dashboard/logout-button";
 import { C } from "@/lib/tokens";
+import { workspaceDisplayName } from "@/lib/workspace/display-name";
 import "./settings-client.css";
 
 type SettingsClientProps = {
@@ -42,7 +43,7 @@ export default function SettingsClient({
   showBillingTestControls,
 }: SettingsClientProps) {
   const workspaceSettings = initialSettings?.workspace ?? {};
-  const workspaceName = workspaceSettings.companyName || "Workspace";
+  const workspaceName = workspaceDisplayName(workspaceSettings.companyName);
   const websiteUrl = serviceProfile?.websiteUrl ?? workspaceSettings.websiteUrl ?? "";
   const initialData = { websiteUrl };
   const displayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "User";

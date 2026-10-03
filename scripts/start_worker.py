@@ -292,19 +292,16 @@ def bootstrap_website_recrawl_scheduler(
             message.message_id,
         )
     except Exception as exc:
-        # A delayed scheduler message may already be queued. Do not prevent
-        # ordinary crawl work merely because this extra seed could not publish,
-        # but retry a transient broker outage without waiting for a deploy or
-        # a process recycle. The database singleton prevents duplicate loops.
+        # A delayed scheduler message may already be queued. Keep ordinary
+        # crawl consumers alive and retry an unavailable database or broker;
+        # the database singleton prevents duplicate scheduler loops.
         logger.warning(
             "website_recrawl_scheduler_bootstrap_failed retry_attempt=%s error_type=%s error=%s",
             retry_attempt,
             exc.__class__.__name__,
             exc,
         )
-        if retry_attempt >= 3:
-            return
-        delay_seconds = min(300, 30 * (2**retry_attempt))
+        delay_seconds = min(300, 30 * (2 ** min(retry_attempt, 4)))
         retry_timer = threading.Timer(
             delay_seconds,
             bootstrap_website_recrawl_scheduler,

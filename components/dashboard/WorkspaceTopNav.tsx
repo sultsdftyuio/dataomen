@@ -3,6 +3,7 @@ import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 import { WorkspacePlanBadge } from "@/components/dashboard/WorkspacePlanBadge";
+import { workspaceDisplayName } from "@/lib/workspace/display-name";
 
 export async function WorkspaceTopNav() {
   const tenantResult = await resolveTenantContext();
@@ -21,10 +22,11 @@ export async function WorkspaceTopNav() {
     getWorkspaceEntitlements(supabase, tenantId),
   ]);
 
-  const workspaceName =
+  const workspaceName = workspaceDisplayName(
     workspaceResult.data?.display_name ??
     workspaceResult.data?.name ??
-    "Workspace";
+    "Workspace",
+  );
 
   return (
     <div

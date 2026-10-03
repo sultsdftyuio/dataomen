@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from api.services import crawling, website_recrawl
 
 
@@ -236,6 +238,45 @@ def test_scheduler_actor_does_not_create_a_successor_when_another_tick_won() -> 
 
     dispatch.assert_not_called()
     successor.assert_not_called()
+
+
+def test_scheduler_bootstrap_surfaces_database_failure_for_worker_retry() -> None:
+    with patch("api.services.embeddings._database_engine", side_effect=RuntimeError("database unavailable")):
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            website_recrawl.bootstrap_website_recrawl_scheduler()
+
+
+def test_scheduler_actor_keeps_a_recovery_tick_when_database_claim_fails() -> None:
+    from api.workers import actors
+
+    with (
+        patch.object(
+            website_recrawl,
+            "claim_website_recrawl_scheduler_tick",
+            side_effect=RuntimeError("database unavailable"),
+        ),
+        patch.object(website_recrawl, "dispatch_due_website_recrawls") as dispatch,
+        patch.object(actors.dispatch_due_website_recrawls, "send_with_options") as successor,
+    ):
+        actors.dispatch_due_website_recrawls.fn()
+
+    dispatch.assert_not_called()
+    successor.assert_called_once_with(delay=300_000)
+
+
+def test_worker_retries_scheduler_bootstrap_after_initial_database_outage(monkeypatch) -> None:
+    from scripts import start_worker
+
+    monkeypatch.setenv("ARCLI_RECRAWL_ENABLED", "true")
+    with (
+        patch("api.services.website_recrawl.bootstrap_website_recrawl_scheduler", side_effect=RuntimeError("database unavailable")),
+        patch("scripts.start_worker.threading.Timer") as timer,
+    ):
+        start_worker.bootstrap_website_recrawl_scheduler(None, retry_attempt=3)
+
+    timer.assert_called_once()
+    assert timer.call_args.args[0] == 240
+    assert timer.call_args.kwargs["kwargs"] == {"retry_attempt": 4}
 
 
 def test_crawl_completion_and_system_worker_own_the_schedule() -> None:

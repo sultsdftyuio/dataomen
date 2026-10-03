@@ -18,6 +18,8 @@ type BriefLoadingPageProps = {
   scanWasJustRequested?: boolean;
 };
 
+const WORKER_START_TIMEOUT_SECONDS = 10 * 60;
+
 function websiteDomain(value: string) {
   try {
     return new URL(value).hostname.replace(/^www\./i, "");
@@ -41,15 +43,18 @@ export function BriefLoadingPage({
   const crawlStalled =
     crawlActive && Number.isFinite(lastProgressAt) && Date.now() - lastProgressAt > 10 * 60 * 1000;
   const briefReady = serviceProfile.hasProfile && !crawlActive && !crawlFailed;
-  const awaitingJob = scanWasJustRequested && !crawlJob && !serviceProfile.hasProfile && waitedSeconds < 25;
-  const hasError = crawlFailed || crawlStalled || (!crawlJob && !serviceProfile.hasProfile && !awaitingJob) ||
+  const waitingForWorker = scanWasJustRequested && !crawlJob && !serviceProfile.hasProfile;
+  const workerStartTimedOut = waitingForWorker && waitedSeconds >= WORKER_START_TIMEOUT_SECONDS;
+  const awaitingJob = waitingForWorker && waitedSeconds < 25;
+  const hasError = crawlFailed || crawlStalled || workerStartTimedOut ||
+    (!crawlJob && !serviceProfile.hasProfile && !waitingForWorker) ||
     (crawlStatus === "completed" && !serviceProfile.hasProfile);
 
   useEffect(() => {
-    if (!awaitingJob) return;
+    if (!waitingForWorker || workerStartTimedOut) return;
     const intervalId = window.setInterval(() => setWaitedSeconds((seconds) => seconds + 1), 1000);
     return () => window.clearInterval(intervalId);
-  }, [awaitingJob]);
+  }, [waitingForWorker, workerStartTimedOut]);
 
   useEffect(() => {
     if (briefReady || hasError) return;
@@ -67,17 +72,23 @@ export function BriefLoadingPage({
     ? "Your website brief needs attention"
     : briefReady
       ? "Your website brief is ready"
-      : awaitingJob
-        ? "Starting your website read"
-        : crawlStatus === "queued" || crawlStatus === "pending"
-        ? "Your website is queued"
-        : "Reading your website";
+        : awaitingJob
+          ? "Starting your website read"
+        : waitingForWorker
+          ? "Waiting for the website worker"
+          : crawlStatus === "queued" || crawlStatus === "pending"
+            ? "Your website is queued"
+            : "Reading your website";
   const detail = hasError
     ? crawlJob?.errorMessage ?? crawlJob?.failureReason ??
-      "The website read did not finish. Check the address and try again."
+      (workerStartTimedOut
+        ? "Your request was accepted, but the website worker has not started it. Please try again later or contact support."
+        : "The website read stopped before a brief was created. View the crawl status and retry.")
     : briefReady
       ? "Opening your brief now. Public-conversation discovery starts on Pro."
-      : "We are preparing the audience and problem criteria you can review in your free workspace. Public conversations are not being searched on Free.";
+      : waitingForWorker && !awaitingJob
+        ? "Your request is saved. The website worker has not started yet; this page will keep checking."
+        : "We are preparing the audience and problem criteria you can review in your free workspace. Public conversations are not being searched on Free.";
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-12" style={{ backgroundColor: C.offWhite, color: C.text }}>
@@ -106,7 +117,7 @@ export function BriefLoadingPage({
 
         {hasError ? (
           <div className="mt-6 flex flex-wrap gap-4 text-sm font-semibold">
-            <Link href="/onboarding/workspace" style={{ color: C.blue }}>Check website setup</Link>
+            <Link href="/onboarding/workspace?edit=1" style={{ color: C.blue }}>View crawl status and retry</Link>
             {serviceProfile.hasProfile ? <Link href="/dashboard" style={{ color: C.blue }}>Open existing brief</Link> : null}
           </div>
         ) : briefReady ? (

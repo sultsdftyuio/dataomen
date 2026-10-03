@@ -8,6 +8,7 @@ import { areBillingTestControlsEnabled } from "@/lib/billing/test-controls";
 import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
 import { fetchTenantSettingsRow } from "@/lib/settings/server";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";
+import { workspaceDisplayName } from "@/lib/workspace/display-name";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 import SettingsClient from "./settings-client";
 import {
@@ -156,7 +157,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       isCanceling: entitlements.isCanceling,
       currentPeriodEnd: entitlements.currentPeriodEnd,
       trialEndsAt: entitlements.trialEndsAt,
-      workspaceName: settings.workspace.companyName || "Workspace",
+      workspaceName: workspaceDisplayName(settings.workspace.companyName),
       entitlements,
       amountDueCents: 3500,
       currency: "USD",

@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 import { WorkspaceProvisioningPanel } from "@/components/onboarding/workspace-provisioning-panel";
 import { normalizeWebsite } from "@/lib/website-url";
 import type { ResultEmailOffer } from "@/components/onboarding/result-email-prompt";
-import { fetchTenantWebsiteUrl } from "@/app/(dashboard)/dashboard/data";
+import {
+  fetchLatestCrawlJob,
+  fetchServiceProfile,
+  fetchTenantWebsiteUrl,
+} from "@/app/(dashboard)/dashboard/data";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
@@ -16,8 +20,8 @@ export const metadata: Metadata = {
   description: "Connect your website and approve the prospect intelligence profile.",
 };
 
-export default async function WorkspaceOnboardingPage({ searchParams }: { searchParams: Promise<{ website?: string }> }) {
-  const { website } = await searchParams;
+export default async function WorkspaceOnboardingPage({ searchParams }: { searchParams: Promise<{ website?: string; edit?: string }> }) {
+  const { website, edit } = await searchParams;
   const suggestedWebsiteUrl = normalizeWebsite(website ?? "");
   const tenantResult = await resolveTenantContext();
 
@@ -38,11 +42,11 @@ export default async function WorkspaceOnboardingPage({ searchParams }: { search
   const { supabase, tenantId, userId } = tenantResult.context;
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
 
-  if (websiteUrl) {
+  if (websiteUrl && edit !== "1") {
     redirect("/onboarding/discovery");
   }
 
-  const [account, membership, preference] = await Promise.all([
+  const [account, membership, preference, crawlJob, serviceProfile] = await Promise.all([
     supabase.auth.getUser(),
     supabase
       .from("tenant_users")
@@ -56,6 +60,8 @@ export default async function WorkspaceOnboardingPage({ searchParams }: { search
       .eq("tenant_id", tenantId)
       .eq("user_id", userId)
       .maybeSingle(),
+    websiteUrl ? fetchLatestCrawlJob(supabase, tenantId, websiteUrl) : Promise.resolve(null),
+    websiteUrl ? fetchServiceProfile(supabase, tenantId, websiteUrl) : Promise.resolve(null),
   ]);
   const user = account.data.user;
   const email = user?.id === userId ? user.email ?? null : null;
@@ -77,6 +83,8 @@ export default async function WorkspaceOnboardingPage({ searchParams }: { search
   return (
     <WorkspaceProvisioningPanel
       initialWebsiteUrl={websiteUrl ?? suggestedWebsiteUrl}
+      crawlJob={crawlJob}
+      serviceProfile={serviceProfile ?? undefined}
       initialResultEmailOffer={resultEmailOffer}
     />
   );

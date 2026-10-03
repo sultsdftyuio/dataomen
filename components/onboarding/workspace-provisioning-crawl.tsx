@@ -87,7 +87,7 @@ export function crawlStatusMessage(crawlJob: CrawlJobView | null | undefined) {
       : "The last crawl stopped reporting progress.";
   }
 
-  return "This website was submitted before crawl tracking was available.";
+  return "The website worker has not started a tracked crawl job for this request.";
 }
 
 function activeCrawlPhase(crawlJob: CrawlJobView | null | undefined) {

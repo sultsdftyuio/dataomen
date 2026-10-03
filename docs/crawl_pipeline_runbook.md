@@ -7,11 +7,26 @@ The onboarding path is:
 1. Next.js submits the workspace website update and waits for the trusted worker
    to accept the crawl trigger. If the save succeeds but the trigger cannot be
    accepted, the settings UI explicitly reports that discovery did not start.
-2. FastAPI `POST /api/crawl/trigger` enqueues `api.services.crawling.process_crawl_job`.
-3. Dramatiq consumes queue `crawling` from Redis.
-4. `WebsiteCrawler` calls Firecrawl for homepage, pricing, features, and use-case surfaces.
-5. `ProfileExtractor` calls OpenAI with strict Pydantic schema parsing.
-6. The worker persists `crawl_jobs`, `crawl_pages`, and the final `service_profiles` row.
+2. FastAPI `POST /api/crawl/trigger` saves a due row in `website_recrawl_schedules` and returns HTTP 202. At this point there is no `crawl_jobs` row or Redis crawl message.
+3. The system-queue scheduler claims the due row, admits it to the bounded crawl queue, and publishes `process_crawl_job` on Redis queue `crawling`.
+4. The Crawl4AI worker consumes `crawling`; the normal worker consumes `system`.
+5. `WebsiteCrawler` reads the homepage and selected product pages through Crawl4AI, with Firecrawl fallback.
+6. `ProfileExtractor` calls OpenAI with strict Pydantic schema parsing.
+7. The worker persists `crawl_jobs`, `crawl_pages`, and the final `service_profiles` row.
+
+If a request receives 202 but no `crawl_jobs` row appears, inspect the schedule and scheduler logs before blaming the website. A `website_recrawl_scheduler_bootstrap_state_failed` error with `No module named 'psycopg'` means the worker image lacks the driver selected by `postgresql+psycopg` in `DATABASE_URL`; rebuild the worker from a revision containing `psycopg[binary]`. Confirm `website_recrawl_scheduler_tick_completed` and `website_crawl_enqueued` after redeployment.
+
+```sql
+SELECT tenant_id, website_url, crawl_kind, status, next_crawl_at,
+       dispatch_lease_until, last_error, updated_at
+FROM public.website_recrawl_schedules
+WHERE website_url ILIKE '%YOUR_WEBSITE_DOMAIN%'
+ORDER BY updated_at DESC;
+
+SELECT scheduler_name, next_tick_at, last_tick_started_at, updated_at
+FROM public.website_recrawl_scheduler_state
+WHERE scheduler_name = 'website_recrawl';
+```
 
 ## 1. Supabase State Isolation
 
