@@ -98,7 +98,7 @@ export function DashboardNavigation({
           const Icon = ICONS[item.href];
           const isActive = isDashboardNavigationItemActive(pathname, item.href);
           const isLocked = !isPro && item.href === "/dashboard/watchlists";
-          const group = variant === "sidebar" && (item.href === "/dashboard" ? "Review" : item.href === "/dashboard/brief" ? "Research" : item.href === "/settings" ? "Workspace" : null);
+          const group = variant === "sidebar" && (item.href === "/dashboard" ? "Review" : item.href === "/dashboard/brief" ? "Research" : null);
 
           if (isLocked) {
             return (

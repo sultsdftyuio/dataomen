@@ -60,7 +60,7 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
         <div className="flex flex-col gap-3">
           <div className="space-y-1">
             <h4 className="text-sm font-semibold leading-none text-slate-900">
-              Workspace Plan & Billing
+              Plan & Billing
             </h4>
             <p className="text-xs text-slate-500 leading-relaxed pt-1">
               {billingDescription}
@@ -85,7 +85,7 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
               href="/settings"
               className="text-center text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors py-1"
             >
-              Manage Workspace Settings &rarr;
+              Manage Settings &rarr;
             </Link>
           </div>
         </div>

@@ -11,12 +11,14 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { LiveDiscoveryFunnel } from "@/components/discovery/live-discovery-funnel";
+import type { CrawlPageSummary } from "@/lib/onboarding/crawl-pages";
 import { C } from "@/lib/tokens";
 import type {
   BuyerDemandReportView,
   CrawlJobView,
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import { CrawlReadingScreen } from "./crawl-reading-screen";
 
 type DiscoveryLoadingPageProps = {
   websiteUrl: string;
@@ -24,6 +26,8 @@ type DiscoveryLoadingPageProps = {
   serviceProfile: ServiceProfileView;
   buyerDemandReport: BuyerDemandReportView | null;
   isWarmingUp: boolean;
+  crawledPages?: CrawlPageSummary[];
+  scanWasJustRequested?: boolean;
   awaitingDiscoveryStart?: boolean;
   mode?: "onboarding" | "scan";
 };
@@ -126,11 +130,20 @@ function statusMessage({
   buyerDemandReport,
   isWarmingUp,
   awaitingDiscoveryStart = false,
+  scanWasJustRequested = false,
   mode = "onboarding",
 }: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
   const crawlStatus = normalizedStatus(crawlJob?.status);
   const crawlPhase = normalizedStatus(crawlJob?.phase);
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
+
+  if (!crawlJob && !serviceProfile.hasProfile && scanWasJustRequested) {
+    return {
+      kind: "working" as const,
+      title: "Starting your website read.",
+      detail: "Your request is saved. We are waiting for the website worker to start it.",
+    };
+  }
 
   if (!crawlJob && !serviceProfile.hasProfile) {
     return {
@@ -257,6 +270,8 @@ export function DiscoveryLoadingPage({
   serviceProfile,
   buyerDemandReport,
   isWarmingUp,
+  crawledPages = [],
+  scanWasJustRequested = false,
   awaitingDiscoveryStart = false,
   mode = "onboarding",
 }: DiscoveryLoadingPageProps) {
@@ -268,6 +283,7 @@ export function DiscoveryLoadingPage({
     buyerDemandReport,
     isWarmingUp,
     awaitingDiscoveryStart,
+    scanWasJustRequested: scanWasJustRequested && elapsedSeconds < 600,
     mode,
   };
   const activeIndex = activeStageIndex(context);
@@ -319,6 +335,29 @@ export function DiscoveryLoadingPage({
     const redirectId = window.setTimeout(() => router.replace("/dashboard"), 900);
     return () => window.clearTimeout(redirectId);
   }, [isReady, router]);
+
+  if (mode === "onboarding" && (!serviceProfile.hasProfile || (embeddingStatus && embeddingStatus !== "completed"))) {
+    return (
+      <CrawlReadingScreen
+        websiteUrl={websiteUrl}
+        crawlJob={crawlJob}
+        serviceProfile={serviceProfile}
+        pages={crawledPages}
+        title={status.title}
+        detail={status.detail}
+        hasError={hasError}
+      >
+        {hasError ? (
+          <>
+            <Link href="/onboarding/workspace?edit=1">Check website and retry</Link>
+            <Link href="/dashboard">Open dashboard</Link>
+          </>
+        ) : (
+          <span>{lastUpdate}. You can leave and return while Arcli prepares the brief.</span>
+        )}
+      </CrawlReadingScreen>
+    );
+  }
 
   return (
     <main

@@ -13,27 +13,24 @@ import LogoutButton from "./logout-button";
 import Logo from "@/components/ui/logo";
 import type { WorkspaceEntitlements } from "@/lib/entitlements";
 import { dashboardNavigationItems } from "@/lib/dashboard-navigation";
-import { workspaceDisplayName } from "@/lib/workspace/display-name";
 import "./dashboard-shell.css";
 
 type DashboardShellProps = {
   children: ReactNode;
-  workspaceName: string;
   userName: string;
   userEmail: string;
   entitlements: WorkspaceEntitlements;
   assistedPilot: boolean;
 };
 
-export function DashboardShell({ children, workspaceName, userName, userEmail, entitlements, assistedPilot }: DashboardShellProps) {
-  const displayWorkspaceName = workspaceDisplayName(workspaceName);
+export function DashboardShell({ children, userName, userEmail, entitlements, assistedPilot }: DashboardShellProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const currentPage = pathname === "/dashboard/today"
     ? "Today's prospects"
-    : dashboardNavigationItems.find((item) => item.href === pathname)?.label ?? "Workspace";
+    : dashboardNavigationItems.find((item) => item.href === pathname)?.label ?? "Dashboard";
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -59,11 +56,6 @@ export function DashboardShell({ children, workspaceName, userName, userEmail, e
           </button>
         </div>
 
-        <Link className="arc-shell__workspace" href="/settings" title={displayWorkspaceName}>
-          <span className="arc-shell__workspace-mark">{displayWorkspaceName.slice(0, 1).toUpperCase()}</span>
-          <span className="arc-shell__workspace-copy"><strong>{displayWorkspaceName}</strong><small>{entitlements.isPro ? "Pro workspace" : "Free workspace"}</small></span>
-        </Link>
-
         <DashboardNavigation variant="sidebar" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
 
         <div className="arc-shell__sidebar-bottom">
@@ -79,8 +71,8 @@ export function DashboardShell({ children, workspaceName, userName, userEmail, e
       <div className="arc-shell__body">
         <header className="arc-shell__topbar">
           <button className="arc-shell__mobile-menu" type="button" aria-label="Open menu" onClick={() => setMobileOpen(true)}><Menu size={19} /></button>
-          <div className="arc-shell__breadcrumb"><span>{displayWorkspaceName}</span><span className="arc-shell__slash">/</span><strong>{currentPage}</strong></div>
-          <button className="arc-shell__search" type="button" onClick={() => setSearchOpen(true)} aria-label="Search workspace pages">
+          <div className="arc-shell__page-label">{currentPage}</div>
+          <button className="arc-shell__search" type="button" onClick={() => setSearchOpen(true)} aria-label="Search pages">
             <Search size={15} /><span>Go to a page</span><kbd>Ctrl K</kbd>
           </button>
         </header>

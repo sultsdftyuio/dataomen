@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { DiscoveryLoadingPage } from "@/components/onboarding/discovery-loading-page";
 import { BriefLoadingPage } from "@/components/onboarding/brief-loading-page";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { fetchCrawlPageSummaries } from "@/lib/onboarding/crawl-pages";
 import {
   fetchBuyerDemandReport,
   fetchLatestCrawlJob,
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "Preparing your workspace | Arcli",
+  title: "Reading your website | Arcli",
   description: "Follow website brief preparation and, on Pro, public discovery.",
 };
 
@@ -47,14 +48,29 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
     getWorkspaceEntitlements(supabase, tenantId),
   ]);
+  const crawledPages = await fetchCrawlPageSummaries(supabase, tenantId, crawlJob?.id);
   const resolvedSearchParams = await searchParams;
   const scanWasJustRequested = Boolean(resolvedSearchParams.scan);
+  const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
+  const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
+
+  // The extracted profile is a draft until the customer approves it. Bring
+  // them to the existing editor as soon as the website read has finished.
+  if (
+    serviceProfile.hasProfile &&
+    serviceProfile.status?.trim().toLowerCase() === "pending_review" &&
+    !crawlIsActive
+  ) {
+    redirect("/onboarding/workspace?edit=1");
+  }
+
   if (!entitlements.isPro) {
     return (
       <BriefLoadingPage
         websiteUrl={websiteUrl}
         crawlJob={crawlJob}
         serviceProfile={serviceProfile}
+        crawledPages={crawledPages}
         scanWasJustRequested={scanWasJustRequested}
       />
     );
@@ -72,9 +88,6 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
   )
     ? buyerDemandReport
     : null;
-  const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
-  const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
-
   // Never make onboarding a dead end. If no job was ever recorded, the
   // dashboard shows the recovery controls instead of sending the customer
   // straight back to this polling page. A fresh submission keeps `?scan=1`
@@ -100,6 +113,8 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
       websiteUrl={websiteUrl}
       crawlJob={crawlJob}
       serviceProfile={serviceProfile}
+      crawledPages={crawledPages}
+      scanWasJustRequested={scanWasJustRequested}
       buyerDemandReport={currentBuyerDemandReport}
       isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
     />

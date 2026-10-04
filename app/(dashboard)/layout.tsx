@@ -36,11 +36,10 @@ export default async function DashboardLayout({
   }
 
   const { supabase, tenantId } = tenantResult.context;
-  const [websiteUrl, entitlements, assistedPilot, workspaceResult, userResult] = await Promise.all([
+  const [websiteUrl, entitlements, assistedPilot, userResult] = await Promise.all([
     fetchTenantWebsiteUrl(supabase, tenantId),
     getWorkspaceEntitlements(supabase, tenantId),
     assistedProspectPilotEnrolled(supabase, tenantId),
-    supabase.from("tenants").select("display_name, name").eq("tenant_id", tenantId).maybeSingle(),
     supabase.auth.getUser(),
   ]);
 
@@ -49,7 +48,6 @@ export default async function DashboardLayout({
   }
 
   const user = userResult.data.user;
-  const workspaceName = workspaceResult.data?.display_name ?? workspaceResult.data?.name ?? "Workspace";
   const profileName = user?.user_metadata?.full_name;
   const userName = typeof profileName === "string" && profileName.trim()
     ? profileName.trim()
@@ -57,7 +55,6 @@ export default async function DashboardLayout({
 
   return (
     <DashboardShell
-      workspaceName={workspaceName}
       userName={userName}
       userEmail={user?.email ?? ""}
       entitlements={entitlements}

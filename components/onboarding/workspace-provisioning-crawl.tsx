@@ -2,39 +2,23 @@
 
 import {
   AlertCircle,
-  CheckCircle2,
   Loader2,
   Send,
-  Sparkles,
   Target,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { C } from "@/lib/tokens";
+import type { CrawlPageSummary } from "@/lib/onboarding/crawl-pages";
 import type {
   CrawlJobView,
   ProspectActionResult,
+  ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 import { ResultText } from "./workspace-provisioning-states";
+import { CrawlReadingScreen } from "./crawl-reading-screen";
 
 export const LOCAL_CRAWL_TRIGGER_GRACE_MS = 25 * 1000;
 const STALE_CRAWL_HEARTBEAT_MS = 4 * 60 * 1000;
-
-export const CRAWL_PHASES = [
-  { key: "queued", label: "Queued" },
-  { key: "crawling", label: "Crawling pages" },
-  { key: "crawl_persisted", label: "Pages captured" },
-  { key: "extracting_profile", label: "Extracting profile" },
-  { key: "persisting_profile", label: "Saving brief" },
-] as const;
 
 export function normalizedStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
@@ -124,35 +108,6 @@ function activeCrawlDetail(crawlJob: CrawlJobView | null | undefined) {
   return phaseDetails[phase] ?? "Working on your service profile.";
 }
 
-function crawlProgressValue(crawlJob: CrawlJobView | null | undefined) {
-  const phase = activeCrawlPhase(crawlJob);
-  const progress: Record<string, number> = {
-    queued: 12,
-    starting: 20,
-    crawling: 42,
-    crawl_persisted: 62,
-    extracting_profile: 78,
-    persisting_profile: 90,
-  };
-
-  return progress[phase] ?? 28;
-}
-
-function crawlStepState(
-  stepKey: string,
-  crawlJob: CrawlJobView | null | undefined,
-) {
-  const activeIndex = CRAWL_PHASES.findIndex(
-    (phase) => phase.key === activeCrawlPhase(crawlJob),
-  );
-  const stepIndex = CRAWL_PHASES.findIndex((phase) => phase.key === stepKey);
-
-  if (activeIndex < 0) return "pending";
-  if (stepIndex < activeIndex) return "complete";
-  if (stepIndex === activeIndex) return "active";
-  return "pending";
-}
-
 export function formatStatusAge(crawlJob: CrawlJobView | null | undefined, now = Date.now()) {
   const ageMs = timestampAgeMs(
     crawlJob?.lastHeartbeatAt ?? crawlJob?.updatedAt,
@@ -169,6 +124,8 @@ export function formatStatusAge(crawlJob: CrawlJobView | null | undefined, now =
 
 type CrawlAttentionStateProps = {
   crawlJob: CrawlJobView | null | undefined;
+  crawledPages: CrawlPageSummary[];
+  serviceProfile: Pick<ServiceProfileView, "hasProfile" | "fields">;
   effectiveWebsiteUrl: string;
   isManualPending: boolean;
   isWebsitePending: boolean;
@@ -180,6 +137,8 @@ type CrawlAttentionStateProps = {
 
 export function CrawlAttentionState({
   crawlJob,
+  crawledPages,
+  serviceProfile,
   effectiveWebsiteUrl,
   isManualPending,
   isWebsitePending,
@@ -189,110 +148,38 @@ export function CrawlAttentionState({
   startManualProfile,
 }: CrawlAttentionStateProps) {
   return (
-    <main
-      className="flex min-h-screen items-center justify-center p-6"
-      style={{ backgroundColor: C.offWhite, color: C.text }}
+    <CrawlReadingScreen
+      websiteUrl={effectiveWebsiteUrl}
+      crawlJob={crawlJob ?? null}
+      serviceProfile={serviceProfile}
+      pages={crawledPages}
+      title="Your website read needs attention."
+      detail={crawlStatusMessage(crawlJob)}
+      hasError
     >
-      <Card className="w-full max-w-xl rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
-        <CardHeader className="space-y-3 text-center">
-          <div
-            className="mx-auto flex size-11 items-center justify-center rounded-md"
-            style={{ backgroundColor: C.redPale, color: C.red }}
-          >
-            <AlertCircle className="size-5" />
-          </div>
-          <div>
-            <CardTitle className="text-xl" style={{ color: C.navy }}>
-              Crawl needs attention
-            </CardTitle>
-            <CardDescription className="mt-2" style={{ color: C.muted }}>
-              {effectiveWebsiteUrl}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div
-            className="rounded-md border px-3 py-3 text-sm leading-6"
-            style={{
-              borderColor: C.red,
-              backgroundColor: C.redPale,
-              color: C.red,
-            }}
-          >
-            {crawlStatusMessage(crawlJob)}
-          </div>
-          {crawlJob?.errorMessage ? (
-            <p className="text-xs leading-5" style={{ color: C.muted }}>
-              {crawlJob.errorMessage}
-            </p>
-          ) : null}
-          <div
-            className="grid gap-2 rounded-md border p-3 text-left text-xs"
-            style={{ borderColor: C.rule, backgroundColor: C.white }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span style={{ color: C.muted }}>Last backend signal</span>
-              <span className="font-semibold" style={{ color: C.navy }}>
-                {formatStatusAge(crawlJob, statusNow)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span style={{ color: C.muted }}>Status</span>
-              <span className="font-semibold" style={{ color: C.navy }}>
-                {crawlJob?.status ?? "not tracked"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span style={{ color: C.muted }}>Phase</span>
-              <span className="font-semibold" style={{ color: C.navy }}>
-                {crawlJob?.phase?.replace(/_/g, " ") ?? "missing"}
-              </span>
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button
-              type="button"
-              disabled={isWebsitePending || isManualPending}
-              className="w-full"
-              onClick={retryCrawl}
-              style={{ backgroundColor: C.navy, color: C.white }}
-            >
-              {isWebsitePending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-              {isWebsitePending ? "Restarting..." : "Retry crawl"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isWebsitePending || isManualPending}
-              className="w-full"
-              onClick={startManualProfile}
-              style={{
-                borderColor: C.ruleDark,
-                backgroundColor: C.white,
-                color: C.navy,
-              }}
-            >
-              {isManualPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Target className="size-4" />
-              )}
-              {isManualPending ? "Opening..." : "Enter manually"}
-            </Button>
-          </div>
-          <ResultText result={websiteResult} />
-        </CardContent>
-      </Card>
-    </main>
+      <div className="arc-crawl-attention">
+        <p><AlertCircle size={15} aria-hidden="true" />{crawlJob?.errorMessage ?? "The website read stopped before a brief was created."}</p>
+        <div className="arc-crawl-attention__status"><span>Last update: {formatStatusAge(crawlJob, statusNow)}</span><span>Status: {crawlJob?.status ?? "not tracked"}</span><span>Phase: {crawlJob?.phase?.replace(/_/g, " ") ?? "missing"}</span></div>
+        <div className="arc-crawl-attention__buttons">
+          <Button type="button" disabled={isWebsitePending || isManualPending} onClick={retryCrawl}>
+            {isWebsitePending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            {isWebsitePending ? "Restarting..." : "Retry crawl"}
+          </Button>
+          <Button type="button" variant="outline" disabled={isWebsitePending || isManualPending} onClick={startManualProfile}>
+            {isManualPending ? <Loader2 className="size-4 animate-spin" /> : <Target className="size-4" />}
+            {isManualPending ? "Opening..." : "Enter manually"}
+          </Button>
+        </div>
+        <ResultText result={websiteResult} />
+      </div>
+    </CrawlReadingScreen>
   );
 }
 
 type ActiveCrawlStateProps = {
   crawlJob: CrawlJobView | null | undefined;
+  crawledPages: CrawlPageSummary[];
+  serviceProfile: Pick<ServiceProfileView, "hasProfile" | "fields">;
   effectiveWebsiteUrl: string;
   isManualPending: boolean;
   statusNow: number;
@@ -303,6 +190,8 @@ type ActiveCrawlStateProps = {
 
 export function ActiveCrawlState({
   crawlJob,
+  crawledPages,
+  serviceProfile,
   effectiveWebsiteUrl,
   isManualPending,
   statusNow,
@@ -311,125 +200,21 @@ export function ActiveCrawlState({
   onRefreshStatus,
 }: ActiveCrawlStateProps) {
   return (
-    <main
-      className="flex min-h-screen items-center justify-center p-6"
-      style={{ backgroundColor: C.offWhite, color: C.text }}
+    <CrawlReadingScreen
+      websiteUrl={effectiveWebsiteUrl}
+      crawlJob={crawlJob ?? null}
+      serviceProfile={serviceProfile}
+      pages={crawledPages}
+      title={activeCrawlTitle(crawlJob)}
+      detail={activeCrawlDetail(crawlJob)}
     >
-      <Card className="w-full max-w-xl rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
-        <CardHeader className="space-y-3 text-center">
-          <div
-            className="mx-auto flex size-11 items-center justify-center rounded-md"
-            style={{ backgroundColor: C.bluePale, color: C.blue }}
-          >
-            <Sparkles className="size-5 animate-pulse" />
-          </div>
-          <div>
-            <CardTitle className="text-xl" style={{ color: C.navy }}>
-              {activeCrawlTitle(crawlJob)}
-            </CardTitle>
-            <CardDescription className="mt-2" style={{ color: C.muted }}>
-              {effectiveWebsiteUrl}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3 text-xs font-semibold">
-              <span style={{ color: C.muted }}>
-                {activeCrawlDetail(crawlJob)}
-              </span>
-              <span style={{ color: C.blue }}>
-                {crawlJob
-                  ? `Signal ${formatStatusAge(crawlJob, statusNow)}`
-                  : "Sending trigger"}
-              </span>
-            </div>
-            <Progress value={crawlProgressValue(crawlJob)} />
-          </div>
-          <div
-            className="grid gap-2 rounded-md border p-3"
-            style={{ borderColor: C.rule, backgroundColor: C.white }}
-          >
-            {CRAWL_PHASES.map((phase) => {
-              const state = crawlStepState(phase.key, crawlJob);
-              return (
-                <div
-                  key={phase.key}
-                  className="flex items-center justify-between gap-3 text-sm"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold"
-                      style={{
-                        borderColor:
-                          state === "complete" || state === "active"
-                            ? C.blue
-                            : C.ruleDark,
-                        backgroundColor:
-                          state === "complete"
-                            ? C.blue
-                            : state === "active"
-                              ? C.bluePale
-                              : C.white,
-                        color:
-                          state === "complete"
-                            ? C.white
-                            : state === "active"
-                              ? C.blue
-                              : C.muted,
-                      }}
-                    >
-                      {state === "complete" ? <CheckCircle2 className="size-3" /> : null}
-                    </span>
-                    <span
-                      className="truncate"
-                      style={{ color: state === "pending" ? C.muted : C.navy }}
-                    >
-                      {phase.label}
-                    </span>
-                  </div>
-                  {state === "active" ? (
-                    <Loader2 className="size-3.5 animate-spin" style={{ color: C.blue }} />
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isManualPending}
-              onClick={startManualProfile}
-              style={{
-                borderColor: C.ruleDark,
-                backgroundColor: C.white,
-                color: C.navy,
-              }}
-            >
-              {isManualPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Target className="size-4" />
-              )}
-              Enter manually
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onRefreshStatus}
-              style={{
-                borderColor: C.ruleDark,
-                backgroundColor: C.white,
-                color: C.navy,
-              }}
-            >
-              Refresh status
-            </Button>
-          </div>
-          <ResultText result={websiteResult} />
-        </CardContent>
-      </Card>
-    </main>
+      <span>{crawlJob ? `Last update ${formatStatusAge(crawlJob, statusNow)}.` : "Sending request."}</span>
+      <Button type="button" variant="outline" disabled={isManualPending} onClick={startManualProfile}>
+        {isManualPending ? <Loader2 className="size-4 animate-spin" /> : <Target className="size-4" />}
+        Enter manually
+      </Button>
+      <Button type="button" variant="outline" onClick={onRefreshStatus}>Refresh status</Button>
+      <ResultText result={websiteResult} />
+    </CrawlReadingScreen>
   );
 }

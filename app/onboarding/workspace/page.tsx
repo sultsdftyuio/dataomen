@@ -10,13 +10,14 @@ import {
   fetchTenantWebsiteUrl,
 } from "@/app/(dashboard)/dashboard/data";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";
+import { fetchCrawlPageSummaries } from "@/lib/onboarding/crawl-pages";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "Workspace setup | Arcli",
+  title: "Website setup | Arcli",
   description: "Connect your website and approve the prospect intelligence profile.",
 };
 
@@ -63,6 +64,7 @@ export default async function WorkspaceOnboardingPage({ searchParams }: { search
     websiteUrl ? fetchLatestCrawlJob(supabase, tenantId, websiteUrl) : Promise.resolve(null),
     websiteUrl ? fetchServiceProfile(supabase, tenantId, websiteUrl) : Promise.resolve(null),
   ]);
+  const crawledPages = await fetchCrawlPageSummaries(supabase, tenantId, crawlJob?.id);
   const user = account.data.user;
   const email = user?.id === userId ? user.email ?? null : null;
   let resultEmailOffer: ResultEmailOffer = { status: "unavailable", email };
@@ -84,6 +86,7 @@ export default async function WorkspaceOnboardingPage({ searchParams }: { search
     <WorkspaceProvisioningPanel
       initialWebsiteUrl={websiteUrl ?? suggestedWebsiteUrl}
       crawlJob={crawlJob}
+      crawledPages={crawledPages}
       serviceProfile={serviceProfile ?? undefined}
       initialResultEmailOffer={resultEmailOffer}
     />

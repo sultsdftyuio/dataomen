@@ -16,6 +16,7 @@ import type {
   ServiceProfileFields,
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import type { CrawlPageSummary } from "@/lib/onboarding/crawl-pages";
 import {
   ActiveCrawlState,
   CrawlAttentionState,
@@ -25,8 +26,8 @@ import {
 } from "./workspace-provisioning-crawl";
 import {
   EMPTY_FIELDS,
-  ProfileReviewState,
 } from "./workspace-provisioning-profile";
+import { BriefReviewScreen } from "./brief-review-screen";
 import {
   WorkspacePendingState,
 } from "./workspace-provisioning-states";
@@ -37,6 +38,7 @@ type WorkspaceProvisioningPanelProps = {
   workspacePending?: boolean;
   initialWebsiteUrl?: string | null;
   crawlJob?: CrawlJobView | null;
+  crawledPages?: CrawlPageSummary[];
   serviceProfile?: ServiceProfileView;
   initialResultEmailOffer?: ResultEmailOffer;
 };
@@ -57,6 +59,7 @@ export function WorkspaceProvisioningPanel({
   workspacePending = false,
   initialWebsiteUrl = null,
   crawlJob = null,
+  crawledPages = [],
   serviceProfile,
   initialResultEmailOffer = { status: "unavailable", email: null },
 }: WorkspaceProvisioningPanelProps) {
@@ -329,6 +332,8 @@ export function WorkspaceProvisioningPanel({
     return (
       <CrawlAttentionState
         crawlJob={crawlJob}
+        crawledPages={crawledPages}
+        serviceProfile={serviceProfile ?? { hasProfile: false, fields: EMPTY_FIELDS }}
         effectiveWebsiteUrl={effectiveWebsiteUrl}
         isManualPending={isManualPending}
         isWebsitePending={isWebsitePending}
@@ -344,6 +349,8 @@ export function WorkspaceProvisioningPanel({
     return (
       <ActiveCrawlState
         crawlJob={crawlJob}
+        crawledPages={crawledPages}
+        serviceProfile={serviceProfile ?? { hasProfile: false, fields: EMPTY_FIELDS }}
         effectiveWebsiteUrl={effectiveWebsiteUrl}
         isManualPending={isManualPending}
         statusNow={statusNow}
@@ -355,14 +362,15 @@ export function WorkspaceProvisioningPanel({
   }
 
   return (
-    <ProfileReviewState
-      effectiveWebsiteUrl={effectiveWebsiteUrl}
-      isProfilePending={isProfilePending}
-      profileFields={profileFields}
-      profileResult={profileResult}
+    <BriefReviewScreen
+      websiteUrl={effectiveWebsiteUrl}
+      pages={crawledPages}
+      isPending={isProfilePending}
+      fields={profileFields}
+      result={profileResult}
       reviewJson={reviewJson}
-      persistProfile={persistProfile}
-      updateField={updateField}
+      onPersist={persistProfile}
+      onUpdateField={updateField}
     />
   );
 }
