@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, Cookie } from "lucide-react";
+import { publicPageMetadata } from "@/lib/seo/public-metadata";
 
-export const metadata = {
-  title: "Cookie Policy | Arcli",
-  description: "How Arcli uses essential cookies and similar storage technologies.",
-  alternates: { canonical: "/cookies" },
-};
+export const metadata = publicPageMetadata(
+  "/cookies",
+  "Cookie Policy | Arcli",
+  "How Arcli uses essential cookies and similar storage technologies.",
+);
 
 export default function CookiePolicyPage() {
   return (

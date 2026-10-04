@@ -1,60 +1,30 @@
-// app/robots.ts
-import { MetadataRoute } from 'next';
+import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site';
 
-/**
- * Arcli Global Crawler Configuration
- * * Performance: Forced static generation prevents Vercel Serverless cold starts 
- * from triggering Googlebot "unreachable" timeouts.
- * * Security: Prevents search engine bots from wasting compute on API endpoints.
- * * SEO: Directs 100% of crawl budget to our public semantic silos.
- */
-
-// CRITICAL: Instructs the Next.js compiler to prerender this as a static asset.
-// This guarantees instant Edge delivery without waking up the Vercel backend.
+// Serve a stable robots.txt without requiring an application request.
 export const dynamic = 'force-static';
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
-      // Apply these rules universally to all authorized indexing bots
       userAgent: '*',
-      
-      // Allow indexing of all public-facing landing and SEO hub pages
       allow: [
-        '/', 
-        '/_next/static/', // Required for Googlebot to render our JS/CSS architectures
-        '/api/og'         // <-- CRITICAL FIX: Allows X/LinkedIn to fetch your dynamic preview cards
+        '/',
+        '/_next/static/',
+        '/api/og',
       ],
-      
-      // Strict Disallow definitions to protect compute and tenant isolation
+      // Public account and pilot pages are omitted here so crawlers can read noindex.
       disallow: [
-        // Tenant Isolation: Never crawl the internal app interfaces
         '/dashboard',
         '/onboarding',
         '/settings',
-        
-        // Compute Protection: Hard-block APIs to prevent accidental DB usage/token burn
-        // Note: The specific /api/og 'allow' above safely overrides this blanket block.
+        '/auth/',
         '/api/',
-        
-        // Auth Flow: Keep search results mathematically clean of utility states
-        '/login',
-        '/register',
-        '/forgot-password',
-        '/signup',
-        '/sign-up',
-        
-        // Public Shares: Maintain data privacy for un-syndicated tenant insights
         '/share',
-        
-        // Next.js Internals: Save compute on optimized images and raw data blobs
         '/_next/data/',
-        '/_next/image/',
       ],
     },
     host: SITE_URL,
-    // Direct crawlers to the optimized XML map for structured discovery
     sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

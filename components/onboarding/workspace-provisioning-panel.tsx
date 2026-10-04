@@ -288,9 +288,9 @@ export function WorkspaceProvisioningPanel({
 
   if (workspacePending) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: C.offWhite, color: C.text }}>
+      <main className="min-h-screen" style={{ backgroundColor: C.offWhite, color: C.text }}>
         <WorkspacePendingState />
-      </div>
+      </main>
     );
   }
 

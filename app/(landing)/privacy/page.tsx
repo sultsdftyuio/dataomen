@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
+import { publicPageMetadata } from "@/lib/seo/public-metadata";
 
-export const metadata = {
-  title: "Privacy Policy | Arcli",
-  description: "How Arcli handles account information and selected public-source data.",
-  alternates: { canonical: "/privacy" },
-};
+export const metadata = publicPageMetadata(
+  "/privacy",
+  "Privacy Policy | Arcli",
+  "How Arcli handles account information and selected public-source data.",
+);
 
 const UPDATED_ON = "October 2, 2026";
 

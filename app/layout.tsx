@@ -29,14 +29,14 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Arcli | Buyer Intent Discovery for B2B Founders',
-  description: 'Find public conversations where potential B2B buyers describe the problem you solve, then review the evidence before you reach out.',
+  title: 'B2B Prospect Research With Source Evidence | Arcli',
+  description: 'Arcli turns your website into a B2B targeting brief and helps you review prospects with source-linked evidence before outreach.',
   generator: 'Next.js',
   metadataBase: new URL(SITE_URL),
 
   openGraph: {
-    title: 'Arcli | Buyer Intent Discovery for B2B Founders',
-    description: 'Find public conversations where potential B2B buyers describe the problem you solve, then review the evidence before you reach out.',
+    title: 'B2B Prospect Research With Source Evidence | Arcli',
+    description: 'Arcli turns your website into a B2B targeting brief and helps you review prospects with source-linked evidence before outreach.',
     url: SITE_URL,
     siteName: 'Arcli',
     locale: 'en_US',
@@ -53,8 +53,8 @@ export const metadata: Metadata = {
 
   twitter: {
     card: 'summary_large_image', 
-    title: 'Arcli | Buyer Intent Discovery for B2B Founders',
-    description: 'Find public conversations where potential B2B buyers describe the problem you solve, then review the evidence before you reach out.',
+    title: 'B2B Prospect Research With Source Evidence | Arcli',
+    description: 'Arcli turns your website into a B2B targeting brief and helps you review prospects with source-linked evidence before outreach.',
     images: [DEFAULT_OG_IMAGE_URL],
   },
 }

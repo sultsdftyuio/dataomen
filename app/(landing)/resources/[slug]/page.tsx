@@ -26,13 +26,13 @@ export async function generateMetadata({ params }: ResourcePageProps): Promise<M
   const ogImageUrl = new URL(createOgImageUrl(guide.title), SITE_URL).toString();
 
   return {
-    title: `${guide.title} | Arcli`,
+    title: guide.seoTitle,
     description: guide.description,
     alternates: {
       canonical: url,
     },
     openGraph: {
-      title: `${guide.title} | Arcli`,
+      title: guide.seoTitle,
       description: guide.description,
       url,
       siteName: "Arcli",
@@ -48,7 +48,7 @@ export async function generateMetadata({ params }: ResourcePageProps): Promise<M
     },
     twitter: {
       card: "summary_large_image",
-      title: `${guide.title} | Arcli`,
+      title: guide.seoTitle,
       description: guide.description,
       images: [ogImageUrl],
     },

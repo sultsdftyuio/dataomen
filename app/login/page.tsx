@@ -72,7 +72,7 @@ function LoginForm() {
   };
 
   return (
-    <div
+    <main
       className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden py-12"
       style={{ backgroundColor: C.offWhite, fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
@@ -233,7 +233,7 @@ function LoginForm() {
         </p>
 
       </div>
-    </div>
+    </main>
   );
 }
 

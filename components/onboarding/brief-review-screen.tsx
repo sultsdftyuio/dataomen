@@ -176,7 +176,7 @@ export function BriefReviewScreen({
         <Link href="/dashboard" className="arc-read-screen__leave">Leave for now</Link>
       </header>
 
-      <div className="arc-review-screen__content">
+      <main className="arc-review-screen__content">
         <div className="arc-read-screen__intro">
           <div>
             <p className="arc-read-screen__eyebrow">REVIEW YOUR BRIEF</p>
@@ -324,7 +324,7 @@ export function BriefReviewScreen({
             />
           </div>
         ) : null}
-      </div>
+      </main>
 
       <div className="arc-review-screen__approval" aria-busy={isPending}>
         <div>

@@ -94,7 +94,7 @@ function RegisterForm() {
   };
 
   return (
-    <div
+    <main
       className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden py-12"
       style={{ backgroundColor: C.offWhite, fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
@@ -241,7 +241,7 @@ function RegisterForm() {
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }
 

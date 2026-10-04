@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { RemovalRequestForm } from "./removal-request-form";
+import { publicPageMetadata } from "@/lib/seo/public-metadata";
 
-export const metadata = {
-  title: "Remove public-source data | Arcli",
-  description: "Request removal or suppression of public-source data from Arcli.",
-  alternates: { canonical: "/privacy/remove" },
-};
+export const metadata = publicPageMetadata(
+  "/privacy/remove",
+  "Remove public-source data | Arcli",
+  "Request removal or suppression of public-source data from Arcli.",
+);
 
 export default function PublicDataRemovalPage() {
   return (

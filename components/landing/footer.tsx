@@ -40,17 +40,17 @@ export default function Footer() {
               <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Platform</h3>
               <ul className="space-y-3">
                 <li>
-                  <Link href="/#proof" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                  <Link href="/#evidence" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                     See a Prospect File
                   </Link>
                 </li>
                 <li>
-                  <Link href="/#pipeline" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                  <Link href="/#workflow" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                     How It Works
                   </Link>
                 </li>
                 <li>
-                  <Link href="/#quality" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                  <Link href="/#standards" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                     Evidence Standards
                   </Link>
                 </li>

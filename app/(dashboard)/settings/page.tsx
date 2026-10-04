@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
@@ -19,6 +20,10 @@ import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-ty
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const metadata: Metadata = {
+  title: "Workspace Settings | Arcli",
+  description: "Manage your Arcli workspace, billing, and account preferences.",
+};
 
 type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;
 

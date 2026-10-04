@@ -43,7 +43,7 @@ function ForgotPasswordForm() {
   };
 
   return (
-    <div
+    <main
       className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden py-12"
       style={{ backgroundColor: C.offWhite, fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
@@ -135,7 +135,7 @@ function ForgotPasswordForm() {
         </p>
 
       </div>
-    </div>
+    </main>
   );
 }
 

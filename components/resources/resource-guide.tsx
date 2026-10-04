@@ -4,66 +4,11 @@ import { ArrowRight, CheckCircle2, ChevronRight } from "lucide-react";
 import Footer from "@/components/landing/footer";
 import { Navbar } from "@/components/landing/navbar";
 import { type ResourceGuide, resourceBySlug } from "@/lib/seo/resources";
-import { SITE_URL } from "@/lib/site";
+import { resourceStructuredData } from "@/lib/seo/resource-schema";
 
 type ResourceGuideProps = {
   guide: ResourceGuide;
 };
-
-function resourceStructuredData(guide: ResourceGuide) {
-  const url = `${SITE_URL}${guide.path}`;
-
-  return {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebPage",
-        name: guide.title,
-        description: guide.description,
-        url,
-        isPartOf: {
-          "@type": "WebSite",
-          name: "Arcli",
-          url: SITE_URL,
-        },
-        breadcrumb: {
-          "@type": "BreadcrumbList",
-          itemListElement: [
-            {
-              "@type": "ListItem",
-              position: 1,
-              name: "Home",
-              item: SITE_URL,
-            },
-            {
-              "@type": "ListItem",
-              position: 2,
-              name: "Resources",
-              item: `${SITE_URL}/resources`,
-            },
-            {
-              "@type": "ListItem",
-              position: 3,
-              name: guide.title,
-              item: url,
-            },
-          ],
-        },
-      },
-      {
-        "@type": "FAQPage",
-        mainEntity: guide.faqs.map((faq) => ({
-          "@type": "Question",
-          name: faq.question,
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: faq.answer,
-          },
-        })),
-      },
-    ],
-  };
-}
 
 export function ResourceGuide({ guide }: ResourceGuideProps) {
   const relatedGuides = guide.relatedSlugs

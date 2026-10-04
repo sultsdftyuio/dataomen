@@ -18,6 +18,7 @@ export type ResourceGuide = {
   path: string;
   eyebrow: string;
   title: string;
+  seoTitle: string;
   description: string;
   summary: string;
   sections: readonly ResourceSection[];
@@ -25,7 +26,8 @@ export type ResourceGuide = {
   relatedSlugs: readonly string[];
 };
 
-export const RESOURCE_LAST_MODIFIED = new Date("2026-08-30T00:00:00.000Z");
+// Update this only when the guide content, links, or structured data change.
+export const RESOURCE_LAST_MODIFIED = new Date("2026-10-04T00:00:00.000Z");
 
 export const resourceGuides: readonly ResourceGuide[] = [
   {
@@ -33,6 +35,7 @@ export const resourceGuides: readonly ResourceGuide[] = [
     path: "/resources/buyer-intent-signals",
     eyebrow: "Buyer intent guide",
     title: "Buyer Intent Signals: What They Are and How to Use Them",
+    seoTitle: "Buyer Intent Signals: A Practical Guide | Arcli",
     description:
       "Learn how B2B founders can recognize buyer-intent signals, evaluate public conversations, and prioritize evidence-backed opportunities.",
     summary:
@@ -117,6 +120,7 @@ export const resourceGuides: readonly ResourceGuide[] = [
     path: "/resources/how-to-find-b2b-buyers",
     eyebrow: "Prospecting guide",
     title: "How to Find B2B Buyers Who Are Actively Looking for Help",
+    seoTitle: "How to Find B2B Buyers Looking for Help | Arcli",
     description:
       "A practical, evidence-first process for finding potential B2B buyers through the problems they describe, not just broad contact lists.",
     summary:
@@ -198,6 +202,7 @@ export const resourceGuides: readonly ResourceGuide[] = [
     path: "/resources/public-conversation-lead-generation",
     eyebrow: "Method guide",
     title: "Public Conversation Lead Generation: An Evidence-First Method",
+    seoTitle: "Public Conversation Lead Generation Guide | Arcli",
     description:
       "Understand how public-conversation lead generation works, where it is useful, and why every candidate needs source evidence and human review.",
     summary:
@@ -274,6 +279,7 @@ export const resourceGuides: readonly ResourceGuide[] = [
     path: "/resources/buyer-pain-point-research",
     eyebrow: "Research guide",
     title: "Buyer Pain-Point Research for B2B Founders",
+    seoTitle: "Buyer Pain-Point Research for B2B Founders | Arcli",
     description:
       "A practical guide to researching buyer pain points, turning customer language into useful prospecting criteria, and avoiding generic targeting.",
     summary:

@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, Scale } from "lucide-react";
 import type { ReactNode } from "react";
+import { publicPageMetadata } from "@/lib/seo/public-metadata";
 
-export const metadata = {
-  title: "Terms of Service | Arcli",
-  description: "Terms and acceptable use rules for Arcli's prospect research and public-conversation service.",
-  alternates: { canonical: "/terms" },
-};
+export const metadata = publicPageMetadata(
+  "/terms",
+  "Terms of Service | Arcli",
+  "Terms and acceptable use rules for Arcli's prospect research and public-conversation service.",
+);
 
 const UPDATED_ON = "October 2, 2026";
 

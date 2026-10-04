@@ -23,9 +23,9 @@ export function Navbar() {
   }, []);
 
   const navLinks = [
-    { name: "See a prospect", href: "/#proof" },
-    { name: "How it works", href: "/#pipeline" },
-    { name: "Evidence standards", href: "/#quality" },
+    { name: "See a prospect", href: "/#evidence" },
+    { name: "How it works", href: "/#workflow" },
+    { name: "Evidence standards", href: "/#standards" },
     { name: "Pricing", href: "/#pricing" },
   ];
 
