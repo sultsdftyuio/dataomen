@@ -3026,10 +3026,6 @@ export default function ProspectDashboardClient({
         onSourceChange={setQueueSource}
         onSelectLead={previewLead}
         onOpenFocusedReview={() => setDashboardView("focus")}
-        onOpenScanActivity={() => {
-          setDashboardView("overview");
-          setIsScanActivityOpen(true);
-        }}
         onFeedback={handleFeedback}
         onQualify={handleQualification}
       />

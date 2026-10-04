@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, FileSearch, Globe2, LockKeyhole } from "lucide-react";
+import { ArrowRight, Check, FileSearch, Globe2, LockKeyhole } from "lucide-react";
 
 import UpgradeButton from "@/components/ui/UpgradeButton";
 import { C } from "@/lib/tokens";
@@ -22,11 +22,11 @@ function domainForDisplay(websiteUrl: string) {
 
 function BriefField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
+    <div className="rounded-lg border bg-white p-3.5" style={{ borderColor: C.rule }}>
       <dt className="text-[11px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
         {label}
       </dt>
-      <dd className="mt-2 text-sm leading-6" style={{ color: C.navy }}>
+      <dd className="mt-1.5 line-clamp-4 text-sm leading-6" style={{ color: C.navy }}>
         {value || "Add this to your matching brief."}
       </dd>
     </div>
@@ -41,21 +41,23 @@ export default function FreeProspectPreview({
   const domain = domainForDisplay(websiteUrl);
 
   return (
-    <main className="flex h-full w-full flex-col gap-5 overflow-y-auto pr-1">
+    <div className="flex h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto pr-1">
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
           Free workspace
         </p>
-        <h1 className="pfd mt-2 text-3xl leading-tight" style={{ color: C.navy }}>
-          Your website brief is ready
+        <h1 className="pfd mt-2 text-2xl leading-tight sm:text-3xl" style={{ color: C.navy }}>
+          Review your matching brief
         </h1>
         <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-          Arcli read {domain} to prepare the buyer and problem criteria below. Review them before
-          starting public-conversation discovery on Pro.
+          Arcli read {domain} and drafted the buyer criteria below. Correct anything that does not describe your best customer.
         </p>
+        <span className="mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: C.greenPale, color: C.green }}>
+          <Check className="size-3.5" aria-hidden="true" /> Website read complete
+        </span>
       </header>
 
-      <section aria-labelledby="brief-heading" className="rounded-xl border bg-white p-5 shadow-sm" style={{ borderColor: C.rule }}>
+      <section aria-labelledby="brief-heading" className="rounded-xl border bg-white p-4 shadow-sm sm:p-5" style={{ borderColor: C.rule }}>
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.bluePale, color: C.blue }}>
             <Globe2 className="size-5" aria-hidden="true" />
@@ -69,22 +71,22 @@ export default function FreeProspectPreview({
             </p>
           </div>
         </div>
-        <dl className="mt-5 grid gap-3 md:grid-cols-3">
+        <dl className="mt-4 grid gap-2.5 md:grid-cols-3">
           <BriefField label="Audience" value={fields.target_audience.slice(0, 3).join(", ")} />
           <BriefField label="Problem" value={fields.core_problem} />
           <BriefField label="Value" value={fields.unique_value_prop} />
         </dl>
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-wrap gap-2.5">
           <Link href="/dashboard/brief" className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-white" style={{ backgroundColor: C.blue, textDecoration: "none" }}>
-            Review matching brief <ArrowRight className="size-4" aria-hidden="true" />
+            Review and correct brief <ArrowRight className="size-4" aria-hidden="true" />
           </Link>
           <Link href="/settings" className="inline-flex h-9 items-center rounded-lg border px-3 text-sm font-semibold" style={{ borderColor: C.ruleDark, color: C.navy, textDecoration: "none" }}>
-            Review website
+            Website settings
           </Link>
         </div>
       </section>
 
-      <section aria-labelledby="discovery-heading" className="rounded-xl border p-5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+      <section aria-labelledby="discovery-heading" className="rounded-xl border p-4 sm:p-5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.blue }}>
             <LockKeyhole className="size-5" aria-hidden="true" />
@@ -110,6 +112,6 @@ export default function FreeProspectPreview({
         <FileSearch className="size-4 shrink-0" aria-hidden="true" />
         A prepared brief is not evidence that buyer conversations exist.
       </p>
-    </main>
+    </div>
   );
 }

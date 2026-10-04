@@ -1,23 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import {
   Check,
   CircleCheckBig,
   ChevronRight,
+  SlidersHorizontal,
   ExternalLink,
-  Github,
   Globe2,
-  MessageSquareText,
   Network,
   RefreshCw,
   Radar,
   Search,
-  ShieldAlert,
   Sparkles,
   UsersRound,
-  type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,9 +22,16 @@ import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import { EmptyQueue } from "@/components/prospects/empty-queue";
+import { ScanActivityDialog } from "@/components/prospects/scan-activity-dialog";
+import {
+  DETAIL_TABS, DetailSection, DetailStat, DetailTabButton, InsightCard, LeadControlSelect,
+  LeadRow, Metric, ScreenedMatchOutcome, SignalPoint, SourceContextItem, SourcePlatformBadge,
+  SourcePlatformMark, exactDateTime, formatScore, freshnessLabel, leadStatus, metricValue,
+  relativeTime, signalLabel, sourceConversationType, sourceDisplayName,
+  type DetailTab,
+} from "@/components/prospects/lead-desk-presentation";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import {
-  isPotentialBuyer,
   isScreenedMatch,
   type LeadQueueFilter,
 } from "@/app/(dashboard)/dashboard/lead-queue-filter";
@@ -43,10 +47,6 @@ import type {
 type QueueFilter = LeadQueueFilter;
 type QueueSort = "priority" | "newest" | "confidence";
 type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
-type DetailTab = "match" | "evidence" | "context";
-
-const DETAIL_TABS: readonly DetailTab[] = ["match", "evidence", "context"];
-
 type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
   leads: QualifiedLeadView[];
@@ -82,7 +82,6 @@ type ProspectLeadDeskProps = {
   onSourceChange: (value: string) => void;
   onSelectLead: (leadId: string) => void;
   onOpenFocusedReview: () => void;
-  onOpenScanActivity: () => void;
   onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
   onQualify: (leadId: string) => void;
 };
@@ -95,217 +94,6 @@ const FEEDBACK_ACTIONS: Array<{
   { value: "wrong_buyer", label: "Wrong buyer" },
   { value: "not_relevant", label: "Not relevant" },
 ];
-
-function sourceDisplayName(source: string) {
-  const names: Record<string, string> = {
-    hn: "Hacker News",
-    hackernews: "Hacker News",
-    hacker_news: "Hacker News",
-    reddit: "Reddit",
-    lemmy: "Lemmy",
-    github: "GitHub",
-    stackexchange: "Stack Exchange",
-    stack_exchange: "Stack Exchange",
-    stackoverflow: "Stack Overflow",
-    stack_overflow: "Stack Overflow",
-    bluesky: "Bluesky",
-    x: "Public conversation",
-  };
-  const normalized = source.trim().toLowerCase();
-  return names[normalized] ?? source.replace(/[_-]+/g, " ");
-}
-
-type SourcePresentation = {
-  label: string;
-  Icon: LucideIcon;
-  background: string;
-  color: string;
-};
-
-function sourcePresentation(source: string): SourcePresentation {
-  const normalized = source.trim().toLowerCase();
-
-  if (normalized === "github") {
-    return { label: "GitHub", Icon: Github, background: "#EEF2F6", color: "#24292F" };
-  }
-
-  if (["hn", "hackernews", "hacker_news"].includes(normalized)) {
-    return { label: "Hacker News", Icon: MessageSquareText, background: "#FFF3E8", color: "#C2410C" };
-  }
-
-  if (normalized === "reddit") {
-    return { label: "Reddit", Icon: MessageSquareText, background: "#FFF1ED", color: "#D94716" };
-  }
-
-  if (["stackexchange", "stack_exchange", "stackoverflow", "stack_overflow"].includes(normalized)) {
-    return { label: sourceDisplayName(source), Icon: MessageSquareText, background: C.bluePale, color: C.blue };
-  }
-
-  if (normalized === "bluesky") {
-    return { label: "Bluesky", Icon: MessageSquareText, background: "#EAF6FF", color: "#0284C7" };
-  }
-
-  if (normalized === "lemmy") {
-    return { label: "Lemmy", Icon: MessageSquareText, background: "#EDF9F1", color: C.green };
-  }
-
-  return { label: sourceDisplayName(source), Icon: Globe2, background: C.offWhite, color: C.navySoft };
-}
-
-function sourceConversationType(source: string) {
-  const normalized = source.trim().toLowerCase();
-
-  if (normalized === "github") return "Repository discussion";
-  if (["hn", "hackernews", "hacker_news"].includes(normalized)) return "News discussion";
-  if (["stackexchange", "stack_exchange", "stackoverflow", "stack_overflow"].includes(normalized)) return "Technical Q&A";
-  if (["reddit", "lemmy"].includes(normalized)) return "Community discussion";
-  if (["bluesky", "x"].includes(normalized)) return "Public post";
-  return "Public conversation";
-}
-
-function SourcePlatformMark({
-  source,
-  size = "row",
-}: {
-  source: string;
-  size?: "row" | "detail";
-}) {
-  const { label, Icon, background, color } = sourcePresentation(source);
-  const dimensions = size === "detail" ? "size-10 rounded-lg" : "size-7 rounded-md";
-  const iconSize = size === "detail" ? "size-5" : "size-3.5";
-
-  return (
-    <span
-      className={cn("flex shrink-0 items-center justify-center", dimensions)}
-      title={label}
-      role="img"
-      aria-label={label}
-      style={{ backgroundColor: background, color }}
-    >
-      <Icon className={iconSize} aria-hidden="true" />
-    </span>
-  );
-}
-
-function SourcePlatformBadge({ source }: { source: string }) {
-  const { label, Icon, background, color } = sourcePresentation(source);
-
-  return (
-    <span title={label} className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: background, color }}>
-      <Icon className="size-3" aria-hidden="true" />
-      {label}
-    </span>
-  );
-}
-
-function formatScore(score: number) {
-  return `${Math.round(score * 100)}%`;
-}
-
-function relativeTime(value: string | null) {
-  if (!value) return "—";
-
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "—";
-
-  const difference = Math.max(0, Date.now() - timestamp);
-  const hours = Math.floor(difference / (60 * 60 * 1000));
-  if (hours < 1) return "Now";
-  if (hours < 24) return `${hours}h`;
-
-  const days = Math.floor(hours / 24);
-  return days < 7 ? `${days}d` : new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(timestamp));
-}
-
-function exactDateTime(value: string | null) {
-  const timestamp = Date.parse(value ?? "");
-  if (!Number.isFinite(timestamp)) return "Date not available";
-
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(timestamp));
-}
-
-function leadStatus(lead: QualifiedLeadView) {
-  if (isScreenedMatch(lead)) {
-    return {
-      label: "Screened out",
-      description: "Automated review did not find a plausible enough fit for the opportunity inbox.",
-      color: C.muted,
-      background: C.offWhite,
-    };
-  }
-  if (lead.matchStatus === "qualified") {
-    return {
-      label: "Qualified",
-      description: "You marked this opportunity qualified.",
-      color: C.green,
-      background: C.greenPale,
-    };
-  }
-  if (lead.intentTier === "high") {
-    return {
-      label: "High intent",
-      description: "A direct request or relevant evaluation that is ready to prioritize for review.",
-      color: C.green,
-      background: C.greenPale,
-    };
-  }
-  if (lead.intentTier === "warm") {
-    return {
-      label: "Warm signal",
-      description: "Relevant frustration or workflow pain worth a thoughtful review.",
-      color: C.amber,
-      background: C.amberPale,
-    };
-  }
-  if (lead.intentTier === "exploratory") {
-    return {
-      label: "Exploratory",
-      description: "A relevant category or adjacent-workflow discussion for research or future outreach.",
-      color: C.blue,
-      background: C.bluePale,
-    };
-  }
-  if (isPotentialBuyer(lead)) {
-    return {
-      label: "Relevant",
-      description: "A plausible public conversation to review, not a confirmed buyer.",
-      color: C.amber,
-      background: C.amberPale,
-    };
-  }
-  return {
-    label: "Strong",
-    description: "A clear public buyer problem worth reviewing, not a confirmed customer.",
-    color: C.blue,
-    background: C.bluePale,
-  };
-}
-
-function signalLabel(lead: QualifiedLeadView) {
-  return lead.painTheme ?? lead.painDetected ?? "Buyer signal";
-}
-
-function evidencePreview(lead: QualifiedLeadView) {
-  return lead.evidenceExcerpt ?? lead.sourcePost.text ?? lead.matchReason;
-}
-
-function metricValue(value: number) {
-  return new Intl.NumberFormat("en").format(value);
-}
-
-function freshnessLabel(lastUpdatedAt: Date | null) {
-  if (!lastUpdatedAt) return "Live data";
-  return `Updated ${new Intl.DateTimeFormat("en", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(lastUpdatedAt)}`;
-}
 
 export function ProspectLeadDesk({
   serviceProfile,
@@ -342,11 +130,12 @@ export function ProspectLeadDesk({
   onSourceChange,
   onSelectLead,
   onOpenFocusedReview,
-  onOpenScanActivity,
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
   const [detailTab, setDetailTab] = useState<DetailTab>("match");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [scanActivityOpen, setScanActivityOpen] = useState(false);
   const signalDetailRef = useRef<HTMLElement>(null);
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
@@ -361,9 +150,13 @@ export function ProspectLeadDesk({
     queueConfidence !== "all" ||
     queueSource !== "all" ||
     queueSort !== "priority";
+  const advancedFilterCount = Number(queueFilter !== "all") + Number(queueConfidence !== "all") +
+    Number(queueSource !== "all") + Number(queueSort !== "priority");
   const resultSummary = `${filteredQueueItems.length} ${
     filteredQueueItems.length === 1 ? "signal" : "signals"
   } shown`;
+  const metricActive = (category: QueueFilter) =>
+    queueFilter === category && !queueQuery.trim() && queueConfidence === "all" && queueSource === "all";
 
   const clearFilters = () => {
     onQueryChange("");
@@ -371,6 +164,12 @@ export function ProspectLeadDesk({
     onConfidenceChange("all");
     onSourceChange("all");
     onSortChange("priority");
+  };
+  const showQueueCategory = (category: QueueFilter) => {
+    onQueryChange("");
+    onConfidenceChange("all");
+    onSourceChange("all");
+    onFilterChange(category);
   };
 
   const selectLead = (leadId: string) => {
@@ -412,14 +211,14 @@ export function ProspectLeadDesk({
   };
 
   return (
-    <main className="arc-pro-lead-desk flex w-full flex-col gap-2.5 sm:gap-3 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
+    <div className="arc-pro-lead-desk flex w-full flex-col gap-2.5 sm:gap-3 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
       <header className="flex shrink-0 flex-col gap-2 border-b pb-2 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
         <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
           <h1 className="pfd shrink-0 text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
             Prospects
           </h1>
           <p className="max-w-4xl text-[12px] leading-5" style={{ color: C.navySoft }}>
-            Arcli ranks public conversations worth your time, not guaranteed customers. Match strength measures relevance to your website—not purchase likelihood.
+            Review source-linked signals from {metricValue(reviewedConversationCount)} assessed conversations. Match strength measures relevance, not purchase likelihood.
           </p>
         </div>
 
@@ -438,79 +237,73 @@ export function ProspectLeadDesk({
         </section>
       </header>
 
-      <section
-        aria-label="Lead discovery controls"
-        className="shrink-0 grid gap-2 rounded-lg border p-2 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.35fr)_minmax(140px,.58fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_minmax(135px,.56fr)_auto] xl:items-center"
-        style={{ borderColor: C.rule, backgroundColor: C.white }}
-      >
-        <label className="relative block">
-          <span className="sr-only">Search public signals</span>
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.faint }} aria-hidden="true" />
-          <input
-            value={queueQuery}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search topic, source, author, or problem"
-          className="h-9 w-full rounded-md border bg-white py-2 pr-3 pl-9 text-[12px] outline-none transition focus:ring-2"
-            style={{ borderColor: C.ruleDark, color: C.text, outlineColor: C.blueLight }}
-          />
-        </label>
-
-        <LeadControlSelect label="View" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
-          <option value="all">Opportunity inbox</option>
-          <option value="leads">Strong signals</option>
-          <option value="potential">Relevant signals</option>
-          <option value="screened">Screened-out audit</option>
-        </LeadControlSelect>
-
-        <LeadControlSelect label="Match strength" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
-          <option value="all">All levels</option>
-          <option value="high">High (80%+)</option>
-          <option value="sixty_plus">60%+ strength</option>
-        </LeadControlSelect>
-
-        <LeadControlSelect label="Source" value={queueSource} onChange={onSourceChange}>
-          <option value="all">All sources</option>
-          {queueSources.map((source) => (
-            <option key={source} value={source}>{sourceDisplayName(source)}</option>
-          ))}
-        </LeadControlSelect>
-
-        <LeadControlSelect label="Sort" value={queueSort} onChange={(value) => onSortChange(value as QueueSort)}>
-          <option value="priority">Most relevant</option>
-          <option value="newest">Newest first</option>
-          <option value="confidence">Match strength</option>
-        </LeadControlSelect>
-
-        <div className="flex items-center gap-1.5 xl:justify-end">
+      <section aria-label="Find and filter signals" className="shrink-0 rounded-lg border bg-white p-2.5 sm:p-3" style={{ borderColor: C.rule }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="relative min-w-[12rem] flex-1">
+            <span className="sr-only">Search public signals</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.faint }} aria-hidden="true" />
+            <input
+              type="search"
+              value={queueQuery}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Search topic, source, author, or problem"
+              className="h-10 w-full rounded-md border bg-white py-2 pr-3 pl-9 text-sm outline-none transition focus-visible:ring-2"
+              style={{ borderColor: C.ruleDark, color: C.text, outlineColor: C.blueLight }}
+            />
+          </label>
+          <Button type="button" variant="outline" className="h-10 border-[#C8D9E8]" aria-expanded={filtersOpen} aria-controls="prospect-advanced-filters" onClick={() => setFiltersOpen((open) => !open)}>
+            <SlidersHorizontal className="size-4" aria-hidden="true" />
+            Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
+          </Button>
           {hasActiveFilters ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-9 px-2 text-xs"
-              onClick={clearFilters}
-              style={{ color: C.blue }}
-            >
-              Clear filters
+            <Button type="button" variant="ghost" className="h-10 px-2 text-xs" onClick={clearFilters} style={{ color: C.blue }}>
+              Clear all
             </Button>
           ) : null}
-          <Button asChild variant="outline" className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
-            <Link href="/dashboard/brief">Edit targeting</Link>
+          <Button asChild variant="outline" className="h-10 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
+            <Link href="/dashboard/brief">Edit matching brief</Link>
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]"
-            disabled={isProfileRebuildPending || !serviceProfile.websiteUrl}
-            onClick={onRebuildProfile}
-            title="Re-crawl the current website and rebuild its AI profile"
-          >
-            <RefreshCw
-              className={cn("size-3.5", isProfileRebuildPending && "animate-spin")}
-              aria-hidden="true"
-            />
-            {isProfileRebuildPending ? "Rebuilding..." : "Rebuild AI profile"}
+          <Button type="button" variant="ghost" className="h-10 px-2 text-xs" onClick={() => setScanActivityOpen(true)} style={{ color: C.blue }}>
+            Scan activity
           </Button>
+        </div>
+
+        <div id="prospect-advanced-filters" hidden={!filtersOpen} className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]" style={{ borderColor: C.rule, display: filtersOpen ? "grid" : "none" }}>
+          <LeadControlSelect label="View" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
+            <option value="all">Opportunity inbox</option>
+            <option value="leads">Strong signals</option>
+            <option value="potential">Relevant signals</option>
+            <option value="screened">Screened-out audit</option>
+          </LeadControlSelect>
+          <LeadControlSelect label="Match strength" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
+            <option value="all">All levels</option>
+            <option value="high">High (80%+)</option>
+            <option value="sixty_plus">60%+ strength</option>
+          </LeadControlSelect>
+          <LeadControlSelect label="Source" value={queueSource} onChange={onSourceChange}>
+            <option value="all">All sources</option>
+            {queueSources.map((source) => (
+              <option key={source} value={source}>{sourceDisplayName(source)}</option>
+            ))}
+          </LeadControlSelect>
+          <LeadControlSelect label="Sort" value={queueSort} onChange={(value) => onSortChange(value as QueueSort)}>
+            <option value="priority">Most relevant</option>
+            <option value="newest">Newest first</option>
+            <option value="confidence">Match strength</option>
+          </LeadControlSelect>
+          <div className="sm:col-span-2 xl:col-span-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]"
+              disabled={isProfileRebuildPending || !serviceProfile.websiteUrl}
+              onClick={onRebuildProfile}
+              title="Re-crawl the current website and rebuild its AI profile"
+            >
+              <RefreshCw className={cn("size-3.5", isProfileRebuildPending && "animate-spin")} aria-hidden="true" />
+              {isProfileRebuildPending ? "Rebuilding..." : "Rebuild AI profile"}
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -529,15 +322,17 @@ export function ProspectLeadDesk({
         className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Conversations assessed" value={metricValue(reviewedConversationCount)} icon={<Radar className="size-5" />} />
-        <Metric label="Strong signals" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} />
-        <Metric label="Relevant opportunities" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} />
+        <Metric label="Inbox signals" value={metricValue(leads.length + potentialBuyers.length)} icon={<Radar className="size-5" />} active={metricActive("all")} onClick={() => showQueueCategory("all")} />
+        <Metric label="Strong signals" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} active={metricActive("leads")} onClick={() => showQueueCategory("leads")} />
+        <Metric label="Relevant opportunities" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} active={metricActive("potential")} onClick={() => showQueueCategory("potential")} />
         <Metric
           label="Screened out"
           value={metricValue(screenedMatches.length)}
           detail="Not a fit"
           icon={<Network className="size-5" />}
           tone="quiet"
+          active={metricActive("screened")}
+          onClick={() => showQueueCategory("screened")}
         />
       </section>
 
@@ -545,11 +340,12 @@ export function ProspectLeadDesk({
         suggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
         collapsible
+        defaultExpanded={reviewedConversationCount === 0}
       />
 
       <section
         aria-label="Lead review workspace"
-        className="grid min-h-[600px] overflow-hidden rounded-xl border bg-white xl:flex-1 xl:grid-cols-[minmax(300px,.8fr)_minmax(420px,1.2fr)]"
+        className="grid min-h-[420px] overflow-hidden rounded-xl border bg-white xl:flex-1 xl:grid-cols-[minmax(300px,.8fr)_minmax(420px,1.2fr)]"
         style={{ borderColor: C.rule }}
       >
         <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
@@ -588,17 +384,29 @@ export function ProspectLeadDesk({
             </div>
           </div>
 
-          <div className="hidden shrink-0 grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] gap-3 border-b px-5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] lg:grid" style={{ borderColor: C.rule, color: C.muted }}>
-            <span>Source &amp; conversation</span>
-            <span>Signal</span>
-            <span>Source text</span>
-            <span>Match strength</span>
-            <span>Age</span>
-            <span>Status</span>
-          </div>
-
           {filteredQueueItems.length > 0 ? (
-            <div className="min-h-0 flex-1 divide-y overflow-y-auto" style={{ borderColor: C.rule }}>
+            <>
+            <p id="prospect-list-help" className="sr-only">Use the arrow keys, Home, or End to move through signals.</p>
+            <div
+              id="prospect-signal-list"
+              aria-describedby="prospect-list-help"
+              className="min-h-0 flex-1 divide-y overflow-y-auto"
+              style={{ borderColor: C.rule }}
+              onKeyDown={(event) => {
+                if (!(event.target instanceof HTMLButtonElement) || !event.target.dataset.leadId) return;
+                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-lead-id]"));
+                const currentIndex = rows.indexOf(event.target);
+                const nextIndex = event.key === "Home" ? 0
+                  : event.key === "End" ? rows.length - 1
+                  : Math.max(0, Math.min(rows.length - 1, currentIndex + (event.key === "ArrowDown" ? 1 : -1)));
+                const nextRow = rows[nextIndex];
+                if (!nextRow?.dataset.leadId) return;
+                event.preventDefault();
+                nextRow.focus();
+                onSelectLead(nextRow.dataset.leadId);
+              }}
+            >
               {filteredQueueItems.map((lead) => (
                 <LeadRow
                   key={lead.id}
@@ -608,6 +416,7 @@ export function ProspectLeadDesk({
                 />
               ))}
             </div>
+            </>
           ) : (
             <EmptyQueue
               hasProfile={serviceProfile.hasProfile}
@@ -616,7 +425,7 @@ export function ProspectLeadDesk({
               showingScreenedAudit={isScreenedAudit}
               report={buyerDemandReport}
               onClearFilters={clearFilters}
-              onOpenScanActivity={onOpenScanActivity}
+              onOpenScanActivity={() => setScanActivityOpen(true)}
               onOpenScreenedAudit={() => {
                 onQueryChange("");
                 onConfidenceChange("all");
@@ -629,11 +438,14 @@ export function ProspectLeadDesk({
 
         <aside
           ref={signalDetailRef}
-          className="flex min-h-0 min-w-0 flex-col overflow-y-auto"
+          className="flex min-h-0 min-w-0 scroll-mt-4 flex-col overflow-y-auto"
           aria-label="Signal intelligence"
         >
           {selectedLead && selectedStatus ? (
             <>
+              <button type="button" className="border-b px-4 py-2 text-left text-xs font-semibold xl:hidden" style={{ borderColor: C.rule, color: C.blue }} onClick={() => document.getElementById("prospect-signal-list")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>
+                Back to signals
+              </button>
               <div className="flex shrink-0 items-start justify-between gap-3 border-b p-3 sm:p-3.5" style={{ borderColor: C.rule }}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -672,6 +484,13 @@ export function ProspectLeadDesk({
                     </div>
                   </div>
                 </div>
+
+                <blockquote className="rounded-lg border-l-[3px] px-3 py-2.5 text-xs leading-5" style={{ borderColor: exactEvidence ? C.blue : C.ruleDark, backgroundColor: C.offWhite, color: C.navySoft }}>
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
+                    {exactEvidence ? "Verified source excerpt" : "Source preview"}
+                  </span>
+                  <span className="line-clamp-3">{exactEvidence ?? sourceText ?? "No source text is available for this signal."}</span>
+                </blockquote>
 
                 {isScreenedMatch(selectedLead) ? (
                   <ScreenedMatchOutcome lead={selectedLead} />
@@ -854,260 +673,7 @@ export function ProspectLeadDesk({
           )}
         </aside>
       </section>
-    </main>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  detail,
-  icon,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  icon: ReactNode;
-  tone?: "default" | "quiet";
-}) {
-  const isQuiet = tone === "quiet";
-
-  return (
-    <div className="flex min-h-14 items-center gap-2.5 px-3 py-2 sm:px-4" style={{ backgroundColor: isQuiet ? C.offWhite : C.white }}>
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: isQuiet ? C.white : C.blueTint, color: isQuiet ? C.muted : C.blue }} aria-hidden="true">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <p className="text-lg font-semibold leading-none tracking-tight" style={{ color: isQuiet ? C.navySoft : C.navy }}>{value}</p>
-          <p className="truncate text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
-        </div>
-        {detail ? <p className="mt-0.5 text-[10px]" style={{ color: C.muted }}>{detail}</p> : null}
-      </div>
-    </div>
-  );
-}
-
-function LeadControlSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <label className="flex h-9 min-w-0 items-center rounded-md border bg-white focus-within:ring-2 focus-within:ring-[#1B6EBF] focus-within:ring-offset-1" style={{ borderColor: C.ruleDark }}>
-      <span className="shrink-0 border-r px-2 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ borderColor: C.rule, color: C.muted }}>
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label={label}
-        className="h-full min-w-0 flex-1 bg-transparent px-2 text-[11px] font-semibold outline-none"
-        style={{ color: C.navy }}
-      >
-        {children}
-      </select>
-    </label>
-  );
-}
-
-function DetailTabButton({
-  active,
-  tab,
-  onClick,
-  onKeyDown,
-  children,
-}: {
-  active: boolean;
-  tab: DetailTab;
-  onClick: () => void;
-  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, tab: DetailTab) => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      id={`signal-detail-tab-${tab}`}
-      aria-controls={`signal-detail-panel-${tab}`}
-      aria-selected={active}
-      tabIndex={active ? 0 : -1}
-      onClick={onClick}
-      onKeyDown={(event) => onKeyDown(event, tab)}
-      className="-mb-px border-b-2 px-0.5 pb-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
-      style={{ borderColor: active ? C.blue : "transparent", color: active ? C.blue : C.muted }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SourceContextItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
-      <dd className="mt-1 truncate font-medium" style={{ color: C.navySoft }}>{value}</dd>
-    </div>
-  );
-}
-
-function SignalPoint({ children }: { children: ReactNode }) {
-  return (
-    <li className="flex gap-2">
-      <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: C.green }} aria-hidden="true" />
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function InsightCard({
-  title,
-  value,
-  detail,
-}: {
-  title: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <section className="min-w-0 rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{title}</p>
-      <p className="mt-1 truncate text-xs font-semibold capitalize" style={{ color: C.navy }}>{value}</p>
-      <p className="mt-1 line-clamp-2 text-[11px] leading-4" style={{ color: C.navySoft }}>{detail}</p>
-    </section>
-  );
-}
-
-function LeadRow({
-  lead,
-  selected,
-  onSelect,
-}: {
-  lead: QualifiedLeadView;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const status = leadStatus(lead);
-  const title = lead.sourcePost.title || lead.sourcePost.author || sourceDisplayName(lead.sourcePost.source);
-  const source = sourcePresentation(lead.sourcePost.source);
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? "true" : undefined}
-      className="grid w-full gap-1.5 px-4 py-2.5 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5 lg:grid-cols-[minmax(180px,.9fr)_minmax(130px,.7fr)_minmax(180px,1fr)_76px_44px_74px] lg:items-center lg:gap-3"
-      style={{ backgroundColor: selected ? C.blueTint : C.white, outlineColor: C.blueLight }}
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <SourcePlatformMark source={lead.sourcePost.source} />
-        <span className="min-w-0">
-          <span className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold">
-            <span title={source.label} style={{ color: source.color }}>{source.label}</span>
-            <span aria-hidden="true" style={{ color: C.faint }}>•</span>
-            <span className="truncate uppercase tracking-[0.08em]" style={{ color: C.muted }}>{sourceConversationType(lead.sourcePost.source)}</span>
-            {selected ? (
-              <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-                Selected
-              </span>
-            ) : null}
-          </span>
-          <span className="mt-0.5 block truncate text-[13px] font-semibold" title={title} style={{ color: C.navy }}>{title}</span>
-          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px]" style={{ color: C.muted }}>
-            {lead.sourcePost.community ? <span className="truncate" title={lead.sourcePost.community}>{lead.sourcePost.community}</span> : null}
-            {lead.sourcePost.author ? <span className="truncate" title={lead.sourcePost.author}>by {lead.sourcePost.author}</span> : null}
-            {!lead.sourcePost.community && !lead.sourcePost.author ? <span>Public post</span> : null}
-          </span>
-        </span>
-      </span>
-      <span className="min-w-0">
-        <span className="inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-          {signalLabel(lead)}
-        </span>
-        <span className="mt-0.5 block truncate text-[11px]" style={{ color: C.muted }}>{lead.signalType ?? "Buyer signal"}</span>
-      </span>
-      <span className="min-w-0">
-        <span className="block line-clamp-2 text-[13px] lg:truncate" title={evidencePreview(lead)} style={{ color: C.navySoft }}>{evidencePreview(lead)}</span>
-        <span className="block truncate text-[11px]" title={lead.matchReason} style={{ color: C.muted }}>{lead.matchReason}</span>
-      </span>
-      <span
-        className="text-sm font-semibold"
-        title="Match strength ranks relevance to your website; it is not purchase likelihood."
-        aria-label={`Match strength ${formatScore(lead.verifierScore)}`}
-        style={{ color: C.navy }}
-      >
-        {formatScore(lead.verifierScore)}
-      </span>
-      <span className="text-xs" title={exactDateTime(lead.sourcePost.publishedAt ?? lead.matchedAt)} aria-label={`Observed ${exactDateTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}`} style={{ color: C.muted }}>{relativeTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}</span>
-      <span className="justify-self-start rounded-full px-2 py-1 text-[10px] font-semibold" title={status.description} aria-label={`${status.label}. ${status.description}`} style={{ backgroundColor: status.background, color: status.color }}>{status.label}</span>
-    </button>
-  );
-}
-
-function DetailSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section>
-      <h3 className="mb-1.5 text-xs font-semibold" style={{ color: C.navy }}>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function DetailStat({ label, value, title }: { label: string; value: string; title?: string }) {
-  return (
-    <div title={title} className="rounded-lg border px-3 py-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>{label}</p>
-      <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>{value}</p>
-    </div>
-  );
-}
-
-function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
-
-  return (
-    <section className="overflow-hidden rounded-xl border" aria-label="Verification review" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
-      <div className="flex gap-2.5 px-3 py-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.muted }}>
-          <ShieldAlert className="size-4" aria-hidden="true" />
-        </span>
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Verification review</p>
-          <h3 className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>Screened out of the opportunity inbox</h3>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>The record is available for inspection, but automated review found no plausible enough fit.</p>
-        </div>
-      </div>
-
-      <dl className="grid grid-cols-3 divide-x border-y" style={{ borderColor: C.ruleDark }}>
-        <VerificationMetric
-          label="Semantic similarity"
-          value={lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
-        />
-        <VerificationMetric label="Match strength" value={formatScore(lead.verifierScore)} />
-        <VerificationMetric
-          label="Review result"
-          value="Screened"
-        />
-      </dl>
-
-      <p className="px-3 py-2.5 text-[11px] leading-4" style={{ color: C.muted }}>
-        Match strength ranks relevance to the website; it does not predict whether someone will buy. Keep this record for source inspection or feedback.
-      </p>
-    </section>
-  );
-}
-
-function VerificationMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 px-2.5 py-2.5 first:pl-3 last:pr-3">
-      <dt className="text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
-      <dd className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>{value}</dd>
+      <ScanActivityDialog open={scanActivityOpen} onOpenChange={setScanActivityOpen} report={buyerDemandReport} onRefresh={onRefresh} />
     </div>
   );
 }

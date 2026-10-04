@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, Compass, Radar } from "lucide-react";
+import { ChevronDown, Compass, Radar } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ type WebsiteDemandMapProps = {
     message: string;
   }>;
   collapsible?: boolean;
+  defaultExpanded?: boolean;
 };
 
 /**
@@ -28,12 +29,17 @@ export function WebsiteDemandMap({
   suggestions,
   activateBuyerGroup,
   collapsible = false,
+  defaultExpanded = true,
 }: WebsiteDemandMapProps) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isPending, startTransition] = useTransition();
+
+  // Open suggestions during an empty first scan, then give new signals room
+  // when results arrive. Manual toggles remain intact while that state holds.
+  useEffect(() => setIsExpanded(defaultExpanded), [defaultExpanded]);
 
   if (suggestions.length === 0) return null;
 
@@ -142,7 +148,7 @@ export function WebsiteDemandMap({
             </span>
             <div className="min-w-0">
               <h2 id="website-demand-map-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-                Suggested from your website
+                Suggested buyer groups ({suggestions.length})
               </h2>
               <p className="text-[11px]" style={{ color: C.muted }}>
                 Starting audiences worth testing against public conversations.
