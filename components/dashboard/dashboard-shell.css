@@ -75,9 +75,8 @@
 .arc-shell__search kbd { margin-left: 14px; padding: 1px 4px; border: 1px solid var(--arc-line); border-radius: 3px; background: #fff; font-size: 10px; }
 .arc-shell__main { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; padding: 20px 22px 24px; }
 .arc-shell__mobile-tabs, .arc-shell__mobile-menu, .arc-shell__scrim { display: none; }
-.arc-workspace-page { display: flex; width: 100%; max-width: 1140px; flex: 1; flex-direction: column; gap: 15px; margin: 0 auto; padding-bottom: 28px; }
-.arc-workspace-page--targeting, .arc-workspace-page--targets, .arc-workspace-page--buyers { max-width: 1140px; }
-.arc-pro-lead-desk { max-width: 1440px; margin: 0 auto; }.arc-pro-lead-desk [aria-label="Lead review workspace"] { box-shadow: 0 8px 28px rgba(10,22,40,.05); }
+.arc-workspace-page { display: flex; width: 100%; min-width: 0; flex: 1; flex-direction: column; gap: 15px; padding-bottom: 28px; }
+.arc-pro-lead-desk { min-width: 0; }.arc-pro-lead-desk [aria-label="Lead review workspace"] { box-shadow: 0 8px 28px rgba(10,22,40,.05); }
 .arc-settings-page { gap: 20px; }.arc-settings-page__layout { display: grid; min-height: 0; grid-template-columns: 205px minmax(0,1fr); align-items: start; gap: 22px; }.arc-settings-page__nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 3px; }.arc-settings-page__nav a { padding: 9px 11px; border: 1px solid transparent; border-radius: 8px; color: #1e3a5f; font-size: 12px; text-decoration: none; }.arc-settings-page__nav a:hover, .arc-settings-page__nav a:focus { border-color: #dde8f2; color: #1b6ebf; background: #fff; }.arc-settings-page__sections { display: flex; min-width: 0; flex-direction: column; gap: 16px; }.arc-settings-page__sections > * { scroll-margin-top: 16px; }
 
 .arc-shell--collapsed .arc-shell__sidebar { flex-basis: 58px; }

@@ -41,7 +41,7 @@ export default function FreeProspectPreview({
   const domain = domainForDisplay(websiteUrl);
 
   return (
-    <div className="flex h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto pr-1">
+    <div className="flex h-full w-full min-w-0 flex-col gap-4 overflow-y-auto pr-1">
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
           Free workspace

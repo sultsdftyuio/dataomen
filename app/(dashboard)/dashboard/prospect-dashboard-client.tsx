@@ -3034,7 +3034,7 @@ export default function ProspectDashboardClient({
 
   return (
     <div className="flex w-full flex-col gap-2.5 sm:gap-3" style={{ color: C.text }}>
-      <header className="mx-auto flex min-h-11 w-full max-w-[1800px] shrink-0 items-center justify-between gap-4 border-b pb-3" style={{ borderColor: C.rule }}>
+      <header className="flex min-h-11 w-full shrink-0 items-center justify-between gap-4 border-b pb-3" style={{ borderColor: C.rule }}>
         <div className="flex min-w-0 items-start gap-3">
           <span
             className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border"
@@ -3077,7 +3077,7 @@ export default function ProspectDashboardClient({
       </header>
 
       {dashboardView === "overview" ? (
-        <section aria-label="Prospect discovery controls" className="mx-auto w-full max-w-[1800px]">
+        <section aria-label="Prospect discovery controls" className="w-full">
           <DiscoverySourceBar
             serviceProfile={serviceProfile}
             status={status}
@@ -3090,7 +3090,7 @@ export default function ProspectDashboardClient({
         <>
           <section
             aria-labelledby="focus-heading"
-            className="mx-auto w-full max-w-[1800px]"
+            className="w-full"
           >
             <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(26rem,0.8fr)] sm:gap-4">
               <article className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white p-4 shadow-sm sm:p-5" style={{ borderColor: C.rule }}>
@@ -3216,7 +3216,7 @@ export default function ProspectDashboardClient({
             </div>
           </section>
 
-          <section aria-labelledby="discovery-summary-heading" className="mx-auto w-full max-w-[1800px] rounded-xl border bg-white shadow-sm" style={{ borderColor: C.rule }}>
+          <section aria-labelledby="discovery-summary-heading" className="w-full rounded-xl border bg-white shadow-sm" style={{ borderColor: C.rule }}>
             <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(0,1.2fr)] lg:items-center">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
@@ -3299,7 +3299,7 @@ export default function ProspectDashboardClient({
           isWarmingUp={isWarmingUp}
         />
       ) : dashboardView !== "overview" ? (
-      <div className="grid min-h-[640px] max-w-5xl gap-5 xl:min-h-[760px]">
+      <div className="grid min-h-[640px] w-full gap-5 xl:min-h-[760px]">
         <section
           aria-labelledby="matches-heading"
           className={cn("flex min-h-[640px] max-h-[640px] flex-col overflow-hidden rounded-xl border bg-white xl:min-h-0 xl:max-h-none", dashboardView === "focus" && "hidden")}

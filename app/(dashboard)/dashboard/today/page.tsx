@@ -38,7 +38,7 @@ export default async function TodayPage() {
   const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
   const brief = await fetchTargetingBrief(supabase, tenantId, serviceProfile.id);
   if (!brief.id || !brief.hasBrief) {
-    return <div className="mx-auto w-full max-w-3xl rounded-xl border border-[#DDE8F2] bg-white p-6 text-sm text-[#1E3A5F]">Approve your <Link href="/dashboard/brief" className="font-semibold text-[#1B6EBF] underline">targeting brief</Link> before we deliver prospects.</div>;
+    return <div className="w-full rounded-xl border border-[#DDE8F2] bg-white p-6 text-sm text-[#1E3A5F]">Approve your <Link href="/dashboard/brief" className="font-semibold text-[#1B6EBF] underline">targeting brief</Link> before we deliver prospects.</div>;
   }
   const prospects = await fetchAssistedProspects(supabase, brief.id);
   return <AssistedProspectQueue prospects={prospects} />;
