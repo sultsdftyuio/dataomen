@@ -66,14 +66,12 @@
 
     const label = control.textContent?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
     const href = control.getAttribute("href");
+    const action = control.closest("[data-landing-action]")?.getAttribute("data-landing-action");
     let destination = null;
 
-    if (label === "sign in") destination = "/login";
-    else if (label === "privacy") destination = "/privacy";
-    else if (label === "terms") destination = "/terms";
-    else if (label === "build a free brief" || label === "build free brief" || label === "build" || label === "free brief") destination = freeBriefUrl();
-    else if (label === "explore pro") destination = "/register?next=%2Fsettings%3Fupgrade%3Dpro";
-    else if (!href && (label === "request a coverage review" || label === "apply")) destination = coverageUrl();
+    if (action === "free-brief" || (!href && label === "build free brief")) destination = freeBriefUrl();
+    else if (action === "coverage-review") destination = coverageUrl();
+    else if (!href && label === "explore pro") destination = "/register?next=%2Fsettings%3Fupgrade%3Dpro";
 
     if (!destination) return;
     event.preventDefault();

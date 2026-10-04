@@ -89,9 +89,9 @@ input::placeholder{color:var(--arc-faint)}
     </h1>
     <p style="margin:0;max-width:560px;font-size:17px;line-height:1.62;color:var(--arc-navy-soft);text-wrap:pretty;animation:arc-rise .8s cubic-bezier(.22,1,.36,1) .5s both">Start with your website. Arcli helps shape your targeting brief, then researches prospects with source-linked facts, a reason they fit, and a practical next step.</p>
     <div style="width:100%;max-width:540px;display:flex;flex-direction:column;align-items:center;gap:14px;animation:arc-rise .8s cubic-bezier(.22,1,.36,1) .6s both">
-      <div style="width:100%;box-sizing:border-box;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 16px;border-radius:12px;background:#fff;border:1px solid var(--arc-rule-dark);box-shadow:0 12px 32px rgba(27,110,191,.12),0 1px 2px rgba(10,22,40,.05)">
-        <span style="font-family:var(--font-mono);font-size:13px;color:var(--arc-faint)">https://</span>
-        <input value="{{ domain }}" onChange="{{ onDomain }}" onKeyDown="{{ onKey }}" placeholder="yourcompany.com" aria-label="Your website" style="flex:1;min-width:0;height:44px;border:none;outline:none;background:transparent;font-family:var(--font-mono);font-size:14px;color:var(--arc-navy)">
+      <div data-landing-action="free-brief" style="width:100%;box-sizing:border-box;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 16px;border-radius:12px;background:#fff;border:1px solid var(--arc-rule-dark);box-shadow:0 12px 32px rgba(27,110,191,.12),0 1px 2px rgba(10,22,40,.05)">
+        <sc-if value="{{ showSchemePrefix }}"><span style="font-family:var(--font-mono);font-size:13px;color:var(--arc-faint)">https://</span></sc-if>
+        <input value="{{ domain }}" onChange="{{ onDomain }}" onKeyDown="{{ onKey }}" placeholder="yourcompany.com" aria-label="Your website" inputmode="url" autocomplete="url" spellcheck="false" style="flex:1;min-width:0;height:44px;border:none;outline:none;background:transparent;font-family:var(--font-mono);font-size:14px;color:var(--arc-navy)">
         <x-import component-from-global-scope="ArcliDesignSystem_4ad654.Button" size="lg" variant="gradient" on-click="{{ onBuild }}" hint-size="170px,44px">{{ buildLabel }}</x-import>
       </div>
       <div style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 12px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--arc-muted)">
@@ -264,7 +264,7 @@ input::placeholder{color:var(--arc-faint)}
           <p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--arc-navy-soft)">A cited product fact <span style="{{ evMark0 }}">matches the offer and account criteria</span> in your approved targeting brief.</p>
         </div>
         <div style="{{ evPart1 }}" onMouseEnter="{{ evOn1 }}">
-          <span style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#047857"><span style="{{ evNum1 }}">2</span>Source</span><a href="#evidence" style="font-size:12px;font-weight:600;color:#047857" style-hover="text-decoration:underline;text-underline-offset:3px">Fit source ↗</a></span>
+          <span style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#047857"><span style="{{ evNum1 }}">2</span>Source</span><span style="font-size:12px;font-weight:600;color:#047857">Illustrative source</span></span>
           <div style="margin-top:10px;border-radius:10px;border:1px solid #CDEBDD;background:#F6FCF9;overflow:hidden">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px;border-bottom:1px solid #CDEBDD"><span style="font-family:var(--font-mono);font-size:11px;color:#047857">example.com/product</span><span style="font-family:var(--font-mono);font-size:10px;color:var(--arc-muted)">checked Oct 1, 2026</span></div>
             <p class="pfd" style="margin:0;padding:10px 12px;font-size:14px;line-height:1.5;font-style:italic;color:var(--arc-navy)">"<span style="{{ evMark1 }}">Teams use the workflow builder to route approvals</span> across departments."</p>
@@ -531,9 +531,9 @@ input::placeholder{color:var(--arc-faint)}
     <div style="position:relative;max-width:700px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:20px">
       <h2 class="pfd" style="margin:0;font-size:calc(clamp(32px,4.2vw,54px) * var(--hs,1));line-height:1.04;letter-spacing:-.025em;color:#fff;text-wrap:balance">Find out what your market can support.</h2>
       <p style="margin:0;max-width:540px;font-size:16px;line-height:1.62;color:rgba(255,255,255,.9)">Tell us what you sell and who you want to reach. We'll assess coverage before discussing a reviewed prospect pilot.</p>
-      <div style="width:100%;max-width:520px;box-sizing:border-box;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 16px;border-radius:12px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
-        <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,.7)">https://</span>
-        <input value="{{ domain }}" onChange="{{ onDomain }}" placeholder="yourcompany.com" aria-label="Your website" style="flex:1;min-width:0;height:44px;border:none;outline:none;background:transparent;font-family:var(--font-mono);font-size:14px;color:#fff">
+      <div data-landing-action="coverage-review" style="width:100%;max-width:520px;box-sizing:border-box;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 16px;border-radius:12px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+        <sc-if value="{{ showSchemePrefix }}"><span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,.7)">https://</span></sc-if>
+        <input value="{{ domain }}" onChange="{{ onDomain }}" placeholder="yourcompany.com" aria-label="Your website" inputmode="url" autocomplete="url" spellcheck="false" style="flex:1;min-width:0;height:44px;border:none;outline:none;background:transparent;font-family:var(--font-mono);font-size:14px;color:#fff">
         <x-import component-from-global-scope="ArcliDesignSystem_4ad654.Button" size="lg" variant="inverse" hint-size="190px,44px">{{ ctaLabel }}</x-import>
       </div>
       <sc-if value="{{ ctaHas }}" hint-placeholder-val="{{ false }}">
@@ -565,7 +565,7 @@ input::placeholder{color:var(--arc-faint)}
       <p style="margin:0;max-width:280px;font-size:14px;line-height:1.6;color:var(--arc-muted)">Evidence-backed prospect research for B2B founders.</p>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px"><span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--arc-navy)">Product</span><a href="#evidence" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Prospect file</a><a href="#workflow" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Workflow</a><a href="#standards" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Standards</a><a href="#pricing" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Pricing</a></div>
-    <div style="display:flex;flex-direction:column;gap:12px"><span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--arc-navy)">Start</span><a href="#cta" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Coverage review</a><a href="#top" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Free brief</a><a href="#faq" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">FAQ</a></div>
+    <div style="display:flex;flex-direction:column;gap:12px"><span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--arc-navy)">Start</span><a href="/pilot" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Coverage review</a><a href="/register?tier=free" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Free brief</a><a href="#faq" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">FAQ</a></div>
     <div style="display:flex;flex-direction:column;gap:12px"><span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--arc-navy)">Explore</span><a href="/resources" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Resources</a><a href="/security" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Security</a><a href="/privacy" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Privacy</a><a href="/terms" style="font-size:14px;color:var(--arc-navy-soft)" style-hover="color:var(--arc-blue)">Terms</a></div>
   </div>
   <div style="max-width:1200px;margin:44px auto 0;padding:20px 0;display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;border-top:1px solid rgba(10,22,40,.10);font-size:12px;color:var(--arc-muted)"><span>© 2026 Arcli · arcli.tech</span><span>Results vary by market and source coverage.</span></div>
@@ -970,7 +970,7 @@ class Component extends DCLogic {
       navCta: narrow ? 'Coverage review' : 'Request a Coverage Review',
       buildLabel: narrow ? 'Build' : 'Build a Free Brief',
       ctaLabel: narrow ? 'Apply' : 'Request a Coverage Review',
-      domain: this.state.domain, domainShown, ctaHas: !!this.cleanDomain(), ctaEmpty: !this.cleanDomain(), ctaDomain: this.cleanDomain(),
+      domain: this.state.domain, domainShown, showSchemePrefix: !/^https?:\/\//i.test(this.state.domain.trim()), ctaHas: !!this.cleanDomain(), ctaEmpty: !this.cleanDomain(), ctaDomain: this.cleanDomain(),
       onDomain: e => this.setState({ domain: e.target.value }),
       onKey: e => { if (e.key === 'Enter') onBuild(); },
       onBuild,
