@@ -30,20 +30,20 @@
 }
 
 .arc-shell__brand a { min-width: 0; overflow: hidden; }
-.arc-shell__brand svg { width: 27px; height: 27px; }
+.arc-shell__brand a svg { width: 30px; height: 30px; }
 .arc-shell__brand .text-2xl { font-size: 16px; }
 .arc-shell__collapse, .arc-shell__mobile-menu {
   display: grid;
-  width: 30px;
-  height: 30px;
   flex-shrink: 0;
   place-items: center;
   border: 0;
-  border-radius: 7px;
   color: var(--arc-muted);
   background: transparent;
   cursor: pointer;
 }
+.arc-shell__collapse { width: 24px; height: 24px; border-radius: 6px; }
+.arc-shell__collapse svg { width: 15px; height: 15px; }
+.arc-shell__mobile-menu { width: 30px; height: 30px; border-radius: 7px; }
 .arc-shell__collapse:hover, .arc-shell__mobile-menu:hover { color: #1b6ebf; background: #f0f7ff; }
 
 .arc-shell__workspace {
