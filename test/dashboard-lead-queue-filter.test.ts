@@ -63,3 +63,17 @@ test("the screened filter is an explicit audit-only route", () => {
     );
   }
 });
+
+test("done leads leave the inbox and appear only in the Done view", () => {
+  const handled = { ...lead("ready_for_review"), handledAt: "2026-10-05T12:00:00Z" };
+  const filters: LeadQueueFilter[] = ["all", "leads", "potential", "screened", "done"];
+
+  for (const filter of filters) {
+    assert.equal(matchesLeadQueueFilter(handled, filter), filter === "done");
+  }
+});
+
+test("screened records never appear in the Done view", () => {
+  const screened = { ...lead("rejected"), handledAt: "2026-10-05T12:00:00Z" };
+  assert.equal(matchesLeadQueueFilter(screened, "done"), false);
+});

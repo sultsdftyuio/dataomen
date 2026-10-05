@@ -13,9 +13,9 @@ test("exposes the five primary dashboard workflows", () => {
     dashboardNavigationItems.map((item) => item.href),
     [
       "/dashboard",
-      "/dashboard/watchlists",
       "/dashboard/brief",
       "/dashboard/targets",
+      "/dashboard/watchlists",
       "/settings",
     ],
   );
@@ -54,5 +54,5 @@ test("opens a Pro prompt instead of navigating free workspaces to Buyer groups",
   assert.match(navigation, /item\.href === "\/dashboard\/watchlists"/);
   assert.match(navigation, /onClick=\{\(\) => setIsUpgradeOpen\(true\)\}/);
   assert.match(navigation, /Pro prospect desk/);
-  assert.match(navigation, /See the people behind the signal\./);
+  assert.match(navigation, /Review the evidence behind a match\./);
 });

@@ -456,6 +456,20 @@ def enqueue_terminal_crawl_failure_notifications(
     return outbox_ids
 
 
+def should_send_discovery_email(
+    *, ready_for_review: int, has_prior_discovery_email: bool
+) -> bool:
+    """Send the first scan result always; after that, only when there is work.
+
+    Recurring rescans run every 24-48 hours. A "nothing to review" email after
+    each one trains people to ignore (or unsubscribe from) the email that
+    matters, so empty follow-ups are skipped. The first result is still sent
+    so a new customer learns the scan finished, even when it found nothing.
+    """
+
+    return ready_for_review > 0 or not has_prior_discovery_email
+
+
 def enqueue_discovery_completion_notifications(
     *,
     tenant_id: str,
@@ -507,6 +521,22 @@ def enqueue_discovery_completion_notifications(
                 "status": normalized_status,
             },
         ).mappings().first()
+        has_prior_discovery_email = bool(
+            conn.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                          FROM public.crawl_notification_outbox
+                         WHERE tenant_id = :tenant_id
+                           AND notification_type IN ('discovery_completed', 'discovery_partial')
+                           AND status = 'sent'
+                    )
+                    """
+                ),
+                {"tenant_id": tenant_id},
+            ).scalar()
+        )
 
     if row is None:
         logger.info(
@@ -518,6 +548,19 @@ def enqueue_discovery_completion_notifications(
         return []
 
     summary = _json_mapping(row.get("summary"))
+    ready_for_review = _ready_for_review_from_summary(summary)
+    if not should_send_discovery_email(
+        ready_for_review=ready_for_review,
+        has_prior_discovery_email=has_prior_discovery_email,
+    ):
+        logger.info(
+            "crawl_result_notification_enqueue_skipped tenant_id=%s discovery_run_id=%s reason=%s",
+            tenant_id,
+            discovery_run_id,
+            "empty_followup_scan",
+        )
+        return []
+
     notification_type = (
         NOTIFICATION_TYPE_DISCOVERY_COMPLETED
         if normalized_status == "completed"
@@ -531,7 +574,7 @@ def enqueue_discovery_completion_notifications(
         result_summary=NotificationSummary(
             website_host=_host_from_website_url(row.get("website_url")),
             pages_crawled=_non_negative_int(row.get("pages_crawled")),
-            ready_for_review=_ready_for_review_from_summary(summary),
+            ready_for_review=ready_for_review,
             source_posts_checked=_source_post_count_from_summary(summary),
         ),
     )
@@ -985,6 +1028,7 @@ __all__ = [
     "crawl_result_email_enabled",
     "deliver_crawl_result_notification",
     "enqueue_discovery_completion_notifications",
+    "should_send_discovery_email",
     "enqueue_initial_crawl_completion_notifications",
     "enqueue_terminal_crawl_failure_notifications",
     "recover_pending_crawl_result_notifications",

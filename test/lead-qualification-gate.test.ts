@@ -7,14 +7,12 @@ const leadsActionSource = readFileSync(
   fileURLToPath(new URL("../app/actions/leads.ts", import.meta.url)),
   "utf8",
 );
-const dashboardSource = readFileSync(
-  fileURLToPath(
-    new URL("../app/(dashboard)/dashboard/prospect-dashboard-client.tsx", import.meta.url),
-  ),
+const leadDeskSource = readFileSync(
+  fileURLToPath(new URL("../components/prospects/prospect-lead-desk.tsx", import.meta.url)),
   "utf8",
 );
 const outreachSource = readFileSync(
-  fileURLToPath(new URL("../app/(dashboard)/dashboard/lead-outreach.tsx", import.meta.url)),
+  fileURLToPath(new URL("../components/prospects/lead-outreach.tsx", import.meta.url)),
   "utf8",
 );
 
@@ -50,7 +48,8 @@ test("Maybes replace qualification with review-only guidance", () => {
     /const qualificationAction = !isReviewOnly \? \(/,
   );
   assert.match(outreachSource, /can't be qualified or exported yet/);
-  // The focused review passes candidates and screened records as review-only.
-  assert.match(dashboardSource, /const isReviewOnly = isWatch \|\| isScreened/);
-  assert.match(dashboardSource, /reviewOnly=\{isReviewOnly\}/);
+  // The lead desk passes Maybes as review-only and never offers a reply
+  // (or its qualification path) for screened-out records.
+  assert.match(leadDeskSource, /reviewOnly=\{isPotentialBuyer\(selectedLead\)\}/);
+  assert.match(leadDeskSource, /tab !== "reply" \|\| !selectedIsScreened/);
 });

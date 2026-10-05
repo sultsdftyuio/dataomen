@@ -17,8 +17,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { sourceDisplayName } from "@/components/prospects/lead-desk-presentation";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
-import { isScreenedMatch, isVerifiedLead } from "./lead-queue-filter";
-import type { QualifiedLeadView } from "./prospect-types";
+import { trackProductEvent } from "@/lib/analytics/product-events";
+import {
+  isScreenedMatch,
+  isVerifiedLead,
+  leadCategoryLabel,
+} from "@/app/(dashboard)/dashboard/lead-queue-filter";
+import type { QualifiedLeadView } from "@/app/(dashboard)/dashboard/prospect-types";
 
 // Editable reply draft plus source/qualify actions for one lead. Drafts are
 // kept per lead in localStorage so switching leads never loses edits.
@@ -30,6 +35,7 @@ export function LeadOutreach({
   reviewOnly,
   compact = false,
   showQualification = true,
+  showSourceAction = true,
 }: {
   lead: QualifiedLeadView;
   disabled: boolean;
@@ -38,6 +44,8 @@ export function LeadOutreach({
   reviewOnly: boolean;
   compact?: boolean;
   showQualification?: boolean;
+  /** Off when the surrounding panel already renders its own source link. */
+  showSourceAction?: boolean;
 }) {
   const [draft, setDraft] = useState(lead.suggestedReply);
   const [isDraftReady, setIsDraftReady] = useState(false);
@@ -107,6 +115,11 @@ export function LeadOutreach({
     try {
       await navigator.clipboard.writeText(draft);
       setCopyState("copied");
+      trackProductEvent("reply_copied", {
+        bucket: leadCategoryLabel(lead),
+        source: lead.sourcePost.source,
+        edited: draft !== lead.suggestedReply,
+      });
     } catch {
       setCopyState("error");
     }
@@ -126,7 +139,7 @@ export function LeadOutreach({
     setRestoredLocalDraft(false);
   };
 
-  const sourceAction = lead.sourcePost.url ? (
+  const sourceAction = !showSourceAction ? null : lead.sourcePost.url ? (
     <Button asChild size="sm" style={{ backgroundColor: C.blue, color: C.white }}>
       <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
         <ExternalLink className="size-4" />

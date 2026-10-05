@@ -102,6 +102,8 @@ export type QualifiedLeadView = {
   matchReason: string;
   suggestedReply: string;
   matchedAt: string | null;
+  /** When a person marked this lead done; absent until the review table exists. */
+  handledAt?: string | null;
   sourcePost: SourcePostView;
 };
 

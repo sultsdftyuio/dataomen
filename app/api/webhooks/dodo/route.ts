@@ -369,7 +369,7 @@ export async function POST(request: Request) {
   let event: DodoWebhookEvent;
   let dodo: DodoPayments;
   let rawBody = "";
-  let headers: Record<string, string> = {};
+  const headers: Record<string, string> = {};
 
   try {
     dodo = getDodoClient();

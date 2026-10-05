@@ -4,14 +4,13 @@ import Link from "next/link";
 import { useRef, useState, type KeyboardEvent } from "react";
 import {
   Check,
+  CircleCheck,
   CircleCheckBig,
-  ChevronRight,
+  Inbox,
   SlidersHorizontal,
   ExternalLink,
   Globe2,
-  Network,
   RefreshCw,
-  Radar,
   Search,
   Sparkles,
   UsersRound,
@@ -23,6 +22,9 @@ import { cn } from "@/lib/utils";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import { EmptyQueue } from "@/components/prospects/empty-queue";
 import { ScanActivityDialog } from "@/components/prospects/scan-activity-dialog";
+import { ProfileHealthBanner } from "@/components/prospects/profile-health-banner";
+import { LeadOutreach } from "@/components/prospects/lead-outreach";
+import { profileHealthIssue } from "@/app/(dashboard)/dashboard/profile-health";
 import {
   DETAIL_TABS, DetailTabButton, LeadControlSelect,
   LeadRow, Metric, ScreenedMatchOutcome, SignalPoint, SourcePlatformBadge,
@@ -32,12 +34,15 @@ import {
 } from "@/components/prospects/lead-desk-presentation";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import {
+  isHandledLead,
+  isPotentialBuyer,
   isScreenedMatch,
   type LeadQueueFilter,
 } from "@/app/(dashboard)/dashboard/lead-queue-filter";
 import type {
   BuyerGroupActivationAction,
   BuyerDemandReportView,
+  CrawlJobView,
   LeadFeedbackValue,
   ProspectActionResult,
   QualifiedLeadView,
@@ -49,6 +54,7 @@ type QueueSort = "priority" | "newest" | "confidence";
 type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
 type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
+  crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
   potentialBuyers: QualifiedLeadView[];
   buyerGroupSuggestions: BuyerGroupSuggestion[];
@@ -81,7 +87,9 @@ type ProspectLeadDeskProps = {
   onConfidenceChange: (value: QueueConfidenceFilter) => void;
   onSourceChange: (value: string) => void;
   onSelectLead: (leadId: string) => void;
-  onOpenFocusedReview: () => void;
+  /** A deliberate click on a lead, as opposed to automatic selection. */
+  onLeadOpened: (leadId: string) => void;
+  onSetHandled: (leadId: string, handled: boolean) => void;
   onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
   onQualify: (leadId: string) => void;
 };
@@ -97,6 +105,7 @@ const FEEDBACK_ACTIONS: Array<{
 
 export function ProspectLeadDesk({
   serviceProfile,
+  crawlJob,
   leads,
   potentialBuyers,
   buyerGroupSuggestions,
@@ -129,11 +138,13 @@ export function ProspectLeadDesk({
   onConfidenceChange,
   onSourceChange,
   onSelectLead,
-  onOpenFocusedReview,
+  onLeadOpened,
+  onSetHandled,
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
-  const [detailTab, setDetailTab] = useState<DetailTab>("match");
+  // Reply comes first: drafting a response is the job people came to do.
+  const [detailTab, setDetailTab] = useState<DetailTab>("reply");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [scanActivityOpen, setScanActivityOpen] = useState(false);
   const signalDetailRef = useRef<HTMLElement>(null);
@@ -141,9 +152,18 @@ export function ProspectLeadDesk({
     ?.replace(/^https?:\/\//, "")
     .replace(/\/$/, "") ?? "Your matching brief";
   const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
+  const healthIssue = profileHealthIssue(crawlJob, serviceProfile);
   const exactEvidence = selectedLead?.evidenceExcerpt?.trim() || null;
   const sourceText = selectedLead?.sourcePost.text?.trim() || null;
   const isScreenedAudit = queueFilter === "screened";
+  const isDoneView = queueFilter === "done";
+  const selectedIsScreened = selectedLead ? isScreenedMatch(selectedLead) : false;
+  // Screened records have no reply, so fall back to the evidence tabs.
+  const visibleTabs = DETAIL_TABS.filter((tab) => tab !== "reply" || !selectedIsScreened);
+  const activeTab: DetailTab = visibleTabs.includes(detailTab) ? detailTab : "match";
+  const openLeads = leads.filter((lead) => !isHandledLead(lead));
+  const openMaybes = potentialBuyers.filter((lead) => !isHandledLead(lead));
+  const doneCount = [...leads, ...potentialBuyers].filter(isHandledLead).length;
   const hasActiveFilters =
     queueQuery.length > 0 ||
     queueFilter !== "all" ||
@@ -174,6 +194,7 @@ export function ProspectLeadDesk({
 
   const selectLead = (leadId: string) => {
     onSelectLead(leadId);
+    onLeadOpened(leadId);
 
     // The detail panel follows the queue below xl. Moving there after an
     // explicit selection keeps the mobile review workflow contiguous.
@@ -193,19 +214,19 @@ export function ProspectLeadDesk({
     event: KeyboardEvent<HTMLButtonElement>,
     tab: DetailTab,
   ) => {
-    const currentIndex = DETAIL_TABS.indexOf(tab);
+    const currentIndex = visibleTabs.indexOf(tab);
     let nextIndex: number | null = null;
 
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % DETAIL_TABS.length;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % visibleTabs.length;
     if (event.key === "ArrowLeft") {
-      nextIndex = (currentIndex - 1 + DETAIL_TABS.length) % DETAIL_TABS.length;
+      nextIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
     }
     if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = DETAIL_TABS.length - 1;
+    if (event.key === "End") nextIndex = visibleTabs.length - 1;
     if (nextIndex === null) return;
 
     event.preventDefault();
-    const nextTab = DETAIL_TABS[nextIndex];
+    const nextTab = visibleTabs[nextIndex];
     setDetailTab(nextTab);
     document.getElementById(`signal-detail-tab-${nextTab}`)?.focus();
   };
@@ -261,7 +282,7 @@ export function ProspectLeadDesk({
             </Button>
           ) : null}
           <Button asChild variant="outline" className="h-10 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
-            <Link href="/dashboard/brief">Edit matching brief</Link>
+            <Link href="/dashboard/brief">Edit targeting</Link>
           </Button>
           <Button type="button" variant="ghost" className="h-10 px-2 text-xs" onClick={() => setScanActivityOpen(true)} style={{ color: C.blue }}>
             Scan activity
@@ -273,6 +294,7 @@ export function ProspectLeadDesk({
             <option value="all">Inbox</option>
             <option value="leads">Leads</option>
             <option value="potential">Maybes</option>
+            <option value="done">Done</option>
             <option value="screened">Screened out</option>
           </LeadControlSelect>
           <LeadControlSelect label="Match strength" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
@@ -307,6 +329,16 @@ export function ProspectLeadDesk({
         </div>
       </section>
 
+      {healthIssue ? (
+        <ProfileHealthBanner
+          issue={healthIssue}
+          serviceProfileId={serviceProfile.id}
+          isRebuildPending={isProfileRebuildPending}
+          onRebuildProfile={onRebuildProfile}
+          onRetried={onRefresh}
+        />
+      ) : null}
+
       {profileRebuildResult ? (
         <p
           role="status"
@@ -322,16 +354,16 @@ export function ProspectLeadDesk({
         className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Inbox" value={metricValue(leads.length + potentialBuyers.length)} icon={<Radar className="size-5" />} active={metricActive("all")} onClick={() => showQueueCategory("all")} />
-        <Metric label="Leads" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} active={metricActive("leads")} onClick={() => showQueueCategory("leads")} />
-        <Metric label="Maybes" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} active={metricActive("potential")} onClick={() => showQueueCategory("potential")} />
+        <Metric label="Inbox" value={metricValue(openLeads.length + openMaybes.length)} icon={<Inbox className="size-5" />} active={metricActive("all")} onClick={() => showQueueCategory("all")} />
+        <Metric label="Leads" value={metricValue(openLeads.length)} icon={<CircleCheckBig className="size-5" />} active={metricActive("leads")} onClick={() => showQueueCategory("leads")} />
+        <Metric label="Maybes" value={metricValue(openMaybes.length)} icon={<UsersRound className="size-5" />} active={metricActive("potential")} onClick={() => showQueueCategory("potential")} />
         <Metric
-          label="Screened out"
-          value={metricValue(screenedMatches.length)}
-          icon={<Network className="size-5" />}
+          label="Done"
+          value={metricValue(doneCount)}
+          icon={<CircleCheck className="size-5" />}
           tone="quiet"
-          active={metricActive("screened")}
-          onClick={() => showQueueCategory("screened")}
+          active={metricActive("done")}
+          onClick={() => showQueueCategory("done")}
         />
       </section>
 
@@ -351,7 +383,7 @@ export function ProspectLeadDesk({
           <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: C.rule }}>
             <div className="flex items-baseline gap-2">
               <h2 className="text-base font-semibold" style={{ color: C.navy }}>
-                {isScreenedAudit ? "Screened out" : "Inbox"}
+                {isScreenedAudit ? "Screened out" : isDoneView ? "Done" : "Inbox"}
               </h2>
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                 {filteredQueueItems.length}
@@ -422,6 +454,9 @@ export function ProspectLeadDesk({
               hasActiveFilters={hasActiveFilters}
               screenedMatchCount={screenedMatches.length}
               showingScreenedAudit={isScreenedAudit}
+              showingDone={isDoneView}
+              doneCount={doneCount}
+              onOpenDone={() => showQueueCategory("done")}
               report={buyerDemandReport}
               onClearFilters={clearFilters}
               onOpenScanActivity={() => setScanActivityOpen(true)}
@@ -488,18 +523,35 @@ export function ProspectLeadDesk({
                 ) : null}
 
                 <div className="flex gap-4 border-b" role="tablist" aria-label="Signal details" style={{ borderColor: C.rule }}>
-                  <DetailTabButton active={detailTab === "match"} tab="match" onClick={() => setDetailTab("match")} onKeyDown={handleDetailTabKeyDown}>Why it matched</DetailTabButton>
-                  <DetailTabButton active={detailTab === "evidence"} tab="evidence" onClick={() => setDetailTab("evidence")} onKeyDown={handleDetailTabKeyDown}>Original post</DetailTabButton>
+                  {!selectedIsScreened ? (
+                    <DetailTabButton active={activeTab === "reply"} tab="reply" onClick={() => setDetailTab("reply")} onKeyDown={handleDetailTabKeyDown}>Reply</DetailTabButton>
+                  ) : null}
+                  <DetailTabButton active={activeTab === "match"} tab="match" onClick={() => setDetailTab("match")} onKeyDown={handleDetailTabKeyDown}>Why it matched</DetailTabButton>
+                  <DetailTabButton active={activeTab === "evidence"} tab="evidence" onClick={() => setDetailTab("evidence")} onKeyDown={handleDetailTabKeyDown}>Original post</DetailTabButton>
                 </div>
 
                 <div
-                  id={`signal-detail-panel-${detailTab}`}
+                  id={`signal-detail-panel-${activeTab}`}
                   role="tabpanel"
-                  aria-labelledby={`signal-detail-tab-${detailTab}`}
+                  aria-labelledby={`signal-detail-tab-${activeTab}`}
                   tabIndex={0}
                   className="min-h-[142px] rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
                 >
-                  {detailTab === "match" ? (
+                  {activeTab === "reply" ? (
+                    <LeadOutreach
+                      key={`outreach-${selectedLead.id}`}
+                      lead={selectedLead}
+                      disabled={qualificationPending}
+                      qualificationMessage={null}
+                      onQualify={onQualify}
+                      reviewOnly={isPotentialBuyer(selectedLead)}
+                      compact
+                      showQualification={false}
+                      showSourceAction={false}
+                    />
+                  ) : null}
+
+                  {activeTab === "match" ? (
                     <div className="space-y-3">
                       <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
                       <ul className="grid gap-1.5 text-xs leading-5" style={{ color: C.navySoft }}>
@@ -508,17 +560,10 @@ export function ProspectLeadDesk({
                         {selectedLead.purchaseStage ? <SignalPoint>Stage: {selectedLead.purchaseStage.replace(/_/g, " ")}</SignalPoint> : null}
                         {selectedLead.competitorMention ? <SignalPoint>Also mentioned: {selectedLead.competitorMention}</SignalPoint> : null}
                       </ul>
-                      {selectedLead.suggestedReply ? (
-                        <section className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-                          <p className="text-xs font-semibold" style={{ color: C.navy }}>Suggested reply</p>
-                          {/* Preview only; the full editable draft lives in the detailed review. */}
-                          <p className="mt-1 line-clamp-3 text-xs leading-5" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
-                        </section>
-                      ) : null}
                     </div>
                   ) : null}
 
-                  {detailTab === "evidence" ? (
+                  {activeTab === "evidence" ? (
                     <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6" style={{ color: C.navySoft }}>
                       {sourceText ?? "No source text was kept for this record."}
                     </p>
@@ -526,12 +571,18 @@ export function ProspectLeadDesk({
                 </div>
 
                 <div className="mt-auto space-y-3 border-t pt-4" style={{ borderColor: C.rule }}>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Button type="button" size="sm" className="bg-[#1B6EBF] text-white hover:bg-[#155a9f]" onClick={onOpenFocusedReview}>
-                      {isScreenedMatch(selectedLead) ? "Inspect post" : "Review in detail"}
-                      <ChevronRight aria-hidden="true" />
-                    </Button>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {!selectedIsScreened ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
+                        onClick={() => onSetHandled(selectedLead.id, !isHandledLead(selectedLead))}
+                      >
+                        {isHandledLead(selectedLead) ? <Inbox aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
+                        {isHandledLead(selectedLead) ? "Move to inbox" : "Done"}
+                      </Button>
+                    ) : null}
                     {selectedLead.sourcePost.url ? (
                       <Button asChild variant="outline" size="sm" className="border-[#C8D9E8]">
                         <a href={selectedLead.sourcePost.url} target="_blank" rel="noreferrer">
@@ -553,7 +604,6 @@ export function ProspectLeadDesk({
                         {qualificationPending ? "Qualifying..." : "Mark qualified"}
                       </Button>
                     ) : null}
-                    </div>
                   </div>
 
                   <div>

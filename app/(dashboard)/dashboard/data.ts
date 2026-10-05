@@ -571,7 +571,7 @@ function sourcePostView(row: DbRecord): SourcePostView {
   };
 }
 
-function leadView(row: DbRecord, index: number): QualifiedLeadView {
+export function leadView(row: DbRecord, index: number): QualifiedLeadView {
   const verification = firstRecord(row.verification) ?? firstRecord(row.verifier_result);
   const sources = [verification, row];
   const sourcePost = sourcePostView(row);

@@ -3375,10 +3375,10 @@ def process_crawl_job(
         )
 
         try:
-            from api.services.tenant_entitlements import tenant_has_active_paid_access
+            from api.services.tenant_entitlements import tenant_may_run_lead_discovery
 
             with engine.begin() as conn:
-                lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+                lead_discovery_entitled = tenant_may_run_lead_discovery(conn, tenant_id)
         except Exception as entitlement_exc:
             # Do not turn a successfully persisted website profile into a
             # failed crawl, and fail closed before any paid provider work.

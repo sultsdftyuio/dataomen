@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { ArrowRight, Check, FileSearch, Globe2, LockKeyhole } from "lucide-react";
 
+import { FreeScanResult } from "@/components/prospects/free-scan-result";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 import { C } from "@/lib/tokens";
+import type { FreeScanPreview } from "./free-scan-preview";
 import type { ServiceProfileView } from "./prospect-types";
 
 type FreeProspectPreviewProps = {
   websiteUrl: string;
   serviceProfile: ServiceProfileView;
+  /** Null when the first-scan preview is not deployed or not available. */
+  freeScanPreview: FreeScanPreview | null;
 };
 
 function domainForDisplay(websiteUrl: string) {
@@ -36,9 +40,13 @@ function BriefField({ label, value }: { label: string; value: string }) {
 export default function FreeProspectPreview({
   websiteUrl,
   serviceProfile,
+  freeScanPreview,
 }: FreeProspectPreviewProps) {
   const fields = serviceProfile.fields;
   const domain = domainForDisplay(websiteUrl);
+  // Once the free first scan has started, real results replace the
+  // "discovery is locked" explanation.
+  const hasFirstScan = Boolean(freeScanPreview?.runStatus || freeScanPreview?.topLead);
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col gap-4 overflow-y-auto pr-1">
@@ -56,6 +64,8 @@ export default function FreeProspectPreview({
           <Check className="size-3.5" aria-hidden="true" /> Website read complete
         </span>
       </header>
+
+      {hasFirstScan && freeScanPreview ? <FreeScanResult preview={freeScanPreview} /> : null}
 
       <section aria-labelledby="brief-heading" className="rounded-xl border bg-white p-4 shadow-sm sm:p-5" style={{ borderColor: C.rule }}>
         <div className="flex items-start gap-3">
@@ -86,6 +96,7 @@ export default function FreeProspectPreview({
         </div>
       </section>
 
+      {!hasFirstScan ? (
       <section aria-labelledby="discovery-heading" className="rounded-xl border p-4 sm:p-5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.blue }}>
@@ -107,11 +118,14 @@ export default function FreeProspectPreview({
           </div>
         </div>
       </section>
+      ) : null}
 
-      <p className="flex items-center gap-2 text-xs leading-5" style={{ color: C.muted }}>
-        <FileSearch className="size-4 shrink-0" aria-hidden="true" />
-        A prepared brief is not evidence that buyer conversations exist.
-      </p>
+      {!hasFirstScan ? (
+        <p className="flex items-center gap-2 text-xs leading-5" style={{ color: C.muted }}>
+          <FileSearch className="size-4 shrink-0" aria-hidden="true" />
+          A prepared brief is not evidence that buyer conversations exist.
+        </p>
+      ) : null}
     </div>
   );
 }

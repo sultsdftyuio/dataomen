@@ -1427,10 +1427,10 @@ def enqueue_service_profile_embedding_job(
     service_profile_id: str | None = None,
 ) -> str:
     try:
-        from api.services.tenant_entitlements import tenant_has_active_paid_access
+        from api.services.tenant_entitlements import tenant_may_run_lead_discovery
 
         with _database_engine().begin() as conn:
-            lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+            lead_discovery_entitled = tenant_may_run_lead_discovery(conn, tenant_id)
     except Exception as exc:
         logger.exception(
             "service_profile_embedding_enqueue_entitlement_check_failed tenant_id=%s service_profile_id=%s error_type=%s",
@@ -1487,10 +1487,10 @@ def process_service_profile_embedding_job(
 ) -> None:
     engine = _database_engine()
     try:
-        from api.services.tenant_entitlements import tenant_has_active_paid_access
+        from api.services.tenant_entitlements import tenant_may_run_lead_discovery
 
         with engine.begin() as conn:
-            lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+            lead_discovery_entitled = tenant_may_run_lead_discovery(conn, tenant_id)
     except Exception as exc:
         # Do not spend capacity until the billing read succeeds. Raising lets
         # the Dramatiq retry/dead-letter policy recover a transient database

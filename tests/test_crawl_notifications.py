@@ -40,10 +40,10 @@ def test_paid_completion_copy_includes_only_aggregate_result_counts():
         },
     )
 
-    assert subject == "Arcli scan update: 2 signals to review"
-    assert "2 conversation signals ready for review" in text_body
+    assert subject == "Arcli: 2 new leads to review"
+    assert "2 leads ready for review" in text_body
     assert "Candidate checks may continue" in text_body
-    assert "2 conversation signals ready for review" in html_body
+    assert "2 leads ready for review" in html_body
     assert "7 new public conversations" not in text_body
 
 
@@ -160,3 +160,21 @@ def test_mock_email_configuration_does_not_require_a_provider_key(monkeypatch):
 
     assert config.mock is True
     assert config.api_key == "mock"
+
+
+def test_first_scan_result_is_always_emailed_even_when_empty():
+    assert notifications.should_send_discovery_email(
+        ready_for_review=0, has_prior_discovery_email=False
+    )
+
+
+def test_empty_followup_scans_are_not_emailed():
+    assert not notifications.should_send_discovery_email(
+        ready_for_review=0, has_prior_discovery_email=True
+    )
+
+
+def test_followup_scans_with_leads_are_emailed():
+    assert notifications.should_send_discovery_email(
+        ready_for_review=3, has_prior_discovery_email=True
+    )

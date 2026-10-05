@@ -15,6 +15,8 @@ import {
   verifierScoreThreshold,
 } from "./data";
 import { activateSuggestedBuyerGroup } from "./actions";
+import { attachHandledState } from "./lead-reviews";
+import { fetchFreeScanPreview } from "./free-scan-preview";
 import FreeProspectPreview from "./free-prospect-preview";
 import ProspectDashboardClient from "./prospect-dashboard-client";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
@@ -116,15 +118,22 @@ export default async function DashboardPage() {
   }
 
   if (!entitlements.isPro) {
+    const freeScanPreview = await fetchFreeScanPreview(
+      supabase,
+      tenantId,
+      serviceProfile.id,
+      serviceProfile.updatedAt,
+    );
     return (
       <FreeProspectPreview
         websiteUrl={websiteUrl}
         serviceProfile={serviceProfile}
+        freeScanPreview={freeScanPreview}
       />
     );
   }
 
-  const [leads, discoveryCandidates, screenedMatches] = await Promise.all([
+  const [rawLeads, rawDiscoveryCandidates, screenedMatches] = await Promise.all([
     fetchQualifiedLeads(
       supabase,
       tenantId,
@@ -144,9 +153,15 @@ export default async function DashboardPage() {
       serviceProfile.updatedAt,
     ),
   ]);
+  // Screened records are audit-only and never marked done, so skip them.
+  const [leads, discoveryCandidates] = await Promise.all([
+    attachHandledState(supabase, tenantId, rawLeads),
+    attachHandledState(supabase, tenantId, rawDiscoveryCandidates),
+  ]);
   return (
     <ProspectDashboardClient
       serviceProfile={serviceProfile}
+      crawlJob={crawlJob}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
       screenedMatches={screenedMatches}

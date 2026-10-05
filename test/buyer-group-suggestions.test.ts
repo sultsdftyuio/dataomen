@@ -113,15 +113,14 @@ test("activation accepts only a suggestion ID and re-derives the tenant-scoped g
 });
 
 test("demand-map UI keeps dashboard buyer-group ideas concise and preserves detailed hypotheses", () => {
-  assert.match(demandMapSource, /Buyer group ideas/);
-  assert.match(demandMapSource, /Target customers from your website/);
+  assert.match(demandMapSource, /Suggested buyer groups/);
+  assert.match(demandMapSource, /Audiences to test, based on your website/);
   assert.match(demandMapSource, /suggestion\.targetBuyer/);
   assert.match(demandMapSource, /Buyer groups/);
   assert.doesNotMatch(demandMapSource, /Explore ideas/);
   assert.doesNotMatch(demandMapSource, /optional buyer direction/);
-  assert.match(demandMapSource, /Website-derived hypothesis/);
   assert.match(demandMapSource, /These are hypotheses, not leads/);
-  assert.match(demandMapSource, /Start focused scan/);
+  assert.match(demandMapSource, /Start scan/);
   assert.doesNotMatch(watchlistsSource, /FIRST_GROUP_IDEAS/);
   assert.doesNotMatch(watchlistsSource, /Founder growth friction/);
 });

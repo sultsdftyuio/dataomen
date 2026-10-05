@@ -8,8 +8,8 @@ import { isPotentialBuyer, isScreenedMatch } from "@/app/(dashboard)/dashboard/l
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 
-export type DetailTab = "match" | "evidence";
-export const DETAIL_TABS: readonly DetailTab[] = ["match", "evidence"];
+export type DetailTab = "reply" | "match" | "evidence";
+export const DETAIL_TABS: readonly DetailTab[] = ["reply", "match", "evidence"];
 
 export function sourceDisplayName(source: string) {
   const names: Record<string, string> = {

@@ -83,11 +83,11 @@ def process_initial_public_ingestion_job(
 ) -> None:
     from api.services.social_ingestion import enqueue_initial_public_source_ingestion
     from api.services.crawling import _database_engine
-    from api.services.tenant_entitlements import tenant_has_active_paid_access
+    from api.services.tenant_entitlements import tenant_may_run_lead_discovery
 
     try:
         with _database_engine().begin() as conn:
-            lead_discovery_entitled = tenant_has_active_paid_access(conn, tenant_id)
+            lead_discovery_entitled = tenant_may_run_lead_discovery(conn, tenant_id)
     except Exception as exc:
         logger.exception(
             "initial_public_ingestion_entitlement_check_failed tenant_id=%s service_profile_id=%s error_type=%s",

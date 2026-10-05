@@ -14,7 +14,7 @@ test("keeps buyer-group setup compact until the customer asks for detail", () =>
   const demandMap = source("components/prospects/website-demand-map.tsx");
   const detail = source("app/(dashboard)/dashboard/watchlist-detail.tsx");
 
-  assert.match(page, /max-w-\[1440px\]/);
+  assert.match(page, /arc-workspace-page--buyers/);
   assert.match(page, /<WebsiteDemandMap[\s\S]*collapsible/);
   assert.match(demandMap, /aria-expanded=\{isExpanded\}/);
   assert.match(demandMap, /website-demand-map-suggestions/);
