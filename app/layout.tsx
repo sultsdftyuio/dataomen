@@ -1,24 +1,24 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono, Playfair_Display } from 'next/font/google'
+import localFont from 'next/font/local'
+import { GeistSans } from 'geist/font/sans'
+import { GeistMono } from 'geist/font/mono'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { DEFAULT_OG_IMAGE_URL, SITE_URL } from '@/lib/site'
 import './globals.css'
 
-const geist = Geist({ 
-  subsets: ["latin"],
-  variable: '--font-geist-sans' 
-});
+// Fonts are bundled with the app instead of fetched from Google Fonts at
+// build time, so a Google outage or odd response can't fail a deploy.
+// GeistSans/GeistMono expose --font-geist-sans / --font-geist-mono.
+const geist = GeistSans;
+const geistMono = GeistMono;
 
-const geistMono = Geist_Mono({ 
-  subsets: ["latin"],
-  variable: '--font-geist-mono'
-});
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
+// Variable Latin subset (SIL OFL), covering the 600 and 700 weights we use.
+const playfair = localFont({
+  src: './fonts/playfair-display-latin.woff2',
   variable: '--font-playfair',
-  weight: ["600", "700"],
+  weight: '600 700',
+  display: 'swap',
 });
 
 // Explicitly export Viewport to resolve the Lighthouse tag warning in Next.js 14+
