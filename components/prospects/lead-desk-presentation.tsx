@@ -8,8 +8,8 @@ import { isPotentialBuyer, isScreenedMatch } from "@/app/(dashboard)/dashboard/l
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 
-export type DetailTab = "match" | "evidence" | "context";
-export const DETAIL_TABS: readonly DetailTab[] = ["match", "evidence", "context"];
+export type DetailTab = "match" | "evidence";
+export const DETAIL_TABS: readonly DetailTab[] = ["match", "evidence"];
 
 export function sourceDisplayName(source: string) {
   const names: Record<string, string> = {
@@ -65,17 +65,6 @@ function sourcePresentation(source: string): SourcePresentation {
   }
 
   return { label: sourceDisplayName(source), Icon: Globe2, background: C.offWhite, color: C.navySoft };
-}
-
-export function sourceConversationType(source: string) {
-  const normalized = source.trim().toLowerCase();
-
-  if (normalized === "github") return "Repository discussion";
-  if (["hn", "hackernews", "hacker_news"].includes(normalized)) return "News discussion";
-  if (["stackexchange", "stack_exchange", "stackoverflow", "stack_overflow"].includes(normalized)) return "Technical Q&A";
-  if (["reddit", "lemmy"].includes(normalized)) return "Community discussion";
-  if (["bluesky", "x"].includes(normalized)) return "Public post";
-  return "Public conversation";
 }
 
 export function SourcePlatformMark({
@@ -149,7 +138,7 @@ export function leadStatus(lead: QualifiedLeadView) {
   if (isScreenedMatch(lead)) {
     return {
       label: "Screened out",
-      description: "Automated review did not find a plausible enough fit for the opportunity inbox.",
+      description: "Automated review didn't find a close enough fit.",
       color: C.muted,
       background: C.offWhite,
     };
@@ -165,15 +154,15 @@ export function leadStatus(lead: QualifiedLeadView) {
   if (lead.intentTier === "high") {
     return {
       label: "High intent",
-      description: "A direct request or relevant evaluation that is ready to prioritize for review.",
+      description: "A direct request or active evaluation. Review first.",
       color: C.green,
       background: C.greenPale,
     };
   }
   if (lead.intentTier === "warm") {
     return {
-      label: "Warm signal",
-      description: "Relevant frustration or workflow pain worth a thoughtful review.",
+      label: "Warm",
+      description: "Relevant frustration or workflow pain.",
       color: C.amber,
       background: C.amberPale,
     };
@@ -181,22 +170,22 @@ export function leadStatus(lead: QualifiedLeadView) {
   if (lead.intentTier === "exploratory") {
     return {
       label: "Exploratory",
-      description: "A relevant category or adjacent-workflow discussion for research or future outreach.",
+      description: "A related discussion, useful for research or later outreach.",
       color: C.blue,
       background: C.bluePale,
     };
   }
   if (isPotentialBuyer(lead)) {
     return {
-      label: "Relevant",
-      description: "A plausible public conversation to review, not a confirmed buyer.",
+      label: "Maybe",
+      description: "Plausible, but not verified. Check the evidence first.",
       color: C.amber,
       background: C.amberPale,
     };
   }
   return {
-    label: "Strong",
-    description: "A clear public buyer problem worth reviewing, not a confirmed customer.",
+    label: "Lead",
+    description: "A clear, verified buyer problem. Not a confirmed customer.",
     color: C.blue,
     background: C.bluePale,
   };
@@ -317,39 +306,12 @@ export function DetailTabButton({
   );
 }
 
-export function SourceContextItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
-      <dd className="mt-1 truncate font-medium" style={{ color: C.navySoft }}>{value}</dd>
-    </div>
-  );
-}
-
 export function SignalPoint({ children }: { children: ReactNode }) {
   return (
     <li className="flex gap-2">
       <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: C.green }} aria-hidden="true" />
       <span>{children}</span>
     </li>
-  );
-}
-
-export function InsightCard({
-  title,
-  value,
-  detail,
-}: {
-  title: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <section className="min-w-0 rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{title}</p>
-      <p className="mt-1 truncate text-xs font-semibold capitalize" style={{ color: C.navy }}>{value}</p>
-      <p className="mt-1 line-clamp-2 text-[11px] leading-4" style={{ color: C.navySoft }}>{detail}</p>
-    </section>
   );
 }
 
@@ -388,38 +350,18 @@ export function LeadRow({
         </span>
         <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold" title={status.description} style={{ backgroundColor: status.background, color: status.color }}>{status.label}</span>
       </span>
-      <span className="mt-2 block line-clamp-2 text-xs leading-5" title={evidencePreview(lead)} style={{ color: C.navySoft }}>
+      <span className="mt-1.5 block line-clamp-1 text-xs leading-5" title={evidencePreview(lead)} style={{ color: C.navySoft }}>
         {evidencePreview(lead)}
       </span>
       <span className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: C.muted }}>
         <span className="max-w-full truncate rounded-full px-2 py-0.5 font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>{signalLabel(lead)}</span>
         <span title="Match strength measures relevance, not purchase likelihood.">Match {formatScore(lead.verifierScore)}</span>
-        {lead.sourcePost.community ? <span className="max-w-full truncate" title={lead.sourcePost.community}>{lead.sourcePost.community}</span> : null}
       </span>
     </button>
   );
 }
 
-export function DetailSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section>
-      <h3 className="mb-1.5 text-xs font-semibold" style={{ color: C.navy }}>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-export function DetailStat({ label, value, title }: { label: string; value: string; title?: string }) {
-  return (
-    <div title={title} className="rounded-lg border px-3 py-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>{label}</p>
-      <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>{value}</p>
-    </div>
-  );
-}
-
 export function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
-
   return (
     <section className="overflow-hidden rounded-xl border" aria-label="Verification review" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
       <div className="flex gap-2.5 px-3 py-3">
@@ -427,27 +369,18 @@ export function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
           <ShieldAlert className="size-4" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Verification review</p>
-          <h3 className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>Screened out of the opportunity inbox</h3>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>The record is available for inspection, but automated review found no plausible enough fit.</p>
+          <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Screened out</h3>
+          <p className="mt-0.5 text-xs leading-5" style={{ color: C.navySoft }}>Not a close enough fit. Kept for inspection and feedback.</p>
         </div>
       </div>
 
-      <dl className="grid grid-cols-3 divide-x border-y" style={{ borderColor: C.ruleDark }}>
+      <dl className="grid grid-cols-2 divide-x border-t" style={{ borderColor: C.ruleDark }}>
         <VerificationMetric
-          label="Semantic similarity"
+          label="Similarity"
           value={lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
         />
         <VerificationMetric label="Match strength" value={formatScore(lead.verifierScore)} />
-        <VerificationMetric
-          label="Review result"
-          value="Screened"
-        />
       </dl>
-
-      <p className="px-3 py-2.5 text-[11px] leading-4" style={{ color: C.muted }}>
-        Match strength ranks relevance to the website; it does not predict whether someone will buy. Keep this record for source inspection or feedback.
-      </p>
     </section>
   );
 }
@@ -455,7 +388,7 @@ export function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
 function VerificationMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 px-2.5 py-2.5 first:pl-3 last:pr-3">
-      <dt className="text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
       <dd className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>{value}</dd>
     </div>
   );

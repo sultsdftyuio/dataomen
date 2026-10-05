@@ -147,7 +147,6 @@ export default async function DashboardPage() {
   return (
     <ProspectDashboardClient
       serviceProfile={serviceProfile}
-      crawlJob={crawlJob}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
       screenedMatches={screenedMatches}

@@ -13,6 +13,10 @@ const dashboardSource = readFileSync(
   ),
   "utf8",
 );
+const outreachSource = readFileSync(
+  fileURLToPath(new URL("../app/(dashboard)/dashboard/lead-outreach.tsx", import.meta.url)),
+  "utf8",
+);
 
 test("a discovery candidate cannot reach the qualification or CRM path", () => {
   // This is the conditional database write that runs before tenant settings or
@@ -36,16 +40,17 @@ test("a discovery candidate cannot reach the qualification or CRM path", () => {
   assert.ok(crmDelivery > qualificationUpdate, "CRM delivery must remain after the guarded update");
 });
 
-test("Watch cards replace qualification with review-only guidance", () => {
+test("Maybes replace qualification with review-only guidance", () => {
   assert.match(
-    dashboardSource,
+    outreachSource,
     /const isReviewOnly = reviewOnly \|\| lead\.matchStatus === "discovery_candidate"/,
   );
   assert.match(
-    dashboardSource,
+    outreachSource,
     /const qualificationAction = !isReviewOnly \? \(/,
   );
-  assert.match(dashboardSource, /Review only/);
-  assert.match(dashboardSource, /cannot be\s+qualified or exported to your CRM/);
-  assert.match(dashboardSource, /reviewOnly=\{isWatch\}/);
+  assert.match(outreachSource, /can't be qualified or exported yet/);
+  // The focused review passes candidates and screened records as review-only.
+  assert.match(dashboardSource, /const isReviewOnly = isWatch \|\| isScreened/);
+  assert.match(dashboardSource, /reviewOnly=\{isReviewOnly\}/);
 });

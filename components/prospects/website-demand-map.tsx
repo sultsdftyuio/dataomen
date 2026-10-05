@@ -67,10 +67,7 @@ export function WebsiteDemandMap({
           <article key={suggestion.id} className="arc-buyer-suggestions__card">
             <div className="flex flex-wrap items-start gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
-                  SUGGESTED DIRECTION
-                </p>
-                <h3 className="mt-1 text-sm font-semibold leading-5" title={suggestion.name} style={{ color: C.navy }}>
+                <h3 className="text-sm font-semibold leading-5" title={suggestion.name} style={{ color: C.navy }}>
                   {suggestion.name}
                 </h3>
               </div>
@@ -93,25 +90,13 @@ export function WebsiteDemandMap({
               {suggestion.targetBuyer}
             </p>
             <p className="mt-1 text-[11px] leading-4" title={suggestion.problemToSolve} style={{ color: C.navySoft }}>
-              <span className="font-semibold" style={{ color: C.muted }}>Tests: </span>
+              <span className="font-semibold" style={{ color: C.muted }}>Problem: </span>
               {suggestion.problemToSolve}
             </p>
-            <p className="mt-2 text-[11px] leading-4" style={{ color: C.navySoft }}>
-              <span className="font-semibold" style={{ color: C.muted }}>Starts in: </span>
+            <p className="mt-1 text-[11px] leading-4" style={{ color: C.navySoft }}>
+              <span className="font-semibold" style={{ color: C.muted }}>Sources: </span>
               {suggestion.communityPlan.sources.map((source) => source.label).join(" · ")}
             </p>
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {suggestion.communityPlan.sources.slice(0, 3).flatMap((source) => source.queryTerms.slice(0, 1)).map((term) => (
-                <span
-                  key={term.toLowerCase()}
-                  title={term}
-                  className="max-w-full truncate rounded border px-1.5 py-0.5 text-[10px]"
-                  style={{ borderColor: C.rule, color: C.muted }}
-                >
-                  {term}
-                </span>
-              ))}
-            </div>
           </article>
         );
       })}
@@ -151,7 +136,7 @@ export function WebsiteDemandMap({
                 Suggested buyer groups ({suggestions.length})
               </h2>
               <p className="text-[11px]" style={{ color: C.muted }}>
-                Starting audiences worth testing against public conversations.
+                Audiences to test, based on your website.
               </p>
             </div>
           </div>

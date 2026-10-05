@@ -81,7 +81,7 @@ export default async function WatchlistsPage() {
       <DashboardPageIntro
         eyebrow="Pro"
         title="Focus discovery on one audience."
-        description="A buyer group pairs who you want to reach with the problem they describe. Arcli searches supported public sources for that pair."
+        description="Pair an audience with the problem they describe, and Arcli searches for that pair."
         icon={UsersRound}
       />
 

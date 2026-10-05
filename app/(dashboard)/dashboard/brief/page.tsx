@@ -78,7 +78,7 @@ export default async function MatchingBriefPage() {
       <DashboardPageIntro
         eyebrow="Targeting"
         title="Who to look for, and why."
-        description="This brief guides every search. Changes apply to future research, not to prospects already delivered."
+        description="Guides every future search. Existing prospects stay as they are."
         icon={Target}
       />
 

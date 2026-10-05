@@ -117,7 +117,7 @@ export default async function TargetsPage() {
       <DashboardPageIntro
         eyebrow="Research"
         title="Accounts to research."
-        description="Add an account you already have in mind. Arcli checks it against your brief and tells you plainly whether it fits. You can also research builders and projects."
+        description="Add an account you have in mind and Arcli checks whether it fits your brief."
         icon={Crosshair}
       />
 

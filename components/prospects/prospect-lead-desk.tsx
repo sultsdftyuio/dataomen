@@ -24,10 +24,10 @@ import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import { EmptyQueue } from "@/components/prospects/empty-queue";
 import { ScanActivityDialog } from "@/components/prospects/scan-activity-dialog";
 import {
-  DETAIL_TABS, DetailSection, DetailStat, DetailTabButton, InsightCard, LeadControlSelect,
-  LeadRow, Metric, ScreenedMatchOutcome, SignalPoint, SourceContextItem, SourcePlatformBadge,
+  DETAIL_TABS, DetailTabButton, LeadControlSelect,
+  LeadRow, Metric, ScreenedMatchOutcome, SignalPoint, SourcePlatformBadge,
   SourcePlatformMark, exactDateTime, formatScore, freshnessLabel, leadStatus, metricValue,
-  relativeTime, signalLabel, sourceConversationType, sourceDisplayName,
+  relativeTime, signalLabel, sourceDisplayName,
   type DetailTab,
 } from "@/components/prospects/lead-desk-presentation";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
@@ -218,7 +218,7 @@ export function ProspectLeadDesk({
             Prospects
           </h1>
           <p className="max-w-4xl text-[12px] leading-5" style={{ color: C.navySoft }}>
-            Review source-linked signals from {metricValue(reviewedConversationCount)} assessed conversations. Match strength measures relevance, not purchase likelihood.
+            {metricValue(reviewedConversationCount)} public conversations reviewed
           </p>
         </div>
 
@@ -231,7 +231,7 @@ export function ProspectLeadDesk({
             <Globe2 className="size-3.5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Targeting</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Targeting</p>
             <p className="truncate text-[13px] font-semibold" style={{ color: C.navy }}>{profileDomain}</p>
           </div>
         </section>
@@ -270,10 +270,10 @@ export function ProspectLeadDesk({
 
         <div id="prospect-advanced-filters" hidden={!filtersOpen} className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]" style={{ borderColor: C.rule, display: filtersOpen ? "grid" : "none" }}>
           <LeadControlSelect label="View" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
-            <option value="all">Opportunity inbox</option>
-            <option value="leads">Strong signals</option>
-            <option value="potential">Relevant signals</option>
-            <option value="screened">Screened-out audit</option>
+            <option value="all">Inbox</option>
+            <option value="leads">Leads</option>
+            <option value="potential">Maybes</option>
+            <option value="screened">Screened out</option>
           </LeadControlSelect>
           <LeadControlSelect label="Match strength" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
             <option value="all">All levels</option>
@@ -322,13 +322,12 @@ export function ProspectLeadDesk({
         className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
         style={{ borderColor: C.rule, backgroundColor: C.white }}
       >
-        <Metric label="Inbox signals" value={metricValue(leads.length + potentialBuyers.length)} icon={<Radar className="size-5" />} active={metricActive("all")} onClick={() => showQueueCategory("all")} />
-        <Metric label="Strong signals" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} active={metricActive("leads")} onClick={() => showQueueCategory("leads")} />
-        <Metric label="Relevant opportunities" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} active={metricActive("potential")} onClick={() => showQueueCategory("potential")} />
+        <Metric label="Inbox" value={metricValue(leads.length + potentialBuyers.length)} icon={<Radar className="size-5" />} active={metricActive("all")} onClick={() => showQueueCategory("all")} />
+        <Metric label="Leads" value={metricValue(leads.length)} icon={<CircleCheckBig className="size-5" />} active={metricActive("leads")} onClick={() => showQueueCategory("leads")} />
+        <Metric label="Maybes" value={metricValue(potentialBuyers.length)} icon={<UsersRound className="size-5" />} active={metricActive("potential")} onClick={() => showQueueCategory("potential")} />
         <Metric
           label="Screened out"
           value={metricValue(screenedMatches.length)}
-          detail="Not a fit"
           icon={<Network className="size-5" />}
           tone="quiet"
           active={metricActive("screened")}
@@ -352,7 +351,7 @@ export function ProspectLeadDesk({
           <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: C.rule }}>
             <div className="flex items-baseline gap-2">
               <h2 className="text-base font-semibold" style={{ color: C.navy }}>
-                {isScreenedAudit ? "Screened-out audit" : "Signals"}
+                {isScreenedAudit ? "Screened out" : "Inbox"}
               </h2>
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                 {filteredQueueItems.length}
@@ -439,55 +438,47 @@ export function ProspectLeadDesk({
         <aside
           ref={signalDetailRef}
           className="flex min-h-0 min-w-0 scroll-mt-4 flex-col overflow-y-auto"
-          aria-label="Signal intelligence"
+          aria-label="Lead details"
         >
           {selectedLead && selectedStatus ? (
             <>
               <button type="button" className="border-b px-4 py-2 text-left text-xs font-semibold xl:hidden" style={{ borderColor: C.rule, color: C.blue }} onClick={() => document.getElementById("prospect-signal-list")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>
-                Back to signals
+                Back to inbox
               </button>
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b p-3 sm:p-3.5" style={{ borderColor: C.rule }}>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold" style={{ color: C.navy }}>Signal intelligence</h2>
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                      title={selectedStatus.description}
-                      aria-label={`${selectedStatus.label}. ${selectedStatus.description}`}
-                      style={{ backgroundColor: selectedStatus.background, color: selectedStatus.color }}
-                    >
-                      {selectedStatus.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                    {isScreenedMatch(selectedLead)
-                      ? "Semantically related, but not a reviewable opportunity."
-                      : "Public-source evidence, not a confirmed customer."}
-                  </p>
-                </div>
-              </div>
-
               <div className="flex flex-1 flex-col gap-3 p-3 sm:p-3.5">
                 <div className="flex gap-3">
                   <SourcePlatformMark source={selectedLead.sourcePost.source} size="detail" />
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
-                      {sourceConversationType(selectedLead.sourcePost.source)}
-                    </p>
-                    <p className="truncate text-sm font-semibold" style={{ color: C.navy }}>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="line-clamp-2 text-sm font-semibold leading-5" style={{ color: C.navy }}>
                       {selectedLead.sourcePost.title || signalLabel(selectedLead)}
-                    </p>
-                    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs" style={{ color: C.muted }}>
+                    </h2>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs" style={{ color: C.muted }}>
                       <SourcePlatformBadge source={selectedLead.sourcePost.source} />
                       {selectedLead.sourcePost.community ? <span className="truncate" title={selectedLead.sourcePost.community}>{selectedLead.sourcePost.community}</span> : null}
                       {selectedLead.sourcePost.author ? <span className="truncate" title={selectedLead.sourcePost.author}>by {selectedLead.sourcePost.author}</span> : null}
+                      <span title={exactDateTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}>
+                        · {relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
+                      </span>
+                      {!isScreenedMatch(selectedLead) ? (
+                        <span title="Ranks relevance to your website; it is not a likelihood of purchase.">
+                          · Match {formatScore(selectedLead.verifierScore)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
+                  <span
+                    className="h-fit shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    title={selectedStatus.description}
+                    aria-label={`${selectedStatus.label}. ${selectedStatus.description}`}
+                    style={{ backgroundColor: selectedStatus.background, color: selectedStatus.color }}
+                  >
+                    {selectedStatus.label}
+                  </span>
                 </div>
 
                 <blockquote className="rounded-lg border-l-[3px] px-3 py-2.5 text-xs leading-5" style={{ borderColor: exactEvidence ? C.blue : C.ruleDark, backgroundColor: C.offWhite, color: C.navySoft }}>
                   <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
-                    {exactEvidence ? "Verified source excerpt" : "Source preview"}
+                    {exactEvidence ? "Verified quote" : "Source preview"}
                   </span>
                   <span className="line-clamp-3">{exactEvidence ?? sourceText ?? "No source text is available for this signal."}</span>
                 </blockquote>
@@ -496,36 +487,9 @@ export function ProspectLeadDesk({
                   <ScreenedMatchOutcome lead={selectedLead} />
                 ) : null}
 
-                <div className="grid grid-cols-2 gap-3">
-                  {isScreenedMatch(selectedLead) ? (
-                    <>
-                      <DetailStat label="Source type" value={sourceConversationType(selectedLead.sourcePost.source)} />
-                      <DetailStat
-                        label="Observed"
-                        value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
-                        title={exactDateTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <DetailStat
-                        label="Match strength"
-                        value={formatScore(selectedLead.verifierScore)}
-                        title="Ranks relevance to your website; it is not a likelihood of purchase."
-                      />
-                      <DetailStat
-                        label="Observed"
-                        value={relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
-                        title={exactDateTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
-                      />
-                    </>
-                  )}
-                </div>
-
                 <div className="flex gap-4 border-b" role="tablist" aria-label="Signal details" style={{ borderColor: C.rule }}>
                   <DetailTabButton active={detailTab === "match"} tab="match" onClick={() => setDetailTab("match")} onKeyDown={handleDetailTabKeyDown}>Why it matched</DetailTabButton>
-                  <DetailTabButton active={detailTab === "evidence"} tab="evidence" onClick={() => setDetailTab("evidence")} onKeyDown={handleDetailTabKeyDown}>Evidence</DetailTabButton>
-                  <DetailTabButton active={detailTab === "context"} tab="context" onClick={() => setDetailTab("context")} onKeyDown={handleDetailTabKeyDown}>Source context</DetailTabButton>
+                  <DetailTabButton active={detailTab === "evidence"} tab="evidence" onClick={() => setDetailTab("evidence")} onKeyDown={handleDetailTabKeyDown}>Original post</DetailTabButton>
                 </div>
 
                 <div
@@ -536,64 +500,28 @@ export function ProspectLeadDesk({
                   className="min-h-[142px] rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
                 >
                   {detailTab === "match" ? (
-                    <>
-                      <DetailSection title="Why it matched">
-                        <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
-                        <ul className="mt-3 grid gap-1.5 text-xs leading-5" style={{ color: C.navySoft }}>
-                          <SignalPoint>{signalLabel(selectedLead)}</SignalPoint>
-                          {selectedLead.urgencyReason ? <SignalPoint>{selectedLead.urgencyReason}</SignalPoint> : null}
-                          {selectedLead.purchaseStage ? <SignalPoint>Conversation stage: {selectedLead.purchaseStage.replace(/_/g, " ")}</SignalPoint> : null}
-                        </ul>
-                      </DetailSection>
-                      <div className="grid grid-cols-2 gap-3">
-                        <InsightCard
-                          title="Buying context"
-                          value={selectedLead.purchaseStage?.replace(/_/g, " ") ?? "Early signal"}
-                          detail={selectedLead.competitorMention ? `Also mentioned: ${selectedLead.competitorMention}` : "No company data is assumed from this post."}
-                        />
-                        <InsightCard
-                          title="Source context"
-                          value={sourceDisplayName(selectedLead.sourcePost.source)}
-                          detail={selectedLead.sourcePost.community ?? selectedLead.sourcePost.author ?? "Public conversation"}
-                        />
-                      </div>
+                    <div className="space-y-3">
+                      <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
+                      <ul className="grid gap-1.5 text-xs leading-5" style={{ color: C.navySoft }}>
+                        <SignalPoint>{signalLabel(selectedLead)}</SignalPoint>
+                        {selectedLead.urgencyReason ? <SignalPoint>{selectedLead.urgencyReason}</SignalPoint> : null}
+                        {selectedLead.purchaseStage ? <SignalPoint>Stage: {selectedLead.purchaseStage.replace(/_/g, " ")}</SignalPoint> : null}
+                        {selectedLead.competitorMention ? <SignalPoint>Also mentioned: {selectedLead.competitorMention}</SignalPoint> : null}
+                      </ul>
                       {selectedLead.suggestedReply ? (
                         <section className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-                          <p className="text-xs font-semibold" style={{ color: C.navy }}>Suggested next move</p>
-                          <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
+                          <p className="text-xs font-semibold" style={{ color: C.navy }}>Suggested reply</p>
+                          {/* Preview only; the full editable draft lives in the detailed review. */}
+                          <p className="mt-1 line-clamp-3 text-xs leading-5" style={{ color: C.navySoft }}>{selectedLead.suggestedReply}</p>
                         </section>
                       ) : null}
-                    </>
+                    </div>
                   ) : null}
 
                   {detailTab === "evidence" ? (
-                    <DetailSection title={exactEvidence ? "Exact source excerpt" : "Original source text"}>
-                      {exactEvidence ? (
-                        <blockquote className="border-l-2 pl-3 text-sm leading-6" style={{ borderColor: C.blueLight, color: C.navySoft }}>
-                          “{exactEvidence}”
-                        </blockquote>
-                      ) : (
-                        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: C.navySoft }}>
-                          {sourceText ?? "No source text was retained for this record."}
-                        </p>
-                      )}
-                      <p className="mt-3 text-xs leading-5" style={{ color: C.muted }}>
-                        {exactEvidence
-                          ? "This quote was checked against the original public post."
-                          : "No exact quote was captured. Read the original post before deciding whether to act."}
-                      </p>
-                    </DetailSection>
-                  ) : null}
-
-                  {detailTab === "context" ? (
-                    <DetailSection title="Public-source context">
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border p-3 text-xs" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-                        <SourceContextItem label="Source" value={sourceDisplayName(selectedLead.sourcePost.source)} />
-                        <SourceContextItem label="Author" value={selectedLead.sourcePost.author ?? "Not available"} />
-                        <SourceContextItem label="Community" value={selectedLead.sourcePost.community ?? "Not available"} />
-                        <SourceContextItem label="Signal type" value={selectedLead.signalType ?? "Public conversation"} />
-                      </dl>
-                    </DetailSection>
+                    <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6" style={{ color: C.navySoft }}>
+                      {sourceText ?? "No source text was kept for this record."}
+                    </p>
                   ) : null}
                 </div>
 
@@ -629,7 +557,7 @@ export function ProspectLeadDesk({
                   </div>
 
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Your feedback</p>
+                    <p className="mb-2 text-[11px] font-semibold" style={{ color: C.muted }}>Your feedback</p>
                     <div className="flex flex-wrap gap-2">
                       {FEEDBACK_ACTIONS.map((action) => (
                         <Button
@@ -665,10 +593,7 @@ export function ProspectLeadDesk({
               <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.bluePale, color: C.blue }}>
                 <Sparkles className="size-5" aria-hidden="true" />
               </span>
-              <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>Choose a signal to review</h2>
-              <p className="mt-2 max-w-xs text-sm leading-6" style={{ color: C.muted }}>
-                Evidence and next steps will appear here when a public-source signal is available.
-              </p>
+              <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>Pick a lead to review</h2>
             </div>
           )}
         </aside>
