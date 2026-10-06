@@ -330,7 +330,7 @@ ARCLI_GITHUB_TOKEN=... # read-only public-data token; no private repo access
 ARCLI_LEMMY_SEARCH_URL=https://lemmy.world/api/v4/search
 
 # Tenant X spend budget for activation fallbacks / explicit X-only mode.
-ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT=5
+ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT=1
 ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS=86400
 
 # Historical global-corpus re-match for a newly activated profile. Only rows
@@ -350,16 +350,75 @@ ARCLI_INITIAL_PUBLIC_DISCOVERY_MAX_SECONDS=300
 # a lead-volume entitlement. These are rolling 30-day operational controls.
 ARCLI_DISCOVERY_USAGE_GUARD_ENABLED=true
 ARCLI_DISCOVERY_USAGE_WINDOW_SECONDS=2592000
-ARCLI_PRO_MONTHLY_SOURCE_REQUEST_LIMIT=480
-ARCLI_PRO_MONTHLY_FRESH_EMBEDDING_POST_LIMIT=600
-ARCLI_PRO_MONTHLY_VERIFIER_CALL_LIMIT=300
-ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT=20
+ARCLI_PRO_MONTHLY_SOURCE_REQUEST_LIMIT=2400
+ARCLI_PRO_MONTHLY_FRESH_EMBEDDING_POST_LIMIT=2000
+ARCLI_PRO_MONTHLY_VERIFIER_CALL_LIMIT=1000
+ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT=10
 
 # A verifier-confirmed plausible signal is stored as discovery_candidate until
 # it reaches the higher Ready for review threshold.
 LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.35
 LEAD_VERIFIER_SCORE_THRESHOLD=0.60
 ```
+
+A candidate that passed semantic matching but met a verifier provider failure,
+or was left over when a rematch ran out of verification time, is retried by a
+delayed profile rematch. Cached verdicts are reused, so a retry only pays for
+candidates that still have no decision. Budget and quota skips are not retried.
+
+```text
+ARCLI_VERIFICATION_RETRY_ENABLED=true
+# Attempts per workspace profile per window; delays are 5, 15, then 45 minutes.
+ARCLI_VERIFICATION_RETRY_MAX_ATTEMPTS=3
+ARCLI_VERIFICATION_RETRY_WINDOW_SECONDS=21600
+ARCLI_VERIFICATION_RETRY_BASE_DELAY_SECONDS=300
+```
+
+Look for `verification_retry_scheduled` after an outage and
+`verification_retry_exhausted` when the provider stayed down past the last
+attempt; the affected candidates then wait for the next scheduled scan.
+
+The lead inbox shows matches evaluated since the current website was first
+crawled (`crawl_jobs.created_at`), not since the profile was last updated. A
+scheduled recrawl or a brief save therefore no longer hides existing leads.
+
+### Source coverage and paid fallback
+
+Every profile searches Stack Exchange. A phrase that asks for a tool
+(`recommendation_request`, `category_tool_search`) searches Software
+Recommendations instead of Stack Overflow or Webmasters, which close such
+questions. A profile with no technical or commerce context searches only
+Software Recommendations. This replaces the site for a phrase; it does not add
+a request. Stack Exchange and GitHub reduce each phrase to two terms, so
+phrases that reduce to the same terms share one request within a scan.
+
+The anonymous Stack Exchange allowance is small and shared by every workspace
+on the worker's IP address. Set `ARCLI_STACKEXCHANGE_API_KEY` before the
+number of daily scans grows; watch for `stackexchange_quota_exhausted`.
+
+```text
+ARCLI_STACKEXCHANGE_RECOMMENDATIONS_ENABLED=true
+```
+
+X is the only paid source. It runs after all free sources report too little
+plausible coverage, and never before them. It is inert without
+`X_BEARER_TOKEN`.
+
+```text
+ARCLI_X_INGESTION_ENABLED=true
+# Posts per paid request, independent of the free-source page size.
+ARCLI_INITIAL_PUBLIC_X_FALLBACK_POSTS=25
+# One paid request per workspace per day, ten per month.
+ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT=1
+ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT=10
+```
+
+A recrawl of a site whose text is effectively unchanged reuses the stored
+profile instead of running a new extraction. That also keeps the profile
+embedding, and with it every cached verifier verdict. Look for
+`profile_extraction_cache_hit` on recurring crawls. Set
+`ARCLI_PROFILE_NEAR_DUPLICATE_CACHE_ENABLED=false` to require a byte-identical
+crawl again.
 
 Website profiling is a distinct, two-minute job. Public-source retrieval and
 verification are separate queue stages: they can keep adding results after the

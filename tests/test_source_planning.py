@@ -21,12 +21,31 @@ def profile(**overrides: object) -> ServiceProfile:
     return ServiceProfile.model_validate(values)
 
 
-def test_non_technical_profile_does_not_open_technical_connectors() -> None:
-    assert profile_source_preferences(profile()) == (
-        "hackernews",
-        "bluesky",
-        "x",
+def test_non_technical_profile_searches_only_the_recommendation_site() -> None:
+    plan = profile_community_plan(profile())
+
+    # No GitHub or Lemmy: implementation tickets are noise for this buyer.
+    assert plan.sources == ("hackernews", "bluesky", "stackexchange", "x")
+    assert plan.sources == profile_source_preferences(profile())
+    assert "stackexchange: software recommendations" in plan.community_labels
+    # Stack Overflow has nothing for a finance buyer, so the plan confines
+    # every phrase to the site where people ask which tool to use.
+    assert plan.community_targets == (
+        {
+            "source": "stackexchange",
+            "selector": "softwarerecs",
+            "label": "Stack Exchange: Software Recommendations",
+        },
     )
+
+
+def test_recommendation_site_can_be_switched_off(monkeypatch) -> None:
+    monkeypatch.setenv("ARCLI_STACKEXCHANGE_RECOMMENDATIONS_ENABLED", "false")
+
+    plan = profile_community_plan(profile())
+
+    assert plan.sources == ("hackernews", "bluesky", "x")
+    assert plan.community_targets == ()
 
 
 def test_open_source_technical_profile_uses_relevant_technical_connectors() -> None:
@@ -59,3 +78,6 @@ def test_community_plan_exposes_the_product_relevant_discussion_groups() -> None
     assert plan.sources == profile_source_preferences(community_profile)
     assert "github: public repository issue discussions" in plan.community_labels
     assert "stackexchange: technical Q&A" in plan.community_labels
+    # A technical profile keeps the general sites; routing by query type, not
+    # a target, sends its tool requests to the recommendation site.
+    assert plan.community_targets == ()

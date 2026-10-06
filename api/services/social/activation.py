@@ -190,8 +190,10 @@ def enqueue_initial_public_source_ingestion(
     x_jobs = 0
     additional_source_jobs = 0
     feedback_ordered_sources: tuple[str, ...] | None = None
+    default_community_targets: tuple[dict[str, str], ...] = ()
     if allowed_sources is None:
         community_plan = profile_community_plan(profile)
+        default_community_targets = community_plan.community_targets
         website_sources = community_plan.sources
         logger.info(
             "website_community_plan_selected tenant_id=%s service_profile_id=%s sources=%s communities=%s",
@@ -312,7 +314,7 @@ def enqueue_initial_public_source_ingestion(
             "selector": str(target.get("selector") or "").strip().casefold(),
             "label": str(target.get("label") or "").strip()[:250],
         }
-        for target in (community_targets or ())
+        for target in (community_targets or default_community_targets)
         if isinstance(target, dict)
         and str(target.get("source") or "").strip()
         and str(target.get("selector") or "").strip()
@@ -441,7 +443,17 @@ def enqueue_initial_public_source_ingestion(
     elif x_enabled:
         # Preserve an explicitly X-only deployment, but retain the same spend
         # discipline as the normal fallback: one combined, one-page search.
-        if _claim_initial_x_fallback_budget(tenant_id):
+        from api.services.social.usage_meter import claim_discovery_usage
+
+        if not _claim_initial_x_fallback_budget(tenant_id):
+            x_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
+        # The fallback path claims the monthly paid budget; this direct path
+        # must too, or an X-only watchlist could outspend it.
+        elif not claim_discovery_usage(
+            tenant_id, "paid_source_request", discovery_run_id=discovery_run_id
+        ).allowed:
+            x_skip_reason = "monthly_cost_budget_reached"
+        else:
             # Keep tenant/profile context even when the optional telemetry
             # migration has not been deployed. The X actor uses that context
             # for ordinary job accounting; telemetry is only an additive
@@ -460,8 +472,6 @@ def enqueue_initial_public_source_ingestion(
                 **x_job_kwargs,
             )
             x_jobs = 1
-        else:
-            x_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
 
     if discovery_run_id and hn_jobs == 0 and additional_source_jobs == 0 and x_jobs == 0:
         try:

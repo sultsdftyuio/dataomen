@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from api.services.social.stackexchange_routing import (
+    recommendation_only_target,
+    stackexchange_recommendations_enabled,
+)
 from api.services.verifier import ServiceProfile
 
 
@@ -71,6 +75,9 @@ class ProductCommunityPlan:
 
     sources: tuple[str, ...]
     community_labels: tuple[str, ...]
+    # Default retrieval boundaries for a source that should search one place
+    # rather than its general default. A customer's own targets replace these.
+    community_targets: tuple[dict[str, str], ...] = ()
 
 
 def _profile_context(profile: ServiceProfile) -> str:
@@ -99,6 +106,9 @@ def profile_community_plan(profile: ServiceProfile) -> ProductCommunityPlan:
     selected only when the product itself indicates that context. This keeps a
     finance, design, or operations profile from spending a first pass on noisy
     implementation tickets while preserving legitimate technical demand.
+
+    Every other profile still searches Stack Exchange, but only its Software
+    Recommendations site, where each question is someone choosing a tool.
     """
 
     context = _profile_context(profile)
@@ -112,8 +122,12 @@ def profile_community_plan(profile: ServiceProfile) -> ProductCommunityPlan:
     # in the dashboard plan and it never runs in a focused Watchlist unless a
     # customer explicitly selects it.
     selected = {"hackernews", "bluesky", "x"}
+    recommendations_only = False
     if is_technical or is_commerce:
         selected.add("stackexchange")
+    elif stackexchange_recommendations_enabled():
+        selected.add("stackexchange")
+        recommendations_only = True
     if is_open_source:
         selected.add("github")
     if is_technical or is_open_source:
@@ -128,7 +142,9 @@ def profile_community_plan(profile: ServiceProfile) -> ProductCommunityPlan:
     ]
     if "stackexchange" in selected:
         labels.append(
-            "stackexchange: webmasters"
+            "stackexchange: software recommendations"
+            if recommendations_only
+            else "stackexchange: webmasters"
             if is_commerce and not is_technical
             else "stackexchange: technical Q&A"
         )
@@ -136,7 +152,11 @@ def profile_community_plan(profile: ServiceProfile) -> ProductCommunityPlan:
         labels.append("github: public repository issue discussions")
     if "lemmy" in selected:
         labels.append("lemmy: technology communities")
-    return ProductCommunityPlan(sources=sources, community_labels=tuple(labels))
+    return ProductCommunityPlan(
+        sources=sources,
+        community_labels=tuple(labels),
+        community_targets=(recommendation_only_target(),) if recommendations_only else (),
+    )
 
 
 def profile_source_preferences(profile: ServiceProfile) -> tuple[str, ...]:

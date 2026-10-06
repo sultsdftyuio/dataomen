@@ -45,6 +45,9 @@ export type CrawlJobView = {
   errorType: string | null;
   errorMessage: string | null;
   lastHeartbeatAt: string | null;
+  // The ledger keeps one row per workspace website, so this is when the
+  // current website was first crawled; recrawls only advance updatedAt.
+  createdAt: string | null;
   updatedAt: string | null;
 };
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import time
+from typing import Callable
 
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
 
 
 def tenant_has_active_paid_access(conn: Connection, tenant_id: str) -> bool:
@@ -83,3 +85,31 @@ def tenant_may_run_lead_discovery(conn: Connection, tenant_id: str) -> bool:
     return tenant_has_active_paid_access(conn, tenant_id) or tenant_has_unused_free_first_scan(
         conn, tenant_id
     )
+
+
+def read_lead_discovery_entitlement(
+    engine: Engine,
+    tenant_id: str,
+    *,
+    attempts: int = 3,
+    backoff_seconds: float = 0.5,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    """Read the discovery entitlement, retrying a transient database failure.
+
+    Callers that fail closed on an unreadable entitlement cannot tell a Free
+    workspace from a dropped connection. A short retry keeps one network blip
+    from being recorded as "not entitled". The final failure still raises, so
+    each caller keeps its own fail-closed or retry-the-job decision.
+    """
+
+    attempt = 1
+    while True:
+        try:
+            with engine.begin() as conn:
+                return tenant_may_run_lead_discovery(conn, tenant_id)
+        except Exception:
+            if attempt >= attempts:
+                raise
+            sleep(backoff_seconds * attempt)
+            attempt += 1

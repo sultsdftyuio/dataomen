@@ -435,7 +435,17 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
         self.assertEqual(
             queued_call.kwargs["enabled_sources"],
-            ["hackernews", "bluesky"],
+            ["hackernews", "bluesky", "stackexchange"],
+        )
+        self.assertEqual(
+            queued_call.kwargs["community_targets"],
+            [
+                {
+                    "source": "stackexchange",
+                    "selector": "softwarerecs",
+                    "label": "Stack Exchange: Software Recommendations",
+                }
+            ],
         )
         self.assertTrue(queued_call.kwargs["fallback_to_x"])
         self.assertTrue(queued_call.kwargs["x_fallback_group_id"])

@@ -38,6 +38,7 @@ function crawl(status: string): CrawlJobView {
     errorType: null,
     errorMessage: "timeout fetching homepage",
     lastHeartbeatAt: null,
+    createdAt: null,
     updatedAt: null,
   };
 }

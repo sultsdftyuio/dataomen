@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
+from api.services.crawl_fingerprint import is_near_duplicate_crawl, markdown_fingerprint
 from api.services.cost_controls import (
     env_int,
     provider_concurrency_limiter,
@@ -1252,6 +1253,12 @@ def _profile_document(
         )
     if crawl_markdown_sha256:
         document["crawl_markdown_sha256"] = crawl_markdown_sha256
+    # Carried from the crawl that produced this extraction. A near-duplicate
+    # cache hit keeps the original value, so slow drift across many recrawls
+    # eventually exceeds the match distance and triggers a real re-extraction.
+    crawl_markdown_fingerprint = _string_value(profile.get("crawl_markdown_fingerprint"))
+    if crawl_markdown_fingerprint:
+        document["crawl_markdown_fingerprint"] = crawl_markdown_fingerprint
     crawl_quality = _jsonable_crawl_quality(profile.get("crawl_quality"))
     if crawl_quality:
         document["crawl_quality"] = crawl_quality
@@ -1512,6 +1519,7 @@ def _cached_service_profile_for_markdown(
     website_url: str,
     crawl_markdown_sha256: str,
     columns: dict[str, dict[str, str]],
+    crawl_markdown_fingerprint: str | None = None,
 ) -> dict[str, Any] | None:
     document_columns = [
         column_name
@@ -1556,7 +1564,14 @@ def _cached_service_profile_for_markdown(
         for column_name in document_columns:
             document = _as_dict(row.get(column_name))
             if (
-                document.get("crawl_markdown_sha256") == crawl_markdown_sha256
+                (
+                    document.get("crawl_markdown_sha256") == crawl_markdown_sha256
+                    # Same site with only day-to-day churn (see crawl_fingerprint).
+                    or is_near_duplicate_crawl(
+                        document.get("crawl_markdown_fingerprint"),
+                        crawl_markdown_fingerprint,
+                    )
+                )
                 and document.get("website_url") == website_url
                 and document.get("extraction_status") == "completed"
                 and document.get("profile_extraction_cache_version")
@@ -3270,6 +3285,7 @@ def process_crawl_job(
             )
 
         crawl_markdown_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+        crawl_markdown_fingerprint = markdown_fingerprint(markdown)
         with engine.begin() as conn:
             cached_profile = _cached_service_profile_for_markdown(
                 conn,
@@ -3277,6 +3293,7 @@ def process_crawl_job(
                 website_url=normalized_url,
                 crawl_markdown_sha256=crawl_markdown_sha256,
                 columns=_service_profile_columns(conn),
+                crawl_markdown_fingerprint=crawl_markdown_fingerprint,
             )
 
         extraction_timeout_seconds = min(
@@ -3306,6 +3323,10 @@ def process_crawl_job(
         # workspace. Carry the deterministic crawl evidence forward so a weak
         # website read can be diagnosed without exposing its source Markdown.
         profile["crawl_quality"] = crawl_quality
+        # A fresh extraction, or a profile cached before fingerprints existed,
+        # records this crawl; a near-duplicate hit keeps its original value.
+        if crawl_markdown_fingerprint and not profile.get("crawl_markdown_fingerprint"):
+            profile["crawl_markdown_fingerprint"] = crawl_markdown_fingerprint
 
         phase = "persisting_profile"
         stale_after_crawl = False
@@ -3375,10 +3396,12 @@ def process_crawl_job(
         )
 
         try:
-            from api.services.tenant_entitlements import tenant_may_run_lead_discovery
+            from api.services.tenant_entitlements import read_lead_discovery_entitlement
 
-            with engine.begin() as conn:
-                lead_discovery_entitled = tenant_may_run_lead_discovery(conn, tenant_id)
+            # Retried because the fail-closed branch below is silent: one
+            # dropped connection would otherwise skip a paying workspace's
+            # discovery until its next scheduled recrawl.
+            lead_discovery_entitled = read_lead_discovery_entitlement(engine, tenant_id)
         except Exception as entitlement_exc:
             # Do not turn a successfully persisted website profile into a
             # failed crawl, and fail closed before any paid provider work.

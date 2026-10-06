@@ -23,7 +23,13 @@ test("a non-technical product starts with bounded public conversation sources", 
   assert.deepEqual(plan.sources.map((source) => source.source), [
     "hackernews",
     "bluesky",
+    "stackexchange",
   ]);
+  // No technical context: Stack Exchange means the recommendation site only.
+  assert.equal(
+    plan.sources[2]?.community,
+    "Software Recommendations: people asking which tool to use",
+  );
   assert.deepEqual(plan.sources[0]?.queryTerms, [
     "chasing approvals in spreadsheets",
     "accounts payable automation tool",
@@ -52,5 +58,9 @@ test("technical open-source context adds only the matching technical communities
     "lemmy",
   ]);
   assert.equal(plan.sources.find((source) => source.source === "github")?.label, "GitHub");
+  assert.equal(
+    plan.sources.find((source) => source.source === "stackexchange")?.community,
+    "Problem-solving and architecture discussions in relevant Q&A sites",
+  );
   assert.ok(plan.suggestedPlaces.some((place) => place.startsWith("Stack Exchange:")));
 });

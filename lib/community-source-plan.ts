@@ -108,6 +108,9 @@ const SOURCE_DETAILS: Record<
   },
 };
 
+const RECOMMENDATION_SITE_COMMUNITY =
+  "Software Recommendations: people asking which tool to use";
+
 const QUERY_TYPES_BY_SOURCE: Record<CommunitySource, DiscoveryQuery["query_type"][]> = {
   bluesky: ["recommendation_request", "buyer_pain", "urgent_failure"],
   hackernews: [
@@ -221,7 +224,10 @@ function selectedSources(
   const isOpenSource = hasContextTerm(allText, tokens, OPEN_SOURCE_TERMS);
   const isCommerce = hasContextTerm(allText, tokens, COMMERCE_TERMS);
 
-  if (isTechnical || isCommerce) selected.push("stackexchange");
+  // Every profile searches Stack Exchange. Without technical or commerce
+  // context it is confined to Software Recommendations (see
+  // api/services/social/source_planning.py, which this mirrors).
+  selected.push("stackexchange");
   if (isOpenSource) selected.push("github");
   if (isTechnical || isOpenSource) selected.push("lemmy");
 
@@ -263,6 +269,9 @@ function rationaleForSource(
   isCommerce: boolean,
 ) {
   if (source === "stackexchange") {
+    if (!isTechnical && !isCommerce) {
+      return "Every question on Software Recommendations is someone choosing a tool."
+    }
     return isCommerce
       ? "Commerce and search-visibility wording points to relevant webmaster Q&A."
       : "The product language includes technical implementation or architecture work."
@@ -310,6 +319,9 @@ export function deriveCommunitySourcePlan(
   const sources = selectedSources(allText, tokens).map((source) => ({
     source,
     ...SOURCE_DETAILS[source],
+    ...(source === "stackexchange" && !isTechnical && !isCommerce
+      ? { community: RECOMMENDATION_SITE_COMMUNITY }
+      : {}),
     rationale: rationaleForSource(source, isTechnical, isCommerce),
     queryTerms: queryTermsForSource(source, queries, fallbackTerms),
   }));

@@ -66,3 +66,55 @@ def test_recurring_recrawls_stay_paid_only():
 
     assert "tenant_has_active_paid_access" in source
     assert "tenant_may_run_lead_discovery" not in source
+
+
+class _FlakyEngine:
+    """Fails the first ``failures`` connection attempts, then succeeds."""
+
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+        self.attempts = 0
+
+    def begin(self):
+        from contextlib import nullcontext
+
+        self.attempts += 1
+        if self.attempts <= self.failures:
+            raise ConnectionError("database connection dropped")
+        return nullcontext(object())
+
+
+def test_entitlement_read_survives_a_transient_database_failure(monkeypatch):
+    monkeypatch.setattr(entitlements, "tenant_may_run_lead_discovery", lambda *_: True)
+    engine = _FlakyEngine(failures=2)
+    waits: list[float] = []
+
+    assert entitlements.read_lead_discovery_entitlement(
+        engine, "tenant-1", sleep=waits.append
+    )
+    assert engine.attempts == 3
+    assert waits == [0.5, 1.0]
+
+
+def test_entitlement_read_still_raises_when_the_database_stays_down(monkeypatch):
+    monkeypatch.setattr(entitlements, "tenant_may_run_lead_discovery", lambda *_: True)
+    engine = _FlakyEngine(failures=10)
+
+    try:
+        entitlements.read_lead_discovery_entitlement(
+            engine, "tenant-1", sleep=lambda _seconds: None
+        )
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a persistent failure must reach the caller")
+    assert engine.attempts == 3
+
+
+def test_a_free_workspace_is_not_retried(monkeypatch):
+    # "Not entitled" is an answer, not a failure.
+    monkeypatch.setattr(entitlements, "tenant_may_run_lead_discovery", lambda *_: False)
+    engine = _FlakyEngine(failures=0)
+
+    assert not entitlements.read_lead_discovery_entitlement(engine, "tenant-1")
+    assert engine.attempts == 1

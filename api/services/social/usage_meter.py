@@ -31,10 +31,12 @@ _DEFAULT_LIMITS: dict[DiscoveryUsageMetric, int] = {
     # These limits are deliberately expressed in work, not lead volume. They
     # are deployment settings and should be recalibrated from the per-run
     # telemetry after the first operating month.
-    "source_request": 480,
-    "fresh_embedding_post": 600,
-    "verifier_call": 300,
-    "paid_source_request": 20,
+    # Sized for a scan after every 24-48h recrawl across all five free
+    # sources (about 75 claimed requests each); 480 lasted roughly a week.
+    "source_request": 2400,
+    "fresh_embedding_post": 2000,
+    "verifier_call": 1000,
+    "paid_source_request": 10,
 }
 _WINDOW_SECONDS = 30 * 24 * 60 * 60
 

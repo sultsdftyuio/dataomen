@@ -350,9 +350,21 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.additional_source_jobs, 1)
         self.assertEqual(plan.x_jobs, 1)
+        # A non-technical profile gains Stack Exchange, confined to the
+        # recommendation site instead of the general technical ones.
         self.assertEqual(
             fast_send.call_args.kwargs["enabled_sources"],
-            ["hackernews", "bluesky"],
+            ["hackernews", "bluesky", "stackexchange"],
+        )
+        self.assertEqual(
+            fast_send.call_args.kwargs["community_targets"],
+            [
+                {
+                    "source": "stackexchange",
+                    "selector": "softwarerecs",
+                    "label": "Stack Exchange: Software Recommendations",
+                }
+            ],
         )
         self.assertTrue(fast_send.call_args.kwargs["fallback_to_x"])
         x_send.assert_not_called()

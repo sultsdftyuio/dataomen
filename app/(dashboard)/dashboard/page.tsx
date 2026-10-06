@@ -16,6 +16,7 @@ import {
 } from "./data";
 import { activateSuggestedBuyerGroup } from "./actions";
 import { attachHandledState } from "./lead-reviews";
+import { leadVisibilitySince } from "./lead-visibility";
 import { fetchFreeScanPreview } from "./free-scan-preview";
 import FreeProspectPreview from "./free-prospect-preview";
 import ProspectDashboardClient from "./prospect-dashboard-client";
@@ -70,6 +71,10 @@ export default async function DashboardPage() {
         threshold,
       )
     : null;
+  const leadsVisibleSince = leadVisibilitySince({
+    websiteFirstCrawledAt: crawlJob?.createdAt,
+    profileUpdatedAt: serviceProfile.updatedAt,
+  });
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
   const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
   const crawlFailed = crawlStatus === "failed" || crawlStatus === "dead_lettered";
@@ -122,7 +127,7 @@ export default async function DashboardPage() {
       supabase,
       tenantId,
       serviceProfile.id,
-      serviceProfile.updatedAt,
+      leadsVisibleSince,
     );
     return (
       <FreeProspectPreview
@@ -138,19 +143,19 @@ export default async function DashboardPage() {
       supabase,
       tenantId,
       serviceProfile.id,
-      serviceProfile.updatedAt,
+      leadsVisibleSince,
     ),
     fetchDiscoveryCandidates(
       supabase,
       tenantId,
       serviceProfile.id,
-      serviceProfile.updatedAt,
+      leadsVisibleSince,
     ),
     fetchScreenedMatches(
       supabase,
       tenantId,
       serviceProfile.id,
-      serviceProfile.updatedAt,
+      leadsVisibleSince,
     ),
   ]);
   // Screened records are audit-only and never marked done, so skip them.

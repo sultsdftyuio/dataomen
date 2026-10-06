@@ -12,6 +12,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
+from api.services.social.source_fetch_reuse import (
+    SourceFetchReuse,
+    reuses_provider_responses,
+)
+
 
 @dataclass(frozen=True)
 class FastCheckQueryOutcome:
@@ -179,6 +184,11 @@ def _source_result_for_additional_source(
     outcomes: list[FastCheckQueryOutcome] = []
     refs: dict[tuple[str, str], Any] = {}
     selectors = tuple(dict.fromkeys(selector for selector in community_selectors if selector)) or (None,)
+    # Only passed for sources whose phrases can collapse into one search, so
+    # the other sources keep their existing call signature.
+    reuse_kwargs: dict[str, Any] = (
+        {"fetch_reuse": SourceFetchReuse()} if reuses_provider_responses(source) else {}
+    )
     for community_selector in selectors:
         cache_scope = additional_public_source_cache_scope(
             source,
@@ -220,6 +230,7 @@ def _source_result_for_additional_source(
                     posts_per_query=posts_per_query,
                     query_type=query["query_type"],
                     community_selector=community_selector,
+                    **reuse_kwargs,
                 )
             except Exception as exc:
                 response = getattr(exc, "response", None)

@@ -42,6 +42,13 @@ from api.services.matching import (
     PostEmbedding,
     find_candidate_matches,
 )
+from api.services.social.verification_retry import (
+    TRANSIENT_VERIFIER_SKIP_REASON,
+    VERIFICATION_DEADLINE_REASON,
+    is_transient_verifier_skip,
+    schedule_verification_retries,
+    schedule_verification_retry,
+)
 from api.services.social.feedback_calibration import (
     feedback_ranking_boost,
     load_feedback_calibration,
@@ -650,6 +657,7 @@ def rematch_existing_public_source_posts_for_profile(
     discovery_candidate_count = 0
     verification_budget_seconds = _public_source_rematch_verification_budget_seconds()
     verification_deadline = _monotonic() + verification_budget_seconds
+    verification_retry_reason: str | None = None
     try:
         for candidate_index, candidate in enumerate(candidates):
             post = posts_by_database_id.get(candidate.post_id)
@@ -696,6 +704,7 @@ def rematch_existing_public_source_posts_for_profile(
                         verification_budget_seconds,
                         "verification_deadline_reached",
                     )
+                    verification_retry_reason = VERIFICATION_DEADLINE_REASON
                     break
                 verification = verify_candidate_safely(
                     verifier,
@@ -722,6 +731,8 @@ def rematch_existing_public_source_posts_for_profile(
                     candidate.post_id,
                     "verifier_not_executed",
                 )
+                if is_transient_verifier_skip(verification):
+                    verification_retry_reason = TRANSIENT_VERIFIER_SKIP_REASON
                 continue
 
             match_status = _lead_match_status(verification)
@@ -771,6 +782,15 @@ def rematch_existing_public_source_posts_for_profile(
             )
     finally:
         verifier.close()
+
+    if verification_retry_reason:
+        # Plausible candidates were left without a verdict. Without this the
+        # only later rematch is the next scheduled scan, a day or two away.
+        schedule_verification_retry(
+            normalized_tenant_id,
+            normalized_profile_id,
+            reason=verification_retry_reason,
+        )
 
     result = {
         "posts": len(source_rows),
@@ -886,6 +906,7 @@ def process_public_source_post_embedding(
     verifier: VerifierService | None = None
     embedded_count = 0
     candidate_count = 0
+    verification_retry_profiles: set[tuple[str, str]] = set()
     ready_for_review_count = 0
     discovery_candidate_count = 0
     try:
@@ -1070,6 +1091,10 @@ def process_public_source_post_embedding(
                         database_post_id,
                         "verifier_not_executed",
                     )
+                    if is_transient_verifier_skip(verification):
+                        verification_retry_profiles.add(
+                            (str(tenant_id), str(service_profile_id))
+                        )
                     continue
 
                 match_status = _lead_match_status(verification)
@@ -1145,6 +1170,12 @@ def process_public_source_post_embedding(
             embedding_service.close()
         if verifier is not None:
             verifier.close()
+
+    if verification_retry_profiles:
+        schedule_verification_retries(
+            verification_retry_profiles,
+            reason=TRANSIENT_VERIFIER_SKIP_REASON,
+        )
 
     logger.info(
         "public_source_post_matching_completed source=%s source_post_id=%s posts=%s embedded=%s profiles=%s candidates=%s ready_for_review=%s discovery_candidates=%s",

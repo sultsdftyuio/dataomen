@@ -494,7 +494,7 @@ export async function fetchLatestCrawlJob(
   const result = await client
     .from("crawl_jobs")
     .select(
-      "id,status,phase,failure_reason,error_type,error_message,last_heartbeat_at,updated_at",
+      "id,status,phase,failure_reason,error_type,error_message,last_heartbeat_at,created_at,updated_at",
     )
     .eq("tenant_id", tenantId)
     .in("website_url", normalizedCandidates)
@@ -523,6 +523,7 @@ export async function fetchLatestCrawlJob(
     errorMessage: readString([row], ["error_message", "errorMessage"]) ?? null,
     lastHeartbeatAt:
       readString([row], ["last_heartbeat_at", "lastHeartbeatAt"]) ?? null,
+    createdAt: readString([row], ["created_at", "createdAt"]) ?? null,
     updatedAt: readString([row], ["updated_at", "updatedAt"]) ?? null,
   };
 }
@@ -712,6 +713,14 @@ export async function fetchSourceFeedbackInsights(
   );
 }
 
+// "Done" state lives in a separate table and is attached after these reads,
+// so handled leads still occupy slots in the ranked window. The window must
+// stay comfortably larger than what one person clears between retention
+// purges, or the highest-scored handled leads would starve new ones out of
+// the inbox. Screened records are audit-only and are never marked done.
+const INBOX_QUERY_WINDOW = 60;
+const SCREENED_QUERY_WINDOW = 30;
+
 async function runLeadQuery(
   supabase: SupabaseClient<Database>,
   tenantId: string,
@@ -732,8 +741,8 @@ async function runLeadQuery(
 
   // A profile that was historically overwritten during a website replacement
   // can share an ID with legacy matches. Only show matches evaluated since the
-  // active profile was updated, so a previous website's conversations never
-  // appear as results for the current one.
+  // current website was first crawled (see lead-visibility.ts), so a previous
+  // website's conversations never appear as results for the current one.
   if (activeSince) {
     query = query.gte("updated_at", activeSince);
   }
@@ -746,7 +755,7 @@ async function runLeadQuery(
 
   // A customer can choose to review a broader set of public opportunities;
   // the worker's cost is already paid, and the UI still ranks strongest first.
-  return query.limit(20);
+  return query.limit(INBOX_QUERY_WINDOW);
 }
 
 export async function fetchQualifiedLeads(
@@ -840,7 +849,9 @@ async function runReviewOnlyMatchQuery(
       .order("created_at", { ascending: false });
   }
 
-  return query.limit(30);
+  return query.limit(
+    matchStatus === "rejected" ? SCREENED_QUERY_WINDOW : INBOX_QUERY_WINDOW,
+  );
 }
 
 /**

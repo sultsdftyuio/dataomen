@@ -21,6 +21,12 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
+from api.services.social.source_fetch_reuse import SourceFetchReuse
+from api.services.social.stackexchange_routing import (
+    RECOMMENDATION_SITE,
+    routes_to_recommendation_site,
+)
+from api.services.social.x_cost import x_fallback_posts_per_request
 from api.services.client_lifecycle import managed_network_client
 from api.services.embeddings import (
     EmbeddingService,
@@ -84,7 +90,9 @@ def ingest_x_posts(
     )
     fetch_kwargs: dict[str, Any] = {
         "since_timestamp": since_timestamp,
-        "limit": posts_per_query or DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+        # Every X path reaches this function, so the paid page size is capped
+        # here rather than at each caller.
+        "limit": x_fallback_posts_per_request(posts_per_query),
     }
     if max_pages is not None:
         fetch_kwargs["max_pages"] = max_pages
@@ -206,17 +214,21 @@ def _query_tokens(query: str) -> set[str]:
     return set(re.findall(r"[a-z0-9][a-z0-9_-]*", query.casefold()))
 
 
-def _stackexchange_site_for_query(query: str) -> str:
+def _stackexchange_site_for_query(query: str, query_type: str | None = None) -> str:
     """Route a query to the Stack Exchange community most likely to contain it.
 
-    An explicit deployment setting always wins. In its absence, marketplace and
-    seller language belongs on Webmasters rather than Stack Overflow. The
-    former E-commerce target is not a live Stack Exchange API site and returns
-    a permanent HTTP 400; technical language keeps Stack Overflow.
+    An explicit deployment setting always wins. In its absence, a request for
+    a tool goes to Software Recommendations, the only site that accepts such
+    questions. Marketplace and seller language belongs on Webmasters rather
+    than Stack Overflow. The former E-commerce target is not a live Stack
+    Exchange API site and returns a permanent HTTP 400; technical language
+    keeps Stack Overflow.
     """
     configured = normalise_text(os.getenv("ARCLI_STACKEXCHANGE_SITE", "")).lower()
     if configured:
         return configured
+    if routes_to_recommendation_site(query_type):
+        return RECOMMENDATION_SITE
     tokens = _query_tokens(query)
     if tokens.intersection(_COMMERCE_DISCOVERY_QUERY_TOKENS):
         return "webmasters"
@@ -302,6 +314,7 @@ def _additional_public_source_connector(
     source: str,
     *,
     query: str | None = None,
+    query_type: str | None = None,
     community_selector: str | None = None,
 ) -> Any:
     """Instantiate an adapter lazily so unrelated provider dependencies stay cold."""
@@ -313,7 +326,8 @@ def _additional_public_source_connector(
         from api.services.integrations.stackexchange_connector import StackExchangeConnector
 
         return StackExchangeConnector(
-            site=community_selector or _stackexchange_site_for_query(query or ""),
+            site=community_selector
+            or _stackexchange_site_for_query(query or "", query_type),
         )
     if source == "github":
         from api.services.integrations.github_connector import GitHubIssuesConnector
@@ -350,6 +364,7 @@ def ingest_additional_public_source_posts(
     *,
     query_type: str | None = None,
     community_selector: str | None = None,
+    fetch_reuse: SourceFetchReuse | None = None,
 ) -> AdditionalPublicSourceIngestionResult:
     """Fetch one free/low-cost source, retain credible buyer signals, and return refs.
 
@@ -374,16 +389,29 @@ def ingest_additional_public_source_posts(
     connector = _additional_public_source_connector(
         normalized_source,
         query=normalized_query,
+        query_type=query_type,
         community_selector=community_selector,
     )
-    posts: list[PublicSourcePost] = asyncio.run(
-        connector.fetch_recent_posts(
-            normalized_query,
-            since_timestamp=since_timestamp,
-            limit=posts_per_query or DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
-            max_pages=_additional_public_source_max_pages(),
-        )
+    reuse_key = (
+        fetch_reuse.search_key(normalized_source, connector, normalized_query)
+        if fetch_reuse is not None
+        else None
     )
+    reused_posts = fetch_reuse.get(reuse_key) if fetch_reuse is not None else None
+    if reused_posts is not None:
+        # An earlier phrase in this scan already sent this exact search.
+        posts: list[PublicSourcePost] = reused_posts
+    else:
+        posts = asyncio.run(
+            connector.fetch_recent_posts(
+                normalized_query,
+                since_timestamp=since_timestamp,
+                limit=posts_per_query or DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+                max_pages=_additional_public_source_max_pages(),
+            )
+        )
+        if fetch_reuse is not None:
+            fetch_reuse.put(reuse_key, posts)
     normalized_selector = normalise_text(community_selector).casefold()
     if normalized_selector:
         posts = [

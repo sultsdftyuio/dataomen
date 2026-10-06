@@ -312,7 +312,7 @@ workers:
       - key: ARCLI_INITIAL_PUBLIC_EMBEDDING_POSTS_PER_COMMUNITY_LIMIT
         scope: RUN_TIME
         type: general
-        value: "8"
+        value: "12"
       # Shared Redis leases prevent an activation burst from executing several
       # memory-heavy embedding/verifier batches at once.  Deferred messages
       # stay durable in Redis rather than occupying worker prefetch memory.
@@ -400,10 +400,31 @@ workers:
         scope: RUN_TIME
         type: general
         value: "true"
+      # X is the only paid source and runs only as a last resort: after every
+      # free source has reported and together they lack plausible coverage.
+      # It stays inert until X_BEARER_TOKEN is added as a secret in
+      # DigitalOcean; do not put a placeholder token here, because a present
+      # but invalid token would spend the request budgets below on failures.
       - key: ARCLI_X_INGESTION_ENABLED
         scope: RUN_TIME
         type: general
-        value: "false"
+        value: "true"
+      # Posts returned by one paid request. Free sources fetch 50 per query;
+      # X keeps its own smaller page so that setting never raises X spend.
+      - key: ARCLI_INITIAL_PUBLIC_X_FALLBACK_POSTS
+        scope: RUN_TIME
+        type: general
+        value: "25"
+      # At most one paid request per workspace per day. With the monthly
+      # limit of 10 below, the ceiling is 250 X posts per workspace per month.
+      - key: ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "1"
+      - key: ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "86400"
       - key: ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT
         scope: RUN_TIME
         type: general
@@ -419,24 +440,34 @@ workers:
         # first-pass window so low-volume buyer language is not mistaken for
         # a zero-demand market; the embedding caps below still bound cost.
         value: "2160"
+      # Every provider returns at least 50 results in one page, so 50 costs
+      # the same number of API requests as the earlier 15. Above 50, Lemmy
+      # needs a second page per query.
       - key: ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY
         scope: RUN_TIME
         type: general
-        value: "15"
+        value: "50"
       - key: ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES
         scope: RUN_TIME
         type: general
         value: "1"
       # Bound the fresh posts an activation can send to OpenAI. Excluded posts
       # remain in source storage, while the run telemetry records the limit.
+      # Sized for this worker, not for the sources: one 1 vCPU / 2 GB
+      # instance runs two 8-post batches at a time, and each post can wait
+      # on a verifier call. About 13 batches keeps one workspace's scan
+      # inside the five-minute progress window; raise this only with a second
+      # worker instance or after measuring batch duration. The per-source
+      # value lets a two-source profile (Hacker News and Bluesky only) use
+      # the whole budget; at 20 per source it could never exceed 40.
       - key: ARCLI_INITIAL_PUBLIC_EMBEDDING_POST_LIMIT
         scope: RUN_TIME
         type: general
-        value: "60"
+        value: "100"
       - key: ARCLI_INITIAL_PUBLIC_EMBEDDING_POSTS_PER_SOURCE_LIMIT
         scope: RUN_TIME
         type: general
-        value: "20"
+        value: "50"
       # Pro is bounded by the work that creates variable cost, never by a
       # promise of lead volume. These rolling-30-day limits are enforced by
       # the Redis tenant quota guard and recorded in the discovery report.
@@ -448,22 +479,34 @@ workers:
         scope: RUN_TIME
         type: general
         value: "2592000"
+      # Free-provider searches cost nothing; this only stops a runaway loop.
+      # One scan claims queries x sources (up to roughly 75 for a technical
+      # profile with all five sources), and a scan follows every 24-48h
+      # recrawl. The earlier 480 was spent after about eight scans, so
+      # multi-source workspaces went dark for the rest of each month. Provider
+      # rate limits are enforced separately by the per-source pacing settings.
       - key: ARCLI_PRO_MONTHLY_SOURCE_REQUEST_LIMIT
         scope: RUN_TIME
         type: general
-        value: "480"
+        value: "2400"
+      # Raised with the per-scan caps so a deeper first scan does not spend
+      # the month's budget and leave later scans unverified. The verifier
+      # limit is the one setting here that bounds real model spend.
+      # Each embedded post keeps its vector as JSON in source_posts for the
+      # 30-day retention window (roughly 20 KB a post), so this also bounds
+      # database growth per workspace.
       - key: ARCLI_PRO_MONTHLY_FRESH_EMBEDDING_POST_LIMIT
         scope: RUN_TIME
         type: general
-        value: "600"
+        value: "2000"
       - key: ARCLI_PRO_MONTHLY_VERIFIER_CALL_LIMIT
         scope: RUN_TIME
         type: general
-        value: "300"
+        value: "1000"
       - key: ARCLI_PRO_MONTHLY_PAID_SOURCE_REQUEST_LIMIT
         scope: RUN_TIME
         type: general
-        value: "20"
+        value: "10"
       # The discovery worker owns raw -> plausible -> review candidate state.
       # It is explicit here so a new deployment cannot silently omit the
       # candidate-first funnel after its database contract is installed.
@@ -483,6 +526,18 @@ workers:
         scope: RUN_TIME
         type: general
         value: "false"
+      # The shared corpus grows with the deeper per-query fetch, so a profile
+      # rematch reads further back and verifies more of its best candidates.
+      # Candidates are verified one after another inside a 120-second budget,
+      # so 20 is about what one rematch can finish; the rest are retried.
+      - key: ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT
+        scope: RUN_TIME
+        type: general
+        value: "200"
+      - key: ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES
+        scope: RUN_TIME
+        type: general
+        value: "20"
       # Used only when ARCLI_INITIAL_PUBLIC_REMATCH_ENABLED is true.
       - key: ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS
         scope: RUN_TIME

@@ -895,7 +895,7 @@ def _claim_initial_x_fallback_budget(tenant_id: str) -> bool:
     decision = TenantQuotaGuard().check_and_increment(
         tenant_id=tenant_id,
         counter_name="initial_public_x_fallback",
-        limit=env_int("ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT", 5),
+        limit=env_int("ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT", 1),
         window_seconds=env_int(
             "ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS",
             86_400,

@@ -253,7 +253,7 @@ def _claim_tenant_x_fallback_budget(tenant_id: str | None) -> bool:
         counter_name="initial_public_x_fallback",
         limit=_int_env(
             "ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT",
-            5,
+            1,
             minimum=1,
         ),
         window_seconds=_int_env(
