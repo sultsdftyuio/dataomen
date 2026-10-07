@@ -4,7 +4,7 @@ import React, { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bug, CheckCircle2, RefreshCw } from "lucide-react";
 
-import { setBillingTestState } from "@/app/actions/billing";
+import { setBillingTestState } from "@/app/actions/billing-test";
 import { toast } from "@/components/ui/use-toast";
 import { C } from "@/lib/tokens";
 

@@ -34,6 +34,7 @@ export interface WorkspaceBillingCardProps {
     priceText?: string;
     isProTier?: boolean;
     isCanceling?: boolean;
+    isTrialing?: boolean;
     currentPeriodEnd?: string | null;
     trialEndsAt?: string | null;
     workspaceName?: string;
@@ -181,7 +182,12 @@ export default function WorkspaceBillingCard({
       unlocked: hasOpenProAccess,
     }));
   const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
-  const actionLabel = canOpenPortal ? "Manage Billing" : "Upgrade";
+  const actionLabel =
+    planStatus === "past_due"
+      ? "Update Payment Method"
+      : canOpenPortal
+        ? "Manage Billing"
+        : "Upgrade";
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow =
     "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
@@ -499,7 +505,13 @@ export default function WorkspaceBillingCard({
                 }}
               >
                 <CalendarDays size={13} />
-                {isCanceling ? "Pro access ends" : "Next billing date"}
+                {isCanceling
+                  ? "Pro access ends"
+                  : planStatus === "past_due"
+                    ? "Payment was due"
+                    : planData.isTrialing
+                      ? "Free trial ends"
+                      : "Next billing date"}
               </div>
               <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
                 {formattedPeriodEnd}
@@ -507,7 +519,9 @@ export default function WorkspaceBillingCard({
               <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>
                 {isCanceling
                   ? "No further payments are scheduled."
-                  : nextChargeText ?? "Your subscription renews on this date."}
+                  : planStatus === "past_due"
+                    ? "Update your payment method to restore Pro."
+                    : nextChargeText ?? "Your subscription renews on this date."}
               </div>
             </div>
           )}

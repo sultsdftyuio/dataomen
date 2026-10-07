@@ -5,6 +5,7 @@ import { ArrowRight, Check, FileSearch, Globe2, LockKeyhole } from "lucide-react
 
 import { FreeScanResult } from "@/components/prospects/free-scan-result";
 import UpgradeButton from "@/components/ui/UpgradeButton";
+import { PRO_PRICE_NOTE } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 import type { FreeScanPreview } from "./free-scan-preview";
 import type { ServiceProfileView } from "./prospect-types";
@@ -113,7 +114,7 @@ export default function FreeProspectPreview({
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <UpgradeButton />
-              <span className="text-xs font-semibold" style={{ color: C.muted }}>$35/month · cancel any time</span>
+              <span className="text-xs font-semibold" style={{ color: C.muted }}>{PRO_PRICE_NOTE}</span>
             </div>
           </div>
         </div>

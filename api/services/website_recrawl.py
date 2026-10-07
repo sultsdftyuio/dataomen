@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
-from api.services.tenant_entitlements import tenant_has_active_paid_access
+from api.services.tenant_entitlements import paid_access_sql, tenant_has_active_paid_access
 
 logger = logging.getLogger(__name__)
 
@@ -738,17 +738,6 @@ def record_terminal_recrawl_failure(
         failure_reason,
     )
 
-def _paid_access_sql(tenant_alias: str) -> str:
-    return f"""
-        LOWER(COALESCE({tenant_alias}.plan_tier, 'free')) IN ('pro', 'enterprise')
-        AND LOWER(COALESCE({tenant_alias}.subscription_status, ''))
-            IN ('active', 'canceling')
-        AND (
-            LOWER(COALESCE({tenant_alias}.subscription_status, '')) <> 'canceling'
-            OR {tenant_alias}.current_period_end IS NULL
-            OR {tenant_alias}.current_period_end >= NOW()
-        )
-    """
 def _reconcile_recrawl_entitlements(conn: Connection, limits: RecrawlLimits) -> None:
     """Pause downgraded schedules and start a jittered window after upgrades."""
     paused = conn.execute(
@@ -765,7 +754,7 @@ def _reconcile_recrawl_entitlements(conn: Connection, limits: RecrawlLimits) -> 
                    SELECT 1
                      FROM public.tenants AS tenant
                     WHERE tenant.tenant_id = schedule.tenant_id
-                      AND ({_paid_access_sql('tenant')})
+                      AND ({paid_access_sql('tenant')})
                )
             """
         ),
@@ -792,7 +781,7 @@ def _reconcile_recrawl_entitlements(conn: Connection, limits: RecrawlLimits) -> 
                    SELECT 1
                      FROM public.tenants AS tenant
                     WHERE tenant.tenant_id = schedule.tenant_id
-                      AND ({_paid_access_sql('tenant')})
+                      AND ({paid_access_sql('tenant')})
                )
             """
         ),
@@ -862,7 +851,7 @@ def _claim_due_website_recrawls(
                            schedule.crawl_kind,
                            schedule.next_crawl_at,
                            CASE
-                               WHEN ({_paid_access_sql('tenant')})
+                               WHEN ({paid_access_sql('tenant')})
                                THEN :pro_priority
                                ELSE :free_priority
                            END AS dispatch_priority
@@ -882,18 +871,18 @@ def _claim_due_website_recrawls(
                        )
                        AND (
                            schedule.crawl_kind = :initial_crawl_kind
-                           OR ({_paid_access_sql('tenant')})
+                           OR ({paid_access_sql('tenant')})
                        )
                        AND (
                            :allow_free
-                           OR ({_paid_access_sql('tenant')})
+                           OR ({paid_access_sql('tenant')})
                        )
                      ORDER BY
                          CASE
-                             WHEN ({_paid_access_sql('tenant')})
+                             WHEN ({paid_access_sql('tenant')})
                                   AND schedule.crawl_kind = :initial_crawl_kind
                              THEN 0
-                             WHEN ({_paid_access_sql('tenant')}) THEN 1
+                             WHEN ({paid_access_sql('tenant')}) THEN 1
                              ELSE 2
                          END,
                          schedule.next_crawl_at ASC

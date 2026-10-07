@@ -31,7 +31,10 @@ export default async function proxy(request: NextRequest) {
   // Keep every public URL on the same host declared in metadata and the
   // sitemap. This prevents the apex and www hosts from competing as duplicate
   // pages when both are attached to the deployment.
-  if (request.nextUrl.hostname === 'arcli.tech') {
+  //
+  // Webhooks are exempt: senders POST once and do not follow redirects, so a
+  // provider configured with the apex URL would otherwise never be delivered.
+  if (request.nextUrl.hostname === 'arcli.tech' && !pathname.startsWith('/api/webhooks')) {
     const canonicalUrl = request.nextUrl.clone()
     canonicalUrl.hostname = 'www.arcli.tech'
     return NextResponse.redirect(canonicalUrl, 308)

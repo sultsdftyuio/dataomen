@@ -20,6 +20,7 @@ import {
   dashboardNavigationItems,
   isDashboardNavigationItemActive,
 } from "@/lib/dashboard-navigation";
+import { PRO_PRICE_NOTE } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import UpgradeButton from "@/components/ui/UpgradeButton";
@@ -173,7 +174,7 @@ export function DashboardNavigation({
                 ))}
               </ul>
               <div className="flex items-center justify-between gap-3 border-t pt-4" style={{ borderColor: C.rule }}>
-                <p className="text-xs font-semibold" style={{ color: C.navySoft }}>$35/month &middot; cancel any time</p>
+                <p className="text-xs font-semibold" style={{ color: C.navySoft }}>{PRO_PRICE_NOTE}</p>
                 <UpgradeButton />
               </div>
             </div>

@@ -71,17 +71,28 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     const { supabase: tenantSupabase, tenantId } = tenantResult.context;
 
     if (billingReturnState === "checkout_complete") {
+      let billingSynced = false;
+
       try {
-        const result = await verifyAndSyncSubscriptionStatus(tenantId);
-        if (result.status === "synced" || result.status === "already_synced") {
-          redirect("/settings");
-        }
+        // Cache revalidation is not allowed while a page renders; the redirect
+        // below already produces a fresh render of this route.
+        const result = await verifyAndSyncSubscriptionStatus(tenantId, {
+          skipRevalidate: true,
+        });
+        billingSynced = result.status === "synced" || result.status === "already_synced";
       } catch (error) {
         console.error("[Settings] Billing return verification failed", {
           event: "settings_billing_return_verification_failed",
           tenant_id: tenantId,
           error,
         });
+      }
+
+      // redirect() works by throwing, so it must stay outside the try block or
+      // the catch above would swallow it. Dropping the query string also stops
+      // a refresh from repeating the Dodo lookup.
+      if (billingSynced) {
+        redirect("/settings");
       }
     }
 
@@ -146,27 +157,33 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     );
 
     const planTier = entitlements.planTier.toLowerCase();
+    // A past-due workspace still has a subscription to repair, so it keeps its
+    // own status instead of being shown as canceled and sent to a new checkout.
     const planStatus = (
       entitlements.isPro
         ? entitlements.subscriptionStatus ?? "active"
-        : planTier === "pro"
-          ? "canceled"
-          : entitlements.subscriptionStatus ?? "free"
+        : entitlements.isPastDue
+          ? "past_due"
+          : planTier === "pro"
+            ? "canceled"
+            : entitlements.subscriptionStatus ?? "free"
     ) as BillingPlanStatus;
+    const hasSubscriptionOnFile = entitlements.isPro || entitlements.isPastDue;
     billingPlanData = {
       planName: entitlements.billingLabel,
       planStatus,
       description: entitlements.billingDescription,
       priceText: "$35/month",
-      isProTier: entitlements.isPro,
+      isProTier: hasSubscriptionOnFile,
       isCanceling: entitlements.isCanceling,
+      isTrialing: entitlements.isTrialing,
       currentPeriodEnd: entitlements.currentPeriodEnd,
       trialEndsAt: entitlements.trialEndsAt,
       workspaceName: workspaceDisplayName(settings.workspace.companyName),
       entitlements,
       amountDueCents: 3500,
       currency: "USD",
-      autoStartCheckout: shouldAutoStartProCheckout && !entitlements.isPro,
+      autoStartCheckout: shouldAutoStartProCheckout && !hasSubscriptionOnFile,
       features: [
         {
           label: "Verified prospect queue",

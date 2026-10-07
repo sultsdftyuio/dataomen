@@ -9,9 +9,10 @@ import { leadCategoryLabel } from "@/app/(dashboard)/dashboard/lead-queue-filter
 import { SourcePlatformBadge, relativeTime } from "@/components/prospects/lead-desk-presentation";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 import { trackProductEvent } from "@/lib/analytics/product-events";
+import { PRO_PRICE_NOTE } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 
-const PRICE_NOTE = "$35/month · cancel any time";
+const PRICE_NOTE = PRO_PRICE_NOTE;
 
 /**
  * The Free user's first real result: one lead shown in full, everything else

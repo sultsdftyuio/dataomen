@@ -24,6 +24,8 @@ export type WorkspaceEntitlements = {
   currentPeriodEnd: string | null;
   isPro: boolean;
   isCanceling: boolean;
+  isPastDue: boolean;
+  isTrialing: boolean;
   isFreeAccess: boolean;
   canViewCustomerLists: boolean;
   canSendEmails: boolean;
@@ -38,13 +40,58 @@ export const PRO_PLAN_REQUIRED_MESSAGE =
   "Upgrade to Pro to unlock customer lists, campaign sending, and custom templates.";
 export const PRO_MONTHLY_PRICE = 35;
 
+// Length of the free trial a workspace gets on its first Pro subscription. A
+// card is collected at checkout and charged automatically when the trial ends.
+export const PRO_TRIAL_DAYS = 3;
+
+// Shown beside every control that starts checkout. The trial is limited to
+// first-time subscribers, and payments are non-refundable, so both are stated
+// before the customer commits rather than only in the Terms.
+export const PRO_PRICE_NOTE = `${PRO_TRIAL_DAYS}-day free trial for new subscribers, then $${PRO_MONTHLY_PRICE}/month. Cancel any time; payments are non-refundable.`;
+
 // Supports both Pro and Enterprise tiers to prevent enterprise users from being locked out
 const PAID_PLAN_TIERS = new Set(["pro", "enterprise"]);
 
-// Active lifecycle statuses that permit entitlement access. New subscriptions
-// are paid immediately and do not have a trial state.
-const ACTIVE_STATUSES = new Set(["active", "canceling"]);
 const CANCELLATION_STATUSES = new Set(["canceling", "canceled", "cancelled"]);
+
+// How long an active subscription keeps access after its recorded period end.
+// A renewal is only recorded once Dodo's webhook is delivered, which can lag
+// the charge or be retried for hours, so a customer in good standing must not
+// be locked out the moment the old period lapses. A failed renewal does not
+// wait for this window: it moves the workspace to past_due immediately.
+export const ACTIVE_RENEWAL_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * The paid-access rule. The same rule is implemented in SQL as
+ * public.tenant_has_paid_access (scripts/enforce-free-plan-limits.sql) and in
+ * the worker as paid_access_sql (api/services/tenant_entitlements.py); change
+ * all three together.
+ *
+ * - active: paid until the period end plus the renewal grace window, or
+ *   indefinitely when no period end is recorded.
+ * - canceling / canceled: paid only until a recorded, still-future period end.
+ * - anything else (free, past_due, unknown): not paid.
+ */
+function hasPaidAccess(
+  isPaidTier: boolean,
+  subscriptionStatus: string | null,
+  currentPeriodEnd: string | null,
+  now: number
+): boolean {
+  if (!isPaidTier || !subscriptionStatus) return false;
+
+  const periodEnd = currentPeriodEnd ? Date.parse(currentPeriodEnd) : Number.NaN;
+
+  if (subscriptionStatus === "active") {
+    return !Number.isFinite(periodEnd) || periodEnd + ACTIVE_RENEWAL_GRACE_MS > now;
+  }
+
+  if (CANCELLATION_STATUSES.has(subscriptionStatus)) {
+    return Number.isFinite(periodEnd) && periodEnd > now;
+  }
+
+  return false;
+}
 
 /**
  * Deterministically normalizes database strings to lowercase trimmed formats.
@@ -76,7 +123,7 @@ function formatBillingDate(value: string | null): string | null {
 
 /**
  * Core entitlement state engine. Evaluates plan access deterministically.
- * Rule 3 & Rule 11: Enforces defensive grace-period checks during scheduled cancellations.
+ * Access itself is decided by hasPaidAccess; the rest is presentation.
  */
 function buildEntitlements(
   tenantId: string,
@@ -94,35 +141,21 @@ function buildEntitlements(
   const trialEndsAt = normalizeTimestamp(trialEndsAtValue);
   const currentPeriodEnd = normalizeTimestamp(currentPeriodEndValue);
 
-  const accessEnd = currentPeriodEnd ?? trialEndsAt;
-  const accessEndTimestamp = accessEnd ? Date.parse(accessEnd) : Number.NaN;
-  const hasFutureAccessWindow =
-    Number.isFinite(accessEndTimestamp) && accessEndTimestamp > Date.now();
-  const hasExpiredRecordedAccessWindow =
-    Boolean(accessEnd) && !hasFutureAccessWindow;
-
-  // A scheduled cancellation remains paid only until its recorded period end.
-  // An explicit period end also protects against a delayed final webhook: an
-  // otherwise-active record cannot retain Pro after that boundary has passed.
-  let hasActiveStatus = subscriptionStatus
-    ? ACTIVE_STATUSES.has(subscriptionStatus)
-    : false;
-
-  if (subscriptionStatus && CANCELLATION_STATUSES.has(subscriptionStatus)) {
-    hasActiveStatus = hasFutureAccessWindow;
-  } else if (subscriptionStatus === "active" && hasExpiredRecordedAccessWindow) {
-    hasActiveStatus = false;
-  }
-
-  const isPro = isPaidTier && hasActiveStatus;
+  const isPro = hasPaidAccess(isPaidTier, subscriptionStatus, currentPeriodEnd, Date.now());
   const isCanceling =
-    isPaidTier &&
-    Boolean(subscriptionStatus && CANCELLATION_STATUSES.has(subscriptionStatus)) &&
-    hasActiveStatus;
+    isPro && Boolean(subscriptionStatus && CANCELLATION_STATUSES.has(subscriptionStatus));
   const isFreeAccess = !isPro;
 
   const isPastDue = isPaidTier && subscriptionStatus === "past_due";
-  const currentPeriodEndLabel = formatBillingDate(accessEnd);
+  // A trial is an active subscription that has not been charged yet; it has no
+  // status of its own, only a recorded end date that is still in the future.
+  const isTrialing =
+    isPro &&
+    subscriptionStatus === "active" &&
+    trialEndsAt !== null &&
+    Date.parse(trialEndsAt) > Date.now();
+  const currentPeriodEndLabel = formatBillingDate(currentPeriodEnd);
+  const trialEndLabel = formatBillingDate(trialEndsAt);
 
   const billingLabel = isCanceling
       ? planTier === "enterprise" ? "Enterprise" : "Pro"
@@ -136,6 +169,8 @@ function buildEntitlements(
       ? currentPeriodEndLabel
         ? `Active until ${currentPeriodEndLabel}.`
         : "Active until the end of the current billing period."
+    : isTrialing
+      ? `Free trial until ${trialEndLabel}. $${PRO_MONTHLY_PRICE}/month after that unless you cancel.`
     : isPro
       ? `Pro subscription active at $${PRO_MONTHLY_PRICE}/month.`
       : isPastDue
@@ -150,6 +185,8 @@ function buildEntitlements(
     currentPeriodEnd,
     isPro,
     isCanceling,
+    isPastDue,
+    isTrialing,
     isFreeAccess,
     canViewCustomerLists: isPro,
     canSendEmails: isPro,

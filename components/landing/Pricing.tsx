@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Activity, ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from "lucide-react";
 
+import { PRO_TRIAL_DAYS } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 import { Reveal, RevealWords } from "@/components/landing/reveal";
 
@@ -140,7 +141,9 @@ export default function ArcliPricingCards() {
             <div className="mt-6 border-b pb-5" style={{ borderColor: C.blueLight }}>
               <span className="text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>
               <span className="ml-1 text-sm font-semibold" style={{ color: C.muted }}>/ month</span>
-              <p className="mt-2 text-xs font-semibold" style={{ color: C.blue }}>Cancel any time.</p>
+              <p className="mt-2 text-xs font-semibold" style={{ color: C.blue }}>
+                {PRO_TRIAL_DAYS}-day free trial for new subscribers, card required. Cancel any time. Payments are non-refundable.
+              </p>
             </div>
             <FeatureList features={proFeatures} color={C.green} />
             <Link

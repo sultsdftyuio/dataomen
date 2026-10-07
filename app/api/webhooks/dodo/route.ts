@@ -1,107 +1,27 @@
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseServiceClient } from "@supabase/supabase-js";
-import { DodoPayments } from "dodopayments";
+import type { DodoPayments } from "dodopayments";
 
-import type { Database } from "@/types/supabase";
-import { PRO_MONTHLY_PRICE } from "@/lib/entitlements";
-import { resolvePaidAccessEnd } from "@/lib/billing/cancellation-access";
+import { getDodoClient } from "@/lib/billing/dodo-client";
+import {
+  asRecord,
+  extractCustomerId,
+  extractSubscriptionId,
+  extractTenantId,
+  readString,
+  serializeError,
+  topLevelKeys,
+  type DodoRecord,
+} from "@/lib/billing/dodo-payload";
+import { planSubscriptionSync } from "@/lib/billing/subscription-state";
+import { createServiceRoleClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 
 type DodoWebhookEvent = {
   type: string;
   timestamp?: string;
-  data?: Record<string, unknown>;
+  data?: DodoRecord;
 };
-
-function getDodoClient(): DodoPayments {
-  const apiKey = sanitizeEnvSecret(process.env.DODO_PAYMENTS_API_KEY);
-  const webhookKey = sanitizeEnvSecret(process.env.DODO_PAYMENTS_WEBHOOK_KEY);
-
-  if (!apiKey) {
-    throw new Error("Missing DODO_PAYMENTS_API_KEY environment variable.");
-  }
-
-  if (!webhookKey) {
-    throw new Error("Missing DODO_PAYMENTS_WEBHOOK_KEY environment variable.");
-  }
-
-  const explicitEnv = sanitizeEnvSecret(process.env.DODO_PAYMENTS_ENV);
-  if (explicitEnv !== "test_mode" && explicitEnv !== "live_mode") {
-    console.warn(
-      "[Dodo Webhook] DODO_PAYMENTS_ENV is not explicitly set to 'test_mode' or 'live_mode'. Defaulting to 'live_mode'."
-    );
-  }
-
-  const environment: "test_mode" | "live_mode" =
-    explicitEnv === "test_mode" || explicitEnv === "live_mode"
-      ? explicitEnv
-      : "live_mode";
-
-  if (process.env.NODE_ENV === "production" && environment === "test_mode") {
-    console.warn(
-      "[Dodo Webhook] DODO_PAYMENTS_ENV=test_mode is enabled in production. Using Dodo test API."
-    );
-  }
-
-  if (environment === "live_mode" && isDodoTestApiKey(apiKey)) {
-    throw new Error(
-      "DODO_PAYMENTS_API_KEY appears to be a test key while Dodo Payments is configured for live_mode."
-    );
-  }
-
-  return new DodoPayments({
-    bearerToken: apiKey,
-    webhookKey,
-    environment,
-  });
-}
-
-function sanitizeEnvSecret(value: string | undefined): string {
-  return value?.trim().replace(/^["']+|["']+$/g, "").trim() ?? "";
-}
-
-function isDodoTestApiKey(apiKey: string): boolean {
-  return apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
-}
-
-function getSupabaseServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase service role configuration.");
-  }
-
-  return createSupabaseServiceClient<Database>(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function serializeError(error: unknown): Record<string, unknown> {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
-  }
-
-  return { value: String(error) };
-}
-
-function topLevelKeys(record: Record<string, unknown> | null): string[] {
-  return record ? Object.keys(record).sort() : [];
-}
 
 function webhookHeaderKeys(headers: Record<string, string>): string[] {
   return Object.keys(headers)
@@ -111,9 +31,7 @@ function webhookHeaderKeys(headers: Record<string, string>): string[] {
 
 function safeParseWebhookEnvelope(rawBody: string): DodoWebhookEvent | null {
   try {
-    const parsed = JSON.parse(rawBody);
-    const record = asRecord(parsed);
-
+    const record = asRecord(JSON.parse(rawBody));
     if (!record) return null;
 
     return {
@@ -126,322 +44,125 @@ function safeParseWebhookEnvelope(rawBody: string): DodoWebhookEvent | null {
   }
 }
 
-function readString(record: Record<string, unknown> | null, key: string): string | null {
-  if (!record) return null;
-  const value = record[key];
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
+/**
+ * Acknowledges an event that this endpoint will never be able to apply.
+ *
+ * Dodo retries any non-2xx response, so a 4xx here would only replay the same
+ * unusable event. The reason is logged by the caller instead.
+ */
+function ignored(eventType: string, reason: string) {
+  return NextResponse.json({ status: "ignored", event_type: eventType, reason });
 }
 
-function readBoolean(record: Record<string, unknown> | null, key: string): boolean | null {
-  if (!record) return null;
-  const value = record[key];
-  return typeof value === "boolean" ? value : null;
-}
-
-function extractTenantIdFromPayload(data: Record<string, unknown>): string | null {
-  const customer = asRecord(data.customer);
-  const subscription = asRecord(data.subscription);
-  const payment = asRecord(data.payment);
-  const checkoutSession = asRecord(data.checkout_session);
-
-  const metadataSources = [
-    asRecord(data.metadata),
-    asRecord(data.custom_data),
-    asRecord(data.checkout_session_metadata),
-    asRecord(customer?.metadata),
-    asRecord(subscription?.metadata),
-    asRecord(payment?.metadata),
-    asRecord(checkoutSession?.metadata),
-    asRecord(checkoutSession?.checkout_session_metadata),
-  ];
-
-  for (const metadata of metadataSources) {
-    const tenantId =
-      readString(metadata, "tenant_id") ??
-      readString(metadata, "tenantId") ??
-      readString(metadata, "workspace_id") ??
-      readString(metadata, "workspaceId");
-
-    if (tenantId) return tenantId;
-  }
-
-  return null;
-}
-
-async function extractTenantId(
-  data: Record<string, unknown>,
+function verifyWebhook(
   dodo: DodoPayments,
-  eventType: string
-): Promise<string | null> {
-  const tenantId = extractTenantIdFromPayload(data);
-  if (tenantId) return tenantId;
-
-  const subscriptionId = extractSubscriptionId(data);
-
-  if (!subscriptionId || !eventType.startsWith("subscription.")) {
-    return null;
-  }
-
-  try {
-    const subscription = await dodo.subscriptions.retrieve(subscriptionId);
-    const subscriptionRecord = asRecord(subscription);
-    const tenantIdFromSubscription = subscriptionRecord
-      ? extractTenantIdFromPayload(subscriptionRecord)
-      : null;
-
-    console.info("[Dodo Webhook] Dodo subscription metadata fallback completed", {
-      event_type: eventType,
-      subscription_id: subscriptionId,
-      resolved_tenant_id: Boolean(tenantIdFromSubscription),
-      subscription_data_keys: topLevelKeys(subscriptionRecord),
-      subscription_metadata_keys: topLevelKeys(asRecord(subscriptionRecord?.metadata)),
-    });
-
-    return tenantIdFromSubscription;
-  } catch (error) {
-    console.error("[Dodo Webhook] Dodo subscription metadata fallback failed", {
-      event_type: eventType,
-      subscription_id: subscriptionId,
-      data_keys: topLevelKeys(data),
-      error: serializeError(error),
-    });
-
-    return null;
-  }
-}
-
-function extractCustomerId(data: Record<string, unknown>): string | null {
-  return (
-    readString(data, "customer_id") ??
-    readString(asRecord(data.customer), "customer_id") ??
-    readString(asRecord(data.customer), "id")
-  );
-}
-
-function extractSubscriptionId(data: Record<string, unknown>): string | null {
-  return (
-    readString(data, "subscription_id") ??
-    readString(data, "id") ??
-    readString(asRecord(data.subscription), "subscription_id") ??
-    readString(asRecord(data.subscription), "id")
-  );
-}
-
-function extractCurrentPeriodEnd(data: Record<string, unknown>): string | null {
-  return (
-    readString(data, "current_period_end") ??
-    readString(data, "next_billing_date") ??
-    readString(data, "renews_at") ??
-    readString(data, "expires_at")
-  );
-}
-
-function preserveCancellationAccessUntilEnd(
-  update: Record<string, unknown>,
-  existingTenant: {
-    current_period_end?: string | null;
-    trial_ends_at?: string | null;
-    dodo_subscription_id?: string | null;
-  },
-) {
-  const accessEnd = resolvePaidAccessEnd([
-    typeof update.current_period_end === "string"
-      ? update.current_period_end
-      : null,
-    existingTenant.current_period_end,
-    existingTenant.trial_ends_at,
-  ]);
-
-  if (!accessEnd) return update;
-
-  // Dodo may emit a final cancellation event before an already-paid period
-  // ends. Keep the workspace in the scheduled-cancellation state until that
-  // stored end date, rather than immediately revoking its paid access.
-  return compact({
-    ...update,
-    plan_tier: "pro",
-    subscription_status: "canceling",
-    billing_status: "canceling",
-    plan: "pro",
-    status: "active",
-    current_period_end: accessEnd,
-    dodo_subscription_id:
-      existingTenant.dodo_subscription_id ?? update.dodo_subscription_id ?? undefined,
-  });
-}
-
-function compact(record: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined)
-  );
-}
-
-function tenantUpdateFor(event: DodoWebhookEvent): Record<string, unknown> | null {
-  const data = event.data ?? {};
-  const customerId = extractCustomerId(data);
-  const subscriptionId = extractSubscriptionId(data);
-  const currentPeriodEnd = extractCurrentPeriodEnd(data);
-  const common = {
-    dodo_customer_id: customerId ?? undefined,
-    dodo_subscription_id: subscriptionId ?? undefined,
-    current_period_end: currentPeriodEnd ?? undefined,
-    updated_at: new Date().toISOString(),
+  rawBody: string,
+  headers: Record<string, string>
+): DodoWebhookEvent | null {
+  const untrustedEnvelope = safeParseWebhookEnvelope(rawBody);
+  const logContext = {
+    event_type: untrustedEnvelope?.type ?? "unknown",
+    data_keys: topLevelKeys(asRecord(untrustedEnvelope?.data)),
+    body_bytes: Buffer.byteLength(rawBody, "utf8"),
+    signature_header_keys: webhookHeaderKeys(headers),
   };
 
-  switch (event.type) {
-    case "subscription.active": {
-      return compact({
-        ...common,
-        plan_tier: "pro",
-        subscription_status: "active",
-        trial_ends_at: null,
-        billing_status: "active",
-        plan: "pro",
-        status: "active",
-      });
-    }
-    case "subscription.renewed":
-      return compact({
-        ...common,
-        plan_tier: "pro",
-        subscription_status: "active",
-        trial_ends_at: null,
-        billing_status: "active",
-        plan: "pro",
-        status: "active",
-      });
-    case "subscription.updated":
-    case "subscription.plan_changed": {
-      const cancelAtPeriodEnd = readBoolean(data, "cancel_at_next_billing_date") === true;
-      const subscriptionStatus = cancelAtPeriodEnd
-        ? "canceling"
-        : "active";
-
-      return compact({
-        ...common,
-        plan_tier: "pro",
-        subscription_status: subscriptionStatus,
-        trial_ends_at: null,
-        billing_status: subscriptionStatus,
-        plan: "pro",
-        status: "active",
-      });
-    }
-    case "subscription.failed":
-    case "subscription.on_hold":
-    case "subscription.paused":
-      return compact({
-        ...common,
-        plan_tier: "pro",
-        subscription_status: "past_due",
-        billing_status: "past_due",
-        plan: "pro",
-        status: "past_due",
-      });
-    case "subscription.cancelled":
-    case "subscription.canceled":
-    case "subscription.expired":
-      return compact({
-        ...common,
-        plan_tier: "free",
-        subscription_status: "canceled",
-        trial_ends_at: null,
-        billing_status: "canceled",
-        dodo_subscription_id: null,
-        plan: "free",
-        status: "active",
-      });
-    default:
-      return null;
+  try {
+    return dodo.webhooks.unwrap(rawBody, { headers }) as unknown as DodoWebhookEvent;
+  } catch (error) {
+    console.error("[Dodo Webhook] Verification failed", {
+      ...logContext,
+      error: serializeError(error),
+    });
+    return null;
   }
-}
-
-function tenantAlreadyMatchesBillingUpdate(
-  tenant: Record<string, unknown>,
-  update: Record<string, unknown>
-): boolean {
-  return Object.entries(update)
-    .filter(([key]) => key !== "updated_at")
-    .every(([key, value]) => tenant[key] === value);
 }
 
 export async function POST(request: Request) {
-  let event: DodoWebhookEvent;
   let dodo: DodoPayments;
-  let rawBody = "";
-  const headers: Record<string, string> = {};
 
   try {
-    dodo = getDodoClient();
+    dodo = getDodoClient({ requireWebhookKey: true }).client;
   } catch (error) {
-    console.error("[Dodo Webhook] Configuration missing", { error });
+    console.error("[Dodo Webhook] Configuration missing", { error: serializeError(error) });
     return NextResponse.json({ error: "Dodo webhook is not configured." }, { status: 500 });
   }
 
-  try {
-    rawBody = await request.text();
-    request.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
+  const rawBody = await request.text();
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
 
-    const untrustedEnvelope = safeParseWebhookEnvelope(rawBody);
-    console.info("[Dodo Webhook] Verification starting", {
-      event_type: untrustedEnvelope?.type ?? "unknown",
-      data_keys: topLevelKeys(asRecord(untrustedEnvelope?.data)),
-      body_bytes: Buffer.byteLength(rawBody, "utf8"),
-      signature_header_keys: webhookHeaderKeys(headers),
-    });
-
-    event = dodo.webhooks.unwrap(rawBody, { headers }) as unknown as DodoWebhookEvent;
-
-    console.info("[Dodo Webhook] Verification succeeded", {
-      event_type: event.type,
-      data_keys: topLevelKeys(asRecord(event.data)),
-    });
-  } catch (error) {
-    const untrustedEnvelope = safeParseWebhookEnvelope(rawBody);
-
-    console.error("[Dodo Webhook] Verification failed", {
-      event_type: untrustedEnvelope?.type ?? "unknown",
-      data_keys: topLevelKeys(asRecord(untrustedEnvelope?.data)),
-      body_bytes: Buffer.byteLength(rawBody, "utf8"),
-      signature_header_keys: webhookHeaderKeys(headers),
-      error: serializeError(error),
-    });
-
+  const event = verifyWebhook(dodo, rawBody, headers);
+  if (!event) {
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
 
-  const data = asRecord(event.data) ?? {};
-  const tenantId = await extractTenantId(data, dodo, event.type);
+  // Only subscription events change workspace access. Checked before any
+  // tenant lookup so payment, refund, and dispute events are acknowledged
+  // instead of failing on metadata they are not expected to carry.
+  if (!event.type.startsWith("subscription.")) {
+    return ignored(event.type, "unhandled_event_type");
+  }
+
+  const payload = asRecord(event.data) ?? {};
+  const subscriptionId = extractSubscriptionId(payload);
+
+  if (!subscriptionId) {
+    console.error("[Dodo Webhook] Subscription event without a subscription id", {
+      event_type: event.type,
+      data_keys: topLevelKeys(payload),
+    });
+    return ignored(event.type, "missing_subscription_id");
+  }
+
+  // The event is treated as a signal that the subscription changed, not as the
+  // new state. Webhooks can arrive late, repeated, or out of order, and
+  // `subscription.updated` fires for every field change, so the only reliable
+  // source for what the workspace should have is the subscription as Dodo
+  // reports it now.
+  let subscription: DodoRecord | null;
+
+  try {
+    subscription = asRecord(await dodo.subscriptions.retrieve(subscriptionId));
+  } catch (error) {
+    console.error("[Dodo Webhook] Could not load the subscription from Dodo", {
+      event_type: event.type,
+      subscription_id: subscriptionId,
+      error: serializeError(error),
+    });
+    return NextResponse.json({ error: "Could not load subscription state." }, { status: 500 });
+  }
+
+  if (!subscription) {
+    return NextResponse.json({ error: "Could not load subscription state." }, { status: 500 });
+  }
+
+  const tenantId = extractTenantId(subscription) ?? extractTenantId(payload);
 
   if (!tenantId) {
     console.error("[Dodo Webhook] Missing tenant_id metadata", {
       event_type: event.type,
-      data_keys: topLevelKeys(data),
-      customer_id: extractCustomerId(data),
-      subscription_id: extractSubscriptionId(data),
-      metadata_keys: topLevelKeys(asRecord(data.metadata)),
-      checkout_session_metadata_keys: topLevelKeys(asRecord(data.checkout_session_metadata)),
+      subscription_id: subscriptionId,
+      customer_id: extractCustomerId(subscription),
+      subscription_metadata_keys: topLevelKeys(asRecord(subscription.metadata)),
     });
-    return NextResponse.json({ error: "Missing tenant_id metadata." }, { status: 400 });
+    return ignored(event.type, "missing_tenant_metadata");
   }
 
-  let update = tenantUpdateFor(event);
-  if (!update) {
-    return NextResponse.json({ status: "ignored", event_type: event.type });
-  }
-
-  let supabase: ReturnType<typeof getSupabaseServiceClient>;
+  let supabase: ReturnType<typeof createServiceRoleClient>;
 
   try {
-    supabase = getSupabaseServiceClient();
+    supabase = createServiceRoleClient();
   } catch (error) {
-    console.error("[Dodo Webhook] Supabase service configuration missing", { error });
+    console.error("[Dodo Webhook] Supabase service configuration missing", {
+      error: serializeError(error),
+    });
     return NextResponse.json({ error: "Webhook persistence is not configured." }, { status: 500 });
   }
 
-  const { data: existingTenant, error: existingTenantError } = await supabase
+  const { data: tenant, error: tenantError } = await supabase
     .from("tenants")
     .select(
       "tenant_id, plan_tier, subscription_status, trial_ends_at, billing_status, plan, status, dodo_customer_id, dodo_subscription_id, current_period_end"
@@ -449,45 +170,39 @@ export async function POST(request: Request) {
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
-  if (existingTenantError) {
+  if (tenantError) {
     console.error("[Dodo Webhook] Tenant billing state lookup failed", {
       event_type: event.type,
       tenant_id: tenantId,
-      error: existingTenantError,
+      error: tenantError,
     });
     return NextResponse.json({ error: "Could not resolve workspace billing state." }, { status: 500 });
   }
 
-  if (!existingTenant) {
+  if (!tenant) {
     console.error("[Dodo Webhook] Tenant metadata did not match a workspace", {
       event_type: event.type,
       tenant_id: tenantId,
+      subscription_id: subscriptionId,
     });
-    return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+    return ignored(event.type, "workspace_not_found");
   }
 
-  if (
-    event.type === "subscription.cancelled" ||
-    event.type === "subscription.canceled" ||
-    event.type === "subscription.expired"
-  ) {
-    update = preserveCancellationAccessUntilEnd(update, existingTenant);
-  }
+  const plan = planSubscriptionSync(tenant, subscription);
 
-  const isResumeUpdate =
-    event.type === "subscription.updated" &&
-    update.subscription_status === "active";
-  if (
-    isResumeUpdate &&
-    existingTenant.subscription_status === update.subscription_status &&
-    tenantAlreadyMatchesBillingUpdate(existingTenant, update)
-  ) {
-    console.info("[Dodo Webhook] Resumed subscription update already applied", {
-      event: "dodo_webhook_resume_already_applied",
+  if (plan.action === "ignore") {
+    console.info("[Dodo Webhook] Subscription event does not change workspace billing", {
       event_type: event.type,
       tenant_id: tenantId,
-      subscription_id: update.dodo_subscription_id ?? existingTenant.dodo_subscription_id,
+      subscription_id: subscriptionId,
+      subscription_status: readString(subscription, "status"),
+      linked_subscription_id: tenant.dodo_subscription_id,
+      reason: plan.reason,
     });
+    return ignored(event.type, plan.reason);
+  }
+
+  if (plan.action === "noop") {
     return NextResponse.json({
       status: "already_processed",
       event_type: event.type,
@@ -495,34 +210,31 @@ export async function POST(request: Request) {
     });
   }
 
-  const { data: updatedTenant, error } = await supabase
+  const { error: updateError } = await supabase
     .from("tenants")
-    .update(update as Database["public"]["Tables"]["tenants"]["Update"])
-    .eq("tenant_id", tenantId)
-    .select("tenant_id")
-    .maybeSingle();
+    .update(plan.update)
+    .eq("tenant_id", tenantId);
 
-  if (error) {
+  if (updateError) {
     console.error("[Dodo Webhook] Tenant billing update failed", {
       event_type: event.type,
       tenant_id: tenantId,
-      error,
+      error: updateError,
     });
     return NextResponse.json({ error: "Could not update tenant billing state." }, { status: 500 });
   }
 
-  if (!updatedTenant) {
-    console.error("[Dodo Webhook] Tenant metadata did not match a workspace", {
-      event_type: event.type,
-      tenant_id: tenantId,
-    });
-    return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
-  }
+  console.info("[Dodo Webhook] Workspace billing synced from Dodo", {
+    event_type: event.type,
+    tenant_id: tenantId,
+    subscription_id: subscriptionId,
+    lifecycle: plan.lifecycle,
+    subscription_status: plan.update.subscription_status,
+  });
 
   return NextResponse.json({
     status: "ok",
     event_type: event.type,
     tenant_id: tenantId,
-    terms: `$${PRO_MONTHLY_PRICE}/month`,
   });
 }

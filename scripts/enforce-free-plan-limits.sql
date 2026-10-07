@@ -99,6 +99,49 @@ REVOKE ALL ON FUNCTION public.free_plan_lead_queue_counts(TEXT, NUMERIC, TIMESTA
 GRANT EXECUTE ON FUNCTION public.free_plan_lead_queue_counts(TEXT, NUMERIC, TIMESTAMPTZ)
   TO authenticated;
 
+-- The paid-access rule, defined once for every policy and RPC that gates Pro.
+-- The same rule is implemented in the web app as hasPaidAccess
+-- (lib/entitlements.ts) and in the worker as paid_access_sql
+-- (api/services/tenant_entitlements.py); change all three together.
+--
+--   * active: paid until the period end plus a two-day renewal grace window,
+--     or indefinitely when no period end is recorded. The grace window covers
+--     the gap before the renewal webhook is delivered; a failed renewal moves
+--     the workspace to past_due and ends access immediately.
+--   * canceling / canceled: paid only until a recorded, still-future period end.
+--   * anything else (free, past_due, unknown): not paid.
+CREATE OR REPLACE FUNCTION public.tenant_has_paid_access(
+  p_plan_tier TEXT,
+  p_subscription_status TEXT,
+  p_current_period_end TIMESTAMPTZ
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    LOWER(COALESCE(p_plan_tier, 'free')) IN ('pro', 'enterprise')
+    AND (
+      (
+        LOWER(COALESCE(p_subscription_status, '')) = 'active'
+        AND (
+          p_current_period_end IS NULL
+          OR p_current_period_end + INTERVAL '2 days' > NOW()
+        )
+      )
+      OR (
+        LOWER(COALESCE(p_subscription_status, '')) IN ('canceling', 'canceled', 'cancelled')
+        AND p_current_period_end IS NOT NULL
+        AND p_current_period_end > NOW()
+      )
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.tenant_has_paid_access(TEXT, TEXT, TIMESTAMPTZ)
+  FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.tenant_has_paid_access(TEXT, TEXT, TIMESTAMPTZ)
+  TO authenticated, service_role;
+
 DROP POLICY IF EXISTS "lead_matches_select_tenant" ON public.lead_matches;
 CREATE POLICY "lead_matches_select_tenant" ON public.lead_matches
   FOR SELECT TO authenticated
@@ -110,12 +153,10 @@ CREATE POLICY "lead_matches_select_tenant" ON public.lead_matches
         ON tenant.tenant_id::TEXT = tenant_user.tenant_id::TEXT
       WHERE tenant_user.tenant_id::TEXT = lead_matches.tenant_id::TEXT
         AND tenant_user.user_id::TEXT = auth.uid()::TEXT
-        AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
-        AND LOWER(COALESCE(tenant.subscription_status, '')) IN ('active', 'canceling')
-        AND (
-          LOWER(COALESCE(tenant.subscription_status, '')) <> 'canceling'
-          OR tenant.current_period_end IS NULL
-          OR tenant.current_period_end >= NOW()
+        AND public.tenant_has_paid_access(
+          tenant.plan_tier::TEXT,
+          tenant.subscription_status::TEXT,
+          tenant.current_period_end
         )
     )
   );
@@ -132,8 +173,11 @@ CREATE POLICY "lead_matches_qualify_tenant" ON public.lead_matches
         ON tenant.tenant_id::TEXT = tenant_user.tenant_id::TEXT
       WHERE tenant_user.tenant_id::TEXT = lead_matches.tenant_id::TEXT
         AND tenant_user.user_id::TEXT = auth.uid()::TEXT
-        AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
-        AND LOWER(COALESCE(tenant.subscription_status, '')) IN ('active', 'canceling')
+        AND public.tenant_has_paid_access(
+          tenant.plan_tier::TEXT,
+          tenant.subscription_status::TEXT,
+          tenant.current_period_end
+        )
     )
   )
   WITH CHECK (
@@ -145,8 +189,11 @@ CREATE POLICY "lead_matches_qualify_tenant" ON public.lead_matches
         ON tenant.tenant_id::TEXT = tenant_user.tenant_id::TEXT
       WHERE tenant_user.tenant_id::TEXT = lead_matches.tenant_id::TEXT
         AND tenant_user.user_id::TEXT = auth.uid()::TEXT
-        AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
-        AND LOWER(COALESCE(tenant.subscription_status, '')) IN ('active', 'canceling')
+        AND public.tenant_has_paid_access(
+          tenant.plan_tier::TEXT,
+          tenant.subscription_status::TEXT,
+          tenant.current_period_end
+        )
     )
   );
 
@@ -165,12 +212,10 @@ BEGIN
               ON tenant.tenant_id::TEXT = tenant_user.tenant_id::TEXT
             WHERE tenant_user.tenant_id::TEXT = watchlist_matches.tenant_id::TEXT
               AND tenant_user.user_id::TEXT = auth.uid()::TEXT
-              AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
-              AND LOWER(COALESCE(tenant.subscription_status, '')) IN ('active', 'canceling')
-              AND (
-                LOWER(COALESCE(tenant.subscription_status, '')) <> 'canceling'
-                OR tenant.current_period_end IS NULL
-                OR tenant.current_period_end >= NOW()
+              AND public.tenant_has_paid_access(
+                tenant.plan_tier::TEXT,
+                tenant.subscription_status::TEXT,
+                tenant.current_period_end
               )
           )
         )

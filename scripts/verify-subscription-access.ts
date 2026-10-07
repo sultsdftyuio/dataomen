@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { getWorkspaceEntitlements } from "../lib/entitlements";
+import {
+  ACTIVE_RENEWAL_GRACE_MS,
+  getWorkspaceEntitlements,
+  PRO_TRIAL_DAYS,
+} from "../lib/entitlements";
 import { resolvePaidAccessEnd } from "../lib/billing/cancellation-access";
 import { areBillingTestControlsEnabled } from "../lib/billing/test-controls";
 import {
@@ -16,6 +20,7 @@ type Fixture = {
   subscriptionStatus: string;
   websiteUrl?: string | null;
   currentPeriodEnd?: string | null;
+  trialEndsAt?: string | null;
 };
 
 function createSupabaseMock(fixture: Fixture) {
@@ -31,7 +36,7 @@ function createSupabaseMock(fixture: Fixture) {
                 tenant_id: "tenant-test",
                 plan_tier: fixture.planTier,
                 subscription_status: fixture.subscriptionStatus,
-                trial_ends_at: null,
+                trial_ends_at: fixture.trialEndsAt ?? null,
                 current_period_end: fixture.currentPeriodEnd ?? null,
               },
               error: null,
@@ -79,19 +84,58 @@ async function verifyEntitlementStates() {
   );
   assert.equal(expiredCancellation.isPro, false, "expired cancellations must be locked");
 
-  const expiredActivePeriod = await getWorkspaceEntitlements(
+  const awaitingRenewalWebhook = await getWorkspaceEntitlements(
     createSupabaseMock({
       planTier: "pro",
       subscriptionStatus: "active",
       currentPeriodEnd: new Date(Date.now() - 60_000).toISOString(),
+    }) as any,
+    "tenant-awaiting-renewal-webhook",
+  );
+  assert.equal(
+    awaitingRenewalWebhook.isPro,
+    true,
+    "an active subscription must stay entitled while its renewal webhook is in flight",
+  );
+
+  const expiredActivePeriod = await getWorkspaceEntitlements(
+    createSupabaseMock({
+      planTier: "pro",
+      subscriptionStatus: "active",
+      currentPeriodEnd: new Date(Date.now() - ACTIVE_RENEWAL_GRACE_MS - 60_000).toISOString(),
     }) as any,
     "tenant-expired-active-period",
   );
   assert.equal(
     expiredActivePeriod.isPro,
     false,
-    "an active record with an expired paid period must be locked",
+    "an active record must be locked once the renewal grace window has passed",
   );
+
+  const pastDue = await getWorkspaceEntitlements(
+    createSupabaseMock({
+      planTier: "pro",
+      subscriptionStatus: "past_due",
+      currentPeriodEnd: new Date(Date.now() - 60_000).toISOString(),
+    }) as any,
+    "tenant-past-due",
+  );
+  assert.equal(pastDue.isPro, false, "a failed renewal must lock Pro without a grace window");
+  assert.equal(pastDue.isPastDue, true, "a failed renewal must be reported as past due");
+
+  const trialEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const trialing = await getWorkspaceEntitlements(
+    createSupabaseMock({
+      planTier: "pro",
+      subscriptionStatus: "active",
+      currentPeriodEnd: trialEnd,
+      trialEndsAt: trialEnd,
+    }) as any,
+    "tenant-trialing",
+  );
+  assert.equal(trialing.isPro, true, "a trial with a card on file must have Pro access");
+  assert.equal(trialing.isTrialing, true, "a running trial must be reported as a trial");
+  assert.equal(active.isTrialing, false, "a paid subscription must not be reported as a trial");
 
   const cancellationWithoutPeriodEnd = await getWorkspaceEntitlements(
     createSupabaseMock({ planTier: "pro", subscriptionStatus: "canceling" }) as any,
@@ -187,15 +231,23 @@ async function verifyFreeDomainLimit() {
   );
 }
 
-function verifyNoTrialCheckoutOrLeadLeak() {
+function verifyTrialCheckoutAndLeadLeak() {
   const billing = readFileSync(join(process.cwd(), "app/actions/billing.ts"), "utf8");
   const webhook = readFileSync(join(process.cwd(), "app/api/webhooks/dodo/route.ts"), "utf8");
+  const subscriptionState = readFileSync(
+    join(process.cwd(), "lib/billing/subscription-state.ts"),
+    "utf8",
+  );
   const freePreview = readFileSync(
     join(process.cwd(), "app/(dashboard)/dashboard/free-prospect-preview.tsx"),
     "utf8",
   );
-  const dashboardData = readFileSync(
-    join(process.cwd(), "app/(dashboard)/dashboard/data.ts"),
+  const freeScanPreview = readFileSync(
+    join(process.cwd(), "app/(dashboard)/dashboard/free-scan-preview.ts"),
+    "utf8",
+  );
+  const workerEntitlements = readFileSync(
+    join(process.cwd(), "api/services/tenant_entitlements.py"),
     "utf8",
   );
   const databaseGuard = readFileSync(
@@ -203,10 +255,19 @@ function verifyNoTrialCheckoutOrLeadLeak() {
     "utf8",
   );
 
+  // The trial length comes from one constant, and a workspace that has already
+  // had a Dodo customer is sent 0 so it cannot start a second trial.
+  assert.equal(PRO_TRIAL_DAYS, 3, "the free trial is three days");
   assert.equal(
-    billing.includes("trial_period_days"),
+    billing.includes("trial_period_days: trialPeriodDays") &&
+      billing.includes("billingProfile?.dodo_customer_id ? 0 : PRO_TRIAL_DAYS"),
+    true,
+    "checkout must grant the trial once per workspace",
+  );
+  assert.equal(
+    subscriptionState.includes('subscription_status: "trialing"'),
     false,
-    "checkout must not create a trial",
+    "billing sync must not persist a trial status; a trial is an active subscription",
   );
   assert.equal(
     webhook.includes('subscription_status: "trialing"'),
@@ -219,14 +280,33 @@ function verifyNoTrialCheckoutOrLeadLeak() {
     "Free preview must not receive individual lead data",
   );
   assert.equal(
-    dashboardData.includes('rpc(\n    "free_plan_lead_queue_counts"'),
+    freeScanPreview.includes('rpc("free_plan_first_scan_preview"'),
     true,
-    "Free preview counts must come from the aggregate-only RPC",
+    "Free preview must come from the tenant-scoped preview RPC, not direct lead reads",
   );
   assert.equal(
     databaseGuard.includes('CREATE POLICY "lead_matches_select_tenant"'),
     true,
     "database policy must restrict direct lead reads to Pro",
+  );
+
+  // The paid-access rule exists once per runtime; each copy must keep the
+  // renewal grace window in step with the web app's.
+  const graceDays = ACTIVE_RENEWAL_GRACE_MS / (24 * 60 * 60 * 1000);
+  assert.equal(
+    databaseGuard.includes(`p_current_period_end + INTERVAL '${graceDays} days' > NOW()`),
+    true,
+    "the database paid-access rule must use the same renewal grace window",
+  );
+  assert.equal(
+    workerEntitlements.includes(`ACTIVE_RENEWAL_GRACE_DAYS = ${graceDays}`),
+    true,
+    "the worker paid-access rule must use the same renewal grace window",
+  );
+  assert.equal(
+    databaseGuard.split("AND public.tenant_has_paid_access(").length - 1,
+    4,
+    "every Pro-gated lead policy must use the shared paid-access rule",
   );
 }
 
@@ -235,8 +315,8 @@ async function main() {
   verifyCancellationAccessEndResolution();
   verifyBillingTestControls();
   await verifyFreeDomainLimit();
-  verifyNoTrialCheckoutOrLeadLeak();
-  console.log("Subscription access, Free domain limits, and no-trial checkout are verified.");
+  verifyTrialCheckoutAndLeadLeak();
+  console.log("Subscription access, Free domain limits, and trial checkout are verified.");
 }
 
 main().catch((error) => {

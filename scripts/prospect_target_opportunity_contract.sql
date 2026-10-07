@@ -393,17 +393,10 @@ BEGIN
         SELECT 1
           FROM public.tenants AS tenant
          WHERE tenant.tenant_id = resolved_tenant_id
-           AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
-           AND (
-                (
-                    LOWER(COALESCE(tenant.subscription_status, '')) = 'active'
-                    AND (tenant.current_period_end IS NULL OR tenant.current_period_end > NOW())
-                )
-                OR (
-                    LOWER(COALESCE(tenant.subscription_status, '')) = 'canceling'
-                    AND tenant.current_period_end IS NOT NULL
-                    AND tenant.current_period_end > NOW()
-                )
+           AND public.tenant_has_paid_access(
+             tenant.plan_tier::TEXT,
+             tenant.subscription_status::TEXT,
+             tenant.current_period_end
            )
     ) THEN
         RAISE EXCEPTION 'an active paid plan is required to create an opportunity'
@@ -632,17 +625,10 @@ BEGIN
         SELECT 1
           FROM public.tenants AS tenant
          WHERE tenant.tenant_id = saved_opportunity.tenant_id
-           AND LOWER(COALESCE(tenant.plan_tier, 'free')) IN ('pro', 'enterprise')
-           AND (
-                (
-                    LOWER(COALESCE(tenant.subscription_status, '')) = 'active'
-                    AND (tenant.current_period_end IS NULL OR tenant.current_period_end > NOW())
-                )
-                OR (
-                    LOWER(COALESCE(tenant.subscription_status, '')) = 'canceling'
-                    AND tenant.current_period_end IS NOT NULL
-                    AND tenant.current_period_end > NOW()
-                )
+           AND public.tenant_has_paid_access(
+             tenant.plan_tier::TEXT,
+             tenant.subscription_status::TEXT,
+             tenant.current_period_end
            )
     ) THEN
         RAISE EXCEPTION 'an active paid plan is required to qualify an opportunity'

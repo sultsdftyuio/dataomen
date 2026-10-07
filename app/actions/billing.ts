@@ -2,32 +2,32 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient as createSupabaseServiceClient } from "@supabase/supabase-js";
 
-import { createClient } from "@/utils/supabase/server";
+import { createClient, createServiceRoleClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
-import { getWorkspaceEntitlements } from "@/lib/entitlements";
-import { areBillingTestControlsEnabled } from "@/lib/billing/test-controls";
-import { DodoPayments } from "dodopayments";
+import { getWorkspaceEntitlements, PRO_TRIAL_DAYS } from "@/lib/entitlements";
+import { requireWorkspaceBillingAdmin } from "@/lib/billing/authorization";
+import { getDodoClient, sanitizeEnvSecret } from "@/lib/billing/dodo-client";
+import {
+  asRecord,
+  compact,
+  extractCurrentPeriodEnd,
+  extractCustomerId,
+  extractSubscriptionId,
+  readBoolean,
+  readString,
+  serializeError,
+} from "@/lib/billing/dodo-payload";
+import {
+  findActiveDodoSubscriptionForTenant,
+  type DodoSubscriptionLookupStrategy,
+  type DodoSubscriptionMatch,
+} from "@/lib/billing/subscription-lookup";
+import {
+  tenantAlreadyMatchesBillingUpdate,
+  tenantUpdateFromDodoSubscription,
+} from "@/lib/billing/subscription-state";
 import type { Database } from "@/types/supabase";
-
-const DODO_SUBSCRIPTION_SCAN_LIMIT = 200;
-const DODO_SUBSCRIPTION_PAGE_SIZE = 50;
-
-type DodoSubscriptionLookupStrategy =
-  | "subscription_id"
-  | "customer_id"
-  | "metadata.tenant_id";
-
-type DodoSubscriptionMatch = {
-  subscription: Record<string, unknown>;
-  lookupStrategy: DodoSubscriptionLookupStrategy;
-  scannedCount: number;
-};
-
-type DodoSubscriptionListParams = NonNullable<
-  Parameters<DodoPayments["subscriptions"]["list"]>[0]
->;
 
 type VerifyAndSyncSubscriptionStatusResult = {
   status: "already_synced" | "synced" | "no_active_subscription";
@@ -53,20 +53,6 @@ type ResumeSubscriptionResult = {
   currentPeriodEnd?: string | null;
 };
 
-type BillingTestState =
-  | "free"
-  | "active"
-  | "past_due"
-  | "canceling"
-  | "canceled";
-
-type BillingTestStateResult = {
-  status: "updated";
-  tenantId: string;
-  subscriptionStatus: BillingTestState;
-  planTier: "free" | "pro";
-};
-
 type BillingSessionResult =
   | {
       status: "checkout_created" | "portal_created";
@@ -88,40 +74,13 @@ type TenantBillingLookupRow = {
   current_period_end: string | null;
 };
 
-type TenantBillingAdminMembership = {
-  role: string | null;
-};
-
-async function requireWorkspaceBillingAdmin(
-  tenantId: string,
-  userId: string
-): Promise<void> {
-  const supabase = await createClient();
-  const { data: membership, error } = await supabase
-    .from("tenant_users")
-    .select("role")
-    .eq("tenant_id", tenantId)
-    .eq("user_id", userId)
-    .maybeSingle<TenantBillingAdminMembership>();
-
-  const role = membership?.role?.trim().toLowerCase();
-  if (error || !role || !["owner", "admin"].includes(role)) {
-    console.error("[Billing] Unauthorized billing management attempt", {
-      event: "billing_management_unauthorized",
-      tenant_id: tenantId,
-      user_id: userId,
-      role: role ?? null,
-      error,
-    });
-    throw new Error("Only workspace owners and admins can manage billing.");
-  }
-}
-
 async function scheduleSubscriptionCancellationForTenant(
   tenantId: string,
   userId: string
 ): Promise<CancelProPlanResult> {
-  const serviceSupabase = getSupabaseServiceClient();
+  await requireWorkspaceBillingAdmin(tenantId, userId);
+
+  const serviceSupabase = createServiceRoleClient();
   const { data: tenant, error: tenantError } = await serviceSupabase
     .from("tenants")
     .select(
@@ -283,395 +242,37 @@ async function scheduleSubscriptionCancellationForTenant(
   };
 }
 
-function sanitizeEnvSecret(value: string | undefined): string {
-  return value?.trim().replace(/^["']+|["']+$/g, "").trim() ?? "";
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function readString(record: Record<string, unknown> | null, key: string): string | null {
-  if (!record) return null;
-  const value = record[key];
-
-  if (typeof value !== "string") return null;
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function readBoolean(record: Record<string, unknown> | null, key: string): boolean | null {
-  if (!record) return null;
-  const value = record[key];
-  return typeof value === "boolean" ? value : null;
-}
-
-function serializeError(error: unknown): Record<string, unknown> {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
-  }
-
-  return { value: String(error) };
-}
-
-function addDays(dateValue: string | null, days: number): string {
-  const start = dateValue && Number.isFinite(Date.parse(dateValue))
-    ? new Date(dateValue)
-    : new Date();
-
-  return new Date(start.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-function compact(record: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined)
-  );
-}
-
-function getSupabaseServiceClient() {
-  const supabaseUrl = sanitizeEnvSecret(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const serviceRoleKey = sanitizeEnvSecret(process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase service role configuration.");
-  }
-
-  return createSupabaseServiceClient<Database>(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-}
-
-function isDodoTestApiKey(apiKey: string): boolean {
-  return apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
-}
-
-function isBillingTestState(value: string): value is BillingTestState {
-  return ["free", "active", "past_due", "canceling", "canceled"].includes(
-    value
-  );
-}
-
-function billingTestUpdateFromState(
-  state: BillingTestState
-): Database["public"]["Tables"]["tenants"]["Update"] {
-  const now = new Date().toISOString();
-
-  switch (state) {
-    case "active":
-      return {
-        plan_tier: "pro",
-        subscription_status: "active",
-        trial_ends_at: null,
-        billing_status: "active",
-        plan: "pro",
-        status: "active",
-        current_period_end: addDays(null, 30),
-        updated_at: now,
-      };
-    case "past_due":
-      return {
-        plan_tier: "pro",
-        subscription_status: "past_due",
-        trial_ends_at: null,
-        billing_status: "past_due",
-        plan: "pro",
-        status: "past_due",
-        current_period_end: addDays(null, -1),
-        updated_at: now,
-      };
-    case "canceling":
-      return {
-        plan_tier: "pro",
-        subscription_status: "canceling",
-        trial_ends_at: null,
-        billing_status: "canceling",
-        plan: "pro",
-        status: "active",
-        current_period_end: addDays(null, 14),
-        updated_at: now,
-      };
-    case "canceled":
-      return {
-        plan_tier: "free",
-        subscription_status: "canceled",
-        trial_ends_at: null,
-        billing_status: "canceled",
-        plan: "free",
-        status: "active",
-        current_period_end: null,
-        updated_at: now,
-      };
-    case "free":
-      return {
-        plan_tier: "free",
-        subscription_status: "free",
-        trial_ends_at: null,
-        billing_status: "free",
-        plan: "free",
-        status: "active",
-        current_period_end: null,
-        updated_at: now,
-      };
-  }
-}
-
 /**
- * 1. Deterministic SDK Initialization (Rule 11: Determinism & Rule 17: Observability)
- * Eliminates heuristic prefix guessing in favor of explicit configuration.
- * Automatically sanitizes accidental whitespace, quotes, or carriage returns.
+ * Whether Dodo still holds an active subscription for the workspace.
+ *
+ * Tells a scheduled cancellation (which should be resumed) apart from one whose
+ * subscription has already ended. Fails closed: if Dodo cannot be reached, the
+ * workspace is assumed to still be subscribed so no second checkout starts.
  */
-function getDodoClient(): { client: DodoPayments; environment: "test_mode" | "live_mode" } {
-  const apiKey = sanitizeEnvSecret(process.env.DODO_PAYMENTS_API_KEY);
-  if (!apiKey) {
-    throw new Error("Missing DODO_PAYMENTS_API_KEY environment variable.");
+async function workspaceHasActiveDodoSubscription(tenantId: string): Promise<boolean> {
+  try {
+    const { data: tenant } = await createServiceRoleClient()
+      .from("tenants")
+      .select("dodo_customer_id, dodo_subscription_id")
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    const match = await findActiveDodoSubscriptionForTenant(getDodoClient().client, {
+      tenantId,
+      customerId: tenant?.dodo_customer_id ?? null,
+      subscriptionId: tenant?.dodo_subscription_id ?? null,
+      productId: sanitizeEnvSecret(process.env.DODO_PRO_PLAN_ID) || null,
+    });
+
+    return match !== null;
+  } catch (error) {
+    console.error("[Billing] Could not confirm whether the workspace is still subscribed", {
+      event: "billing_active_subscription_check_failed",
+      tenant_id: tenantId,
+      error: serializeError(error),
+    });
+    return true;
   }
-
-  const explicitEnv = sanitizeEnvSecret(process.env.DODO_PAYMENTS_ENV);
-  if (explicitEnv !== "test_mode" && explicitEnv !== "live_mode") {
-    console.warn(
-      "[Billing] DODO_PAYMENTS_ENV is not explicitly set to 'test_mode' or 'live_mode'. Defaulting to 'live_mode'."
-    );
-  }
-
-  const environment: "test_mode" | "live_mode" =
-    explicitEnv === "test_mode" || explicitEnv === "live_mode"
-      ? explicitEnv
-      : "live_mode";
-
-  if (process.env.NODE_ENV === "production" && environment === "test_mode") {
-    console.warn(
-      "[Billing] DODO_PAYMENTS_ENV=test_mode is enabled in production. Using Dodo test API."
-    );
-  }
-
-  if (environment === "live_mode" && isDodoTestApiKey(apiKey)) {
-    throw new Error(
-      "DODO_PAYMENTS_API_KEY appears to be a test key while Dodo Payments is configured for live_mode."
-    );
-  }
-
-  const client = new DodoPayments({
-    bearerToken: apiKey,
-    environment,
-  });
-
-  return { client, environment };
-}
-
-function extractTenantIdFromMetadata(record: Record<string, unknown>): string | null {
-  const customer = asRecord(record.customer);
-  const subscription = asRecord(record.subscription);
-  const payment = asRecord(record.payment);
-  const checkoutSession = asRecord(record.checkout_session);
-
-  const metadataSources = [
-    asRecord(record.metadata),
-    asRecord(record.custom_data),
-    asRecord(record.checkout_session_metadata),
-    asRecord(customer?.metadata),
-    asRecord(subscription?.metadata),
-    asRecord(payment?.metadata),
-    asRecord(checkoutSession?.metadata),
-    asRecord(checkoutSession?.checkout_session_metadata),
-  ];
-
-  for (const metadata of metadataSources) {
-    const tenantId =
-      readString(metadata, "tenant_id") ??
-      readString(metadata, "tenantId") ??
-      readString(metadata, "workspace_id") ??
-      readString(metadata, "workspaceId");
-
-    if (tenantId) return tenantId;
-  }
-
-  return null;
-}
-
-function extractCustomerId(subscription: Record<string, unknown>): string | null {
-  return (
-    readString(subscription, "customer_id") ??
-    readString(asRecord(subscription.customer), "customer_id") ??
-    readString(asRecord(subscription.customer), "id")
-  );
-}
-
-function extractSubscriptionId(subscription: Record<string, unknown>): string | null {
-  return readString(subscription, "subscription_id") ?? readString(subscription, "id");
-}
-
-function extractCurrentPeriodEnd(subscription: Record<string, unknown>): string | null {
-  return (
-    readString(subscription, "current_period_end") ??
-    readString(subscription, "next_billing_date") ??
-    readString(subscription, "renews_at") ??
-    readString(subscription, "expires_at")
-  );
-}
-
-function isActiveDodoSubscription(subscription: Record<string, unknown>): boolean {
-  const status = readString(subscription, "status")?.toLowerCase();
-  return status === "active";
-}
-
-function tenantUpdateFromDodoSubscription(
-  subscription: Record<string, unknown>
-): Database["public"]["Tables"]["tenants"]["Update"] {
-  const cancelAtPeriodEnd = readBoolean(subscription, "cancel_at_next_billing_date") === true;
-  const subscriptionStatus = cancelAtPeriodEnd
-    ? "canceling"
-    : "active";
-
-  return compact({
-    plan_tier: "pro",
-    subscription_status: subscriptionStatus,
-    trial_ends_at: null,
-    billing_status: subscriptionStatus,
-    plan: "pro",
-    status: "active",
-    dodo_customer_id: extractCustomerId(subscription) ?? undefined,
-    dodo_subscription_id: extractSubscriptionId(subscription) ?? undefined,
-    current_period_end: extractCurrentPeriodEnd(subscription) ?? undefined,
-    updated_at: new Date().toISOString(),
-  }) as Database["public"]["Tables"]["tenants"]["Update"];
-}
-
-async function retrieveActiveSubscriptionById(
-  dodo: DodoPayments,
-  subscriptionId: string
-): Promise<Record<string, unknown> | null> {
-  const subscription = asRecord(await dodo.subscriptions.retrieve(subscriptionId));
-
-  if (!subscription || !isActiveDodoSubscription(subscription)) {
-    return null;
-  }
-
-  return subscription;
-}
-
-async function findActiveSubscriptionByCustomerId(
-  dodo: DodoPayments,
-  customerId: string,
-  productId: string | null
-): Promise<DodoSubscriptionMatch | null> {
-  let scannedCount = 0;
-
-  const listParams: DodoSubscriptionListParams = {
-    customer_id: customerId,
-    status: "active",
-    page_size: DODO_SUBSCRIPTION_PAGE_SIZE,
-  };
-
-  if (productId) {
-    listParams.product_id = productId;
-  }
-
-  for await (const subscription of dodo.subscriptions.list(listParams)) {
-    const subscriptionRecord = asRecord(subscription);
-    scannedCount += 1;
-
-    if (subscriptionRecord && isActiveDodoSubscription(subscriptionRecord)) {
-      return {
-        subscription: subscriptionRecord,
-        lookupStrategy: "customer_id",
-        scannedCount,
-      };
-    }
-  }
-
-  return null;
-}
-
-async function findActiveSubscriptionByMetadata(
-  dodo: DodoPayments,
-  tenantId: string,
-  productId: string | null
-): Promise<DodoSubscriptionMatch | null> {
-  let scannedCount = 0;
-
-  const listParams: DodoSubscriptionListParams = {
-    status: "active",
-    page_size: DODO_SUBSCRIPTION_PAGE_SIZE,
-  };
-
-  if (productId) {
-    listParams.product_id = productId;
-  }
-
-  for await (const subscription of dodo.subscriptions.list(listParams)) {
-    const subscriptionRecord = asRecord(subscription);
-    scannedCount += 1;
-
-    if (
-      subscriptionRecord &&
-      isActiveDodoSubscription(subscriptionRecord) &&
-      extractTenantIdFromMetadata(subscriptionRecord) === tenantId
-    ) {
-      return {
-        subscription: subscriptionRecord,
-        lookupStrategy: "metadata.tenant_id",
-        scannedCount,
-      };
-    }
-
-    if (scannedCount >= DODO_SUBSCRIPTION_SCAN_LIMIT) {
-      break;
-    }
-  }
-
-  console.info("[Billing] Dodo active subscription metadata scan completed without match", {
-    event: "dodo_subscription_metadata_scan_miss",
-    tenant_id: tenantId,
-    product_id: productId,
-    scanned_count: scannedCount,
-    scan_limit: DODO_SUBSCRIPTION_SCAN_LIMIT,
-  });
-
-  return null;
-}
-
-async function findActiveDodoSubscriptionForTenant(
-  dodo: DodoPayments,
-  params: {
-    tenantId: string;
-    customerId: string | null;
-    subscriptionId: string | null;
-    productId: string | null;
-  }
-): Promise<DodoSubscriptionMatch | null> {
-  if (params.subscriptionId) {
-    const subscription = await retrieveActiveSubscriptionById(dodo, params.subscriptionId);
-
-    if (subscription) {
-      return {
-        subscription,
-        lookupStrategy: "subscription_id",
-        scannedCount: 1,
-      };
-    }
-  }
-
-  if (params.customerId) {
-    const customerMatch = await findActiveSubscriptionByCustomerId(
-      dodo,
-      params.customerId,
-      params.productId
-    );
-
-    if (customerMatch) return customerMatch;
-  }
-
-  return findActiveSubscriptionByMetadata(dodo, params.tenantId, params.productId);
 }
 
 /**
@@ -694,10 +295,20 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
     throw new Error("User account is missing an associated email address.");
   }
 
+  await requireWorkspaceBillingAdmin(tenantId, userId);
+
   // 5. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
 
-  if (entitlements.isPro && entitlements.subscriptionStatus !== "canceling") {
+  // A workspace with a subscription on file must fix or resume that one:
+  // another checkout would bill it twice. The one exception is a cancellation
+  // whose subscription has already ended in Dodo while paid time remains, where
+  // nothing is left to resume and a new checkout is the only way back.
+  const hasSubscriptionOnFile = entitlements.isPro || entitlements.isPastDue;
+  const subscriptionAlreadyEnded =
+    entitlements.isCanceling && !(await workspaceHasActiveDodoSubscription(tenantId));
+
+  if (hasSubscriptionOnFile && !subscriptionAlreadyEnded) {
     console.info("[Billing] Handling duplicate checkout attempt for active workspace", {
       event: "duplicate_checkout_detected",
       tenant_id: tenantId,
@@ -719,7 +330,9 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
       return {
         status: "already_active",
         url: null,
-        message: "Workspace already has an active subscription.",
+        message: entitlements.isPastDue
+          ? "Update the payment method on your existing subscription to restore Pro."
+          : "Workspace already has an active subscription.",
       };
     }
   }
@@ -733,6 +346,26 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
     throw new Error("Billing service is currently unavailable.");
   }
 
+  // One free trial per workspace. A workspace that has ever had a Dodo customer
+  // has already used it, so it is charged at checkout. The value is always sent,
+  // because an explicit 0 also overrides any trial configured on the product.
+  const { data: billingProfile, error: billingProfileError } = await supabase
+    .from("tenants")
+    .select("dodo_customer_id")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (billingProfileError) {
+    console.error("[Billing] Tenant lookup failed during checkout creation", {
+      event: "checkout_tenant_lookup_failed",
+      tenant_id: tenantId,
+      user_id: userId,
+      error: billingProfileError,
+    });
+    throw new Error("Unable to resolve workspace billing status.");
+  }
+
+  const trialPeriodDays = billingProfile?.dodo_customer_id ? 0 : PRO_TRIAL_DAYS;
   const { client: dodo, environment } = getDodoClient();
 
   // 6. Resilient Checkout Creation
@@ -745,6 +378,9 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
         },
       ],
       allowed_payment_method_types: ["credit", "debit"],
+      subscription_data: {
+        trial_period_days: trialPeriodDays,
+      },
       customer: {
         email: user.email,
       },
@@ -819,11 +455,11 @@ export async function verifyAndSyncSubscriptionStatus(
     throw new Error("No valid workspace found for user.");
   }
 
-  const serviceSupabase = getSupabaseServiceClient();
+  const serviceSupabase = createServiceRoleClient();
   const { data: tenant, error: tenantError } = await serviceSupabase
     .from("tenants")
     .select(
-      "tenant_id, plan_tier, subscription_status, dodo_customer_id, dodo_subscription_id, current_period_end"
+      "tenant_id, plan_tier, subscription_status, trial_ends_at, billing_status, plan, status, dodo_customer_id, dodo_subscription_id, current_period_end"
     )
     .eq("tenant_id", normalizedTenantId)
     .maybeSingle();
@@ -874,7 +510,9 @@ export async function verifyAndSyncSubscriptionStatus(
     throw new Error("Unable to verify subscription status. Please try again.");
   }
 
-  if (!match) {
+  const update = match ? tenantUpdateFromDodoSubscription(match.subscription) : null;
+
+  if (!match || !update) {
     console.info("[Billing] No active Dodo subscription found for workspace", {
       event: "billing_sync_no_active_subscription",
       tenant_id: normalizedTenantId,
@@ -893,21 +531,12 @@ export async function verifyAndSyncSubscriptionStatus(
     };
   }
 
-  const update = tenantUpdateFromDodoSubscription(match.subscription);
   const desiredSubscriptionId = update.dodo_subscription_id ?? null;
   const desiredCustomerId = update.dodo_customer_id ?? null;
   const desiredSubscriptionStatus =
     typeof update.subscription_status === "string" ? update.subscription_status : null;
-  const activeLocalStatus = ["active", "canceling"].includes(
-    tenant.subscription_status?.toLowerCase() ?? ""
-  );
-  const shouldSync =
-    tenant.plan_tier !== "pro" ||
-    !activeLocalStatus ||
-    tenant.dodo_customer_id !== desiredCustomerId ||
-    tenant.dodo_subscription_id !== desiredSubscriptionId;
 
-  if (!shouldSync) {
+  if (tenantAlreadyMatchesBillingUpdate(tenant, update)) {
     console.info("[Billing] Workspace billing state already matches Dodo", {
       event: "billing_sync_already_synced",
       tenant_id: normalizedTenantId,
@@ -1006,7 +635,7 @@ export async function resumeSubscription(): Promise<ResumeSubscriptionResult> {
   const { tenantId, userId } = tenantContextResult.context;
   await requireWorkspaceBillingAdmin(tenantId, userId);
 
-  const serviceSupabase = getSupabaseServiceClient();
+  const serviceSupabase = createServiceRoleClient();
   const { data: tenant, error: tenantError } = await serviceSupabase
     .from("tenants")
     .select(
@@ -1081,19 +710,18 @@ export async function resumeSubscription(): Promise<ResumeSubscriptionResult> {
     };
   }
 
-  let resumedSubscription: Record<string, unknown>;
+  let resumedSubscription: Record<string, unknown> | null;
   try {
     const updateResponse = asRecord(
       await dodo.subscriptions.update(subscriptionId, {
         cancel_at_next_billing_date: false,
       })
     );
-    resumedSubscription =
-      updateResponse ??
-      asRecord(await dodo.subscriptions.retrieve(subscriptionId)) ?? {
-        subscription_id: subscriptionId,
-        cancel_at_next_billing_date: false,
-      };
+    // The local state is written from the subscription's own status, so a
+    // response without one is re-read from Dodo instead of being assumed active.
+    resumedSubscription = readString(updateResponse, "status")
+      ? updateResponse
+      : asRecord(await dodo.subscriptions.retrieve(subscriptionId));
   } catch (error) {
     console.error("[Billing] Dodo subscription resume failed", {
       event: "billing_resume_dodo_update_failed",
@@ -1106,7 +734,11 @@ export async function resumeSubscription(): Promise<ResumeSubscriptionResult> {
     throw new Error("Unable to resume subscription. Please try again.");
   }
 
-  if (readBoolean(resumedSubscription, "cancel_at_next_billing_date") === true) {
+  const update = resumedSubscription
+    ? tenantUpdateFromDodoSubscription(resumedSubscription)
+    : null;
+
+  if (!update || update.subscription_status !== "active") {
     console.error("[Billing] Dodo did not confirm cancellation removal", {
       event: "billing_resume_dodo_state_unconfirmed",
       tenant_id: tenantId,
@@ -1117,7 +749,6 @@ export async function resumeSubscription(): Promise<ResumeSubscriptionResult> {
     throw new Error("Dodo could not confirm that the subscription was resumed.");
   }
 
-  const update = tenantUpdateFromDodoSubscription(resumedSubscription);
   const { data: updatedTenant, error: updateError } = await serviceSupabase
     .from("tenants")
     .update(update)
@@ -1204,72 +835,6 @@ export async function removePaymentMethodAndScheduleDowngrade(
 }
 
 /**
- * Local/testing-only subscription state override for exercising gated UI.
- * This intentionally preserves persisted Dodo customer/subscription IDs.
- */
-export async function setBillingTestState(state: string): Promise<BillingTestStateResult> {
-  if (!areBillingTestControlsEnabled()) {
-    console.warn("[Billing] Blocked billing test state update outside allowed environment", {
-      event: "billing_test_state_blocked",
-      node_env: process.env.NODE_ENV,
-    });
-    throw new Error("Billing test controls are disabled in this environment.");
-  }
-
-  const normalizedState = state.trim().toLowerCase();
-
-  if (!isBillingTestState(normalizedState)) {
-    throw new Error("Unsupported billing test state.");
-  }
-
-  const tenantContextResult = await resolveTenantContext();
-  if ("response" in tenantContextResult) {
-    throw new Error("No valid workspace found for user.");
-  }
-
-  const { tenantId, userId } = tenantContextResult.context;
-  await requireWorkspaceBillingAdmin(tenantId, userId);
-  const update = billingTestUpdateFromState(normalizedState);
-  const serviceSupabase = getSupabaseServiceClient();
-  const { data: updatedTenant, error: updateError } = await serviceSupabase
-    .from("tenants")
-    .update(update)
-    .eq("tenant_id", tenantId)
-    .select("tenant_id, plan_tier, subscription_status")
-    .maybeSingle();
-
-  if (updateError || !updatedTenant) {
-    console.error("[Billing] Billing test state update failed", {
-      event: "billing_test_state_update_failed",
-      tenant_id: tenantId,
-      user_id: userId,
-      requested_state: normalizedState,
-      error: updateError,
-    });
-    throw new Error("Unable to update billing test state.");
-  }
-
-  revalidatePath("/dashboard");
-  revalidatePath("/settings");
-
-  console.info("[Billing] Billing test state updated", {
-    event: "billing_test_state_updated",
-    tenant_id: tenantId,
-    user_id: userId,
-    requested_state: normalizedState,
-    plan_tier: updatedTenant.plan_tier,
-    subscription_status: updatedTenant.subscription_status,
-  });
-
-  return {
-    status: "updated",
-    tenantId,
-    subscriptionStatus: normalizedState,
-    planTier: updatedTenant.plan_tier === "pro" ? "pro" : "free",
-  };
-}
-
-/**
  * Generates a Dodo Payments Customer Portal session for active subscribers.
  * Eliminates live email scanning in favor of deterministic database resolution with 100% type safety.
  */
@@ -1288,6 +853,7 @@ export async function manageBillingPortal(): Promise<BillingSessionResult> {
   }
 
   const { supabase, tenantId, userId } = tenantContextResult.context;
+  await requireWorkspaceBillingAdmin(tenantId, userId);
 
   // 2. Deterministic Tenant & Billing Profile Resolution (Rule 11)
   const { data: tenant, error: tenantError } = await supabase
