@@ -5,7 +5,6 @@ import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
-import { areBillingTestControlsEnabled } from "@/lib/billing/test-controls";
 import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
 import { fetchTenantSettingsRow } from "@/lib/settings/server";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";
@@ -212,7 +211,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       canReceiveResultEmails={canReceiveResultEmails}
       serviceProfile={serviceProfile}
       planData={billingPlanData}
-      showBillingTestControls={areBillingTestControlsEnabled()}
     />
   );
 }
