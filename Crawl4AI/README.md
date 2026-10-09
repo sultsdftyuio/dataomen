@@ -36,8 +36,23 @@ create the service profile.
 The worker starts deliberately small on a 2 GB App Platform component:
 
 - one Dramatiq thread and one globally leased Chromium crawl;
+- one browser launch per website, shared by the homepage and its linked pages;
 - up to four profile pages, with a 20-second page timeout;
 - Firecrawl only when Crawl4AI fails or returns insufficient clean content.
+
+Memory and time are bounded in three places:
+
+- `browser_settings.py` launches Chromium without images, fonts, media, ads,
+  or background services, and with a capped JavaScript heap.
+- `website_markdown.py` stops starting pages shortly before the crawl timeout
+  and returns the pages already rendered. Error pages (HTTP 400 and above) and
+  redirects to an already rendered page are skipped.
+- `browser_processes.py` terminates any Chromium or Playwright driver process
+  left behind after a crawl. The worker memory guard measures only the Python
+  process, so this is what stops a leaked browser from holding memory.
+
+Each crawl logs `crawl4ai_site_crawled` with page count and timings, and
+`crawl4ai_page_skipped` with the reason for every page it did not keep.
 
 Before deploying, add the real `FIRECRAWL_API_KEY` to the DigitalOcean app
 secret for the fallback path. Set `ARCLI_CRAWL4AI_ENABLED=false` to immediately

@@ -2227,54 +2227,56 @@ class WebsiteCrawler:
         ]
 
     async def _crawl_with_crawl4ai(self, url: str) -> list[tuple[str, str]]:
-        """Render the homepage, then bounded high-value links through Crawl4AI."""
-        from Crawl4AI.website_markdown import Crawl4AIWebsiteCrawler
+        """Render the homepage, then bounded high-value links through Crawl4AI.
 
-        seed_pages = min(
-            self.max_pages,
-            env_int("ARCLI_CRAWL4AI_SEED_PAGES", 1),
+        Both phases share one browser. The crawler stops starting pages before
+        ``timeout_seconds`` elapses and returns what it has, so the caller's
+        timeout is a backstop rather than the normal way a slow site ends.
+        """
+        from Crawl4AI.website_markdown import Crawl4AIPage, Crawl4AIWebsiteCrawler
+
+        seed_pages = max(
+            1,
+            min(self.max_pages, env_int("ARCLI_CRAWL4AI_SEED_PAGES", 1)),
         )
+
+        def linked_profile_urls(rendered: list[Crawl4AIPage]) -> list[str]:
+            """Rank links found on the seed pages ahead of guessed paths.
+
+            Twice the open page slots are offered, so a missing or duplicate
+            page does not cost a slot, while a site with few real pages cannot
+            spend the whole time budget on guessed paths. The crawler itself
+            stops at ``max_pages`` usable pages.
+            """
+            documents = [(page.url, page.markdown) for page in rendered]
+            attempt_limit = 2 * max(0, self.max_pages - len(documents))
+            seen_sources = {self._source_key(source_url) for source_url, _ in documents}
+            next_urls: list[str] = []
+            for candidate in (
+                *self._discovered_profile_urls(url, documents),
+                *self._fallback_urls(url),
+            ):
+                if len(next_urls) >= attempt_limit:
+                    break
+                key = self._source_key(candidate)
+                if key not in seen_sources:
+                    seen_sources.add(key)
+                    next_urls.append(candidate)
+            return next_urls
+
         crawler = Crawl4AIWebsiteCrawler(
             page_timeout_ms=env_int(
                 "ARCLI_CRAWL4AI_PAGE_TIMEOUT_MS",
                 min(self.page_timeout_ms, 20_000),
             ),
-            max_pages=seed_pages,
+            max_pages=self.max_pages,
+            budget_seconds=self.timeout_seconds,
         )
-        pages = await crawler.crawl_pages(self._fallback_urls(url)[:seed_pages])
-        documents = [(page.url, page.markdown) for page in pages]
-        remaining_pages = max(0, self.max_pages - len(documents))
-        if not remaining_pages:
-            return documents
-
-        seen_sources = {self._source_key(source_url) for source_url, _ in documents}
-        candidates = [
-            *self._discovered_profile_urls(url, documents),
-            *self._fallback_urls(url),
-        ]
-        next_urls: list[str] = []
-        for candidate in candidates:
-            key = self._source_key(candidate)
-            if key in seen_sources:
-                continue
-            seen_sources.add(key)
-            next_urls.append(candidate)
-            if len(next_urls) >= remaining_pages:
-                break
-
-        if not next_urls:
-            return documents
-
-        linked_crawler = Crawl4AIWebsiteCrawler(
-            page_timeout_ms=env_int(
-                "ARCLI_CRAWL4AI_PAGE_TIMEOUT_MS",
-                min(self.page_timeout_ms, 20_000),
-            ),
-            max_pages=remaining_pages,
+        pages = await crawler.crawl_site(
+            self._fallback_urls(url)[:seed_pages],
+            discover_next=linked_profile_urls,
         )
-        linked_pages = await linked_crawler.crawl_pages(next_urls)
-        documents.extend((page.url, page.markdown) for page in linked_pages)
-        return documents
+        return [(page.url, page.markdown) for page in pages]
 
     @staticmethod
     def _crawl4ai_enabled() -> bool:
@@ -2318,8 +2320,8 @@ class WebsiteCrawler:
             try:
                 crawl4ai_lease = await provider_concurrency_limiter.acquire_async(
                     provider="crawl4ai-browser",
-                    # A 2 GB App Platform component starts safely with one
-                    # Chromium crawl shared across every replica.
+                    # One Chromium crawl at a time, shared across every
+                    # replica, keeps the browser worker inside its memory.
                     limit=env_int("ARCLI_CRAWL4AI_ACTIVE_CRAWLS", 1),
                     lease_seconds=env_int(
                         "ARCLI_CRAWL4AI_CONCURRENCY_LEASE_SECONDS",

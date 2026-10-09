@@ -304,6 +304,46 @@ def test_crawl4ai_failure_uses_firecrawl_fallback() -> None:
     assert "Firecrawl fallback" in markdown
 
 
+def test_crawl4ai_uses_one_browser_session_and_bounded_link_candidates() -> None:
+    from Crawl4AI import website_markdown
+
+    sessions: list[dict[str, object]] = []
+    home_markdown = "[Pricing](/pricing) and [Customers](https://example.com/customers)"
+
+    class _Crawl4AICrawler:
+        def __init__(self, **kwargs: object) -> None:
+            sessions.append(kwargs)
+
+        async def crawl_site(self, seed_urls, *, discover_next):
+            home = website_markdown.Crawl4AIPage(
+                url="https://example.com",
+                markdown=home_markdown,
+            )
+            sessions[-1]["seed_urls"] = list(seed_urls)
+            sessions[-1]["next_urls"] = list(discover_next([home]))
+            return [home]
+
+    crawler = crawling.WebsiteCrawler(timeout_seconds=80, max_pages=3)
+    with patch.object(website_markdown, "Crawl4AIWebsiteCrawler", _Crawl4AICrawler):
+        documents = asyncio.run(crawler._crawl_with_crawl4ai("https://example.com"))
+
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert session["max_pages"] == 3
+    assert session["budget_seconds"] == 80
+    assert session["seed_urls"] == ["https://example.com"]
+    next_urls = session["next_urls"]
+    # Two page slots remain, so at most four candidates are offered: links
+    # found on the homepage first, then guessed paths, never the homepage.
+    assert len(next_urls) == 4
+    assert set(next_urls[:2]) == {
+        "https://example.com/pricing",
+        "https://example.com/customers",
+    }
+    assert "https://example.com" not in next_urls
+    assert documents == [("https://example.com", home_markdown)]
+
+
 def test_crawl_quality_rejects_long_noncommercial_content_and_accepts_product_surfaces() -> None:
     crawler = crawling.WebsiteCrawler()
     noncommercial = crawler._crawl_content_quality(
