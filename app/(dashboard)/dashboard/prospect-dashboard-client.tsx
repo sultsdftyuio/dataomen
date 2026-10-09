@@ -13,6 +13,7 @@ import {
   submitLeadFeedback,
 } from "./actions";
 import { setLeadHandled } from "./lead-review-actions";
+import { runManualDiscoveryScan } from "./manual-scan-actions";
 import {
   isPotentialBuyer,
   isScreenedMatch,
@@ -40,6 +41,8 @@ type ProspectDashboardClientProps = {
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
   isWarmingUp: boolean;
+  /** Resolved on the server from the operator allowlist. */
+  canRunManualScan: boolean;
 };
 
 type FeedbackNotice = {
@@ -109,6 +112,7 @@ export default function ProspectDashboardClient({
   buyerGroupSuggestions,
   activateBuyerGroup,
   isWarmingUp,
+  canRunManualScan,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
   const [feedbackMessages, setFeedbackMessages] = useState<
@@ -135,6 +139,10 @@ export default function ProspectDashboardClient({
   const [isRefreshPending, startRefreshTransition] = useTransition();
   const [isProfileRebuildPending, startProfileRebuildTransition] = useTransition();
   const [profileRebuildResult, setProfileRebuildResult] = useState<
+    ProspectActionResult | null
+  >(null);
+  const [isManualScanPending, startManualScanTransition] = useTransition();
+  const [manualScanResult, setManualScanResult] = useState<
     ProspectActionResult | null
   >(null);
 
@@ -295,6 +303,22 @@ export default function ProspectDashboardClient({
     });
   };
 
+  const handleManualScan = () => {
+    setManualScanResult(null);
+    startManualScanTransition(async () => {
+      try {
+        const result = await runManualDiscoveryScan();
+        setManualScanResult(result);
+        if (result.ok) router.refresh();
+      } catch {
+        setManualScanResult({
+          ok: false,
+          message: "Could not queue a scan. Please try again.",
+        });
+      }
+    });
+  };
+
   const inboxItems = useMemo(
     () => queueItems.filter((lead) => matchesLeadQueueFilter(lead, "all")),
     [queueItems],
@@ -363,6 +387,11 @@ export default function ProspectDashboardClient({
       feedbackPending={isFeedbackPending && pendingFeedbackLeadId === selectedLead?.id}
       qualificationPending={isQualificationPending && pendingQualificationLeadId === selectedLead?.id}
       qualificationMessage={selectedLead ? qualificationMessages[selectedLead.id] ?? null : null}
+      manualScan={
+        canRunManualScan
+          ? { pending: isManualScanPending, result: manualScanResult, onStart: handleManualScan }
+          : null
+      }
       onRefresh={refreshDashboard}
       onRebuildProfile={handleProfileRebuild}
       onQueryChange={setQueueQuery}

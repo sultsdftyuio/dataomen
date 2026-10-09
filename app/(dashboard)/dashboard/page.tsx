@@ -21,6 +21,7 @@ import { fetchFreeScanPreview } from "./free-scan-preview";
 import FreeProspectPreview from "./free-prospect-preview";
 import ProspectDashboardClient from "./prospect-dashboard-client";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { viewerMayRunManualScan } from "@/lib/manual-scan-access";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const metadata: Metadata = {
@@ -159,9 +160,10 @@ export default async function DashboardPage() {
     ),
   ]);
   // Screened records are audit-only and never marked done, so skip them.
-  const [leads, discoveryCandidates] = await Promise.all([
+  const [leads, discoveryCandidates, canRunManualScan] = await Promise.all([
     attachHandledState(supabase, tenantId, rawLeads),
     attachHandledState(supabase, tenantId, rawDiscoveryCandidates),
+    viewerMayRunManualScan(supabase),
   ]);
   return (
     <ProspectDashboardClient
@@ -174,6 +176,7 @@ export default async function DashboardPage() {
       buyerGroupSuggestions={buyerGroupSuggestions}
       activateBuyerGroup={activateSuggestedBuyerGroup}
       isWarmingUp={isDiscoveryWarmingUp}
+      canRunManualScan={canRunManualScan}
     />
   );
 }

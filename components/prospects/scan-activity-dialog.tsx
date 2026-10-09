@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, Check, Clock3, RefreshCw } from "lucide-react";
+import { AlertCircle, Check, Clock3, Radar, RefreshCw } from "lucide-react";
 
-import type { BuyerDemandReportView } from "@/app/(dashboard)/dashboard/prospect-types";
+import type {
+  BuyerDemandReportView,
+  ProspectActionResult,
+} from "@/app/(dashboard)/dashboard/prospect-types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,11 +18,19 @@ import {
 import { C } from "@/lib/tokens";
 import { sourceDisplayName } from "./lead-desk-presentation";
 
+/** Present only for allowlisted operators; customers never receive it. */
+export type ManualScanControl = {
+  pending: boolean;
+  result: ProspectActionResult | null;
+  onStart: () => void;
+};
+
 type ScanActivityDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   report: BuyerDemandReportView | null;
   onRefresh: () => void;
+  manualScan?: ManualScanControl | null;
 };
 
 function sourceOutcome(state: BuyerDemandReportView["sourceProgress"][number]["state"]) {
@@ -32,7 +43,7 @@ function sourceOutcome(state: BuyerDemandReportView["sourceProgress"][number]["s
   }
 }
 
-export function ScanActivityDialog({ open, onOpenChange, report, onRefresh }: ScanActivityDialogProps) {
+export function ScanActivityDialog({ open, onOpenChange, report, onRefresh, manualScan = null }: ScanActivityDialogProps) {
   const sources = report?.isTerminal
     ? report.sourceProgress.filter((source) => source.state !== "checking")
     : report?.sourceProgress ?? [];
@@ -98,9 +109,21 @@ export function ScanActivityDialog({ open, onOpenChange, report, onRefresh }: Sc
           </p>
         )}
 
+        {manualScan?.result ? (
+          <p className="text-xs leading-5" role="status" style={{ color: manualScan.result.ok ? C.navySoft : C.amber }}>
+            {manualScan.result.message}
+            {manualScan.result.ok ? " Refresh in a few seconds to follow it live." : ""}
+          </p>
+        ) : null}
+
         <div className="flex flex-wrap gap-2 border-t pt-4" style={{ borderColor: C.rule }}>
           <Button type="button" variant="outline" onClick={onRefresh}><RefreshCw className="size-4" aria-hidden="true" /> Refresh</Button>
           <Button asChild variant="outline"><Link href="/dashboard/brief">Review matching brief</Link></Button>
+          {manualScan ? (
+            <Button type="button" disabled={manualScan.pending} aria-busy={manualScan.pending} onClick={manualScan.onStart}>
+              <Radar className="size-4" aria-hidden="true" /> {manualScan.pending ? "Starting..." : "Run scan now"}
+            </Button>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

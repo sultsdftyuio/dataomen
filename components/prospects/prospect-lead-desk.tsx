@@ -21,7 +21,7 @@ import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import { EmptyQueue } from "@/components/prospects/empty-queue";
-import { ScanActivityDialog } from "@/components/prospects/scan-activity-dialog";
+import { ScanActivityDialog, type ManualScanControl } from "@/components/prospects/scan-activity-dialog";
 import { ProfileHealthBanner } from "@/components/prospects/profile-health-banner";
 import { LeadOutreach } from "@/components/prospects/lead-outreach";
 import { profileHealthIssue } from "@/app/(dashboard)/dashboard/profile-health";
@@ -79,6 +79,8 @@ type ProspectLeadDeskProps = {
   feedbackPending: boolean;
   qualificationPending: boolean;
   qualificationMessage: string | null;
+  /** Operator-only on-demand scan; null for customers. */
+  manualScan: ManualScanControl | null;
   onRefresh: () => void;
   onRebuildProfile: () => void;
   onQueryChange: (value: string) => void;
@@ -130,6 +132,7 @@ export function ProspectLeadDesk({
   feedbackPending,
   qualificationPending,
   qualificationMessage,
+  manualScan,
   onRefresh,
   onRebuildProfile,
   onQueryChange,
@@ -648,7 +651,7 @@ export function ProspectLeadDesk({
           )}
         </aside>
       </section>
-      <ScanActivityDialog open={scanActivityOpen} onOpenChange={setScanActivityOpen} report={buyerDemandReport} onRefresh={onRefresh} />
+      <ScanActivityDialog open={scanActivityOpen} onOpenChange={setScanActivityOpen} report={buyerDemandReport} onRefresh={onRefresh} manualScan={manualScan} />
     </div>
   );
 }
