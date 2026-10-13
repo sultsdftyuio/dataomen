@@ -105,17 +105,20 @@ def _persist_source_post_embedding_cache(
     if not metadata_column:
         return
 
+    # jsonb_build_object accepts any type, so the server cannot infer an
+    # untyped parameter. Psycopg 3 binds server-side and rejects the statement
+    # unless every argument carries an explicit cast.
     metadata_expression = (
         """
         (
             COALESCE(metadata::jsonb, '{}'::jsonb)
             || jsonb_build_object(
-                :cache_key,
+                CAST(:cache_key AS text),
                 jsonb_build_object(
-                    'model', :embedding_model,
-                    'text_sha256', :text_sha256,
+                    'model', CAST(:embedding_model AS text),
+                    'text_sha256', CAST(:text_sha256 AS text),
                     'embedding', CAST(:embedding AS jsonb),
-                    'dimensions', :dimensions,
+                    'dimensions', CAST(:dimensions AS integer),
                     'cached_at', CAST(:cached_at AS timestamptz)
                 )
             )
@@ -513,14 +516,6 @@ def _persist_lead_match(
     if "created_at" in columns:
         payload["created_at"] = now
 
-    existing_id = _existing_lead_match_id(
-        conn,
-        tenant_id=tenant_id,
-        service_profile_id=service_profile_id,
-        source_post_id=source_post_id,
-        external_key=post.dedupe_key,
-        columns=columns,
-    )
     expressions, params = _bind_payload(payload, columns)
 
     if (
@@ -568,6 +563,16 @@ def _persist_lead_match(
         )
         return
 
+    # Only a row without a profile or post identity reaches this point; the
+    # upsert above resolves its own conflict, so it never needs this lookup.
+    existing_id = _existing_lead_match_id(
+        conn,
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        source_post_id=source_post_id,
+        external_key=post.dedupe_key,
+        columns=columns,
+    )
     if existing_id:
         assignment_parts = [
             (

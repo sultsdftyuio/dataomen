@@ -2400,31 +2400,30 @@ def enqueue_source_post_embedding_batch_job(
     def process_watchlists(matching_refs: Sequence[dict[str, str]]) -> tuple[int, int]:
         """Keep watchlist evaluation independent from shared profile matching."""
 
-        watchlist_candidates = 0
-        watchlist_ready_for_review = 0
-        for ref in matching_refs:
-            try:
-                from api.services.watchlist_matching import (
-                    process_active_watchlists_for_public_source_post,
-                )
+        if not matching_refs:
+            return 0, 0
+        try:
+            from api.services.watchlist_matching import (
+                process_active_watchlists_for_public_source_posts,
+            )
 
-                watchlist_result = process_active_watchlists_for_public_source_post(
-                    ref["source_post_id"],
-                    source=ref["source"],
-                )
-                watchlist_candidates += int(watchlist_result.get("candidates", 0))
-                watchlist_ready_for_review += int(
-                    watchlist_result.get("ready_for_review", 0)
-                )
-            except Exception as watchlist_exc:
-                logger.exception(
-                    "watchlist_source_matching_failed source=%s source_post_id=%s error_type=%s error=%s",
-                    ref["source"],
-                    ref["source_post_id"],
-                    watchlist_exc.__class__.__name__,
-                    watchlist_exc,
-                )
-        return watchlist_candidates, watchlist_ready_for_review
+            # One call for the batch: the active Watchlists are the same for
+            # every post, so they are loaded and prepared once.
+            watchlist_result = process_active_watchlists_for_public_source_posts(
+                [(ref["source"], ref["source_post_id"]) for ref in matching_refs]
+            )
+        except Exception as watchlist_exc:
+            logger.exception(
+                "watchlist_source_matching_failed source_post_count=%s error_type=%s error=%s",
+                len(matching_refs),
+                watchlist_exc.__class__.__name__,
+                watchlist_exc,
+            )
+            return 0, 0
+        return (
+            int(watchlist_result.get("candidates", 0)),
+            int(watchlist_result.get("ready_for_review", 0)),
+        )
 
     try:
         from api.services.social_ingestion import (

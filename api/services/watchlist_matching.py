@@ -13,15 +13,13 @@ import logging
 import hashlib
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from sqlalchemy import text
 
 from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
 from api.services.embeddings import (
     EmbeddingService,
-    _as_dict,
     _database_engine,
     _load_service_profile,
     _service_profile_columns,
@@ -57,11 +55,13 @@ from api.services.social.public_records import (
     _load_recent_embedded_public_source_post_rows,
     _public_source_post_as_social_post,
 )
+from api.services.watchlist_storage import (
+    _cached_watchlist_verification,
+    _persist_watchlist_match,
+)
 from api.services.verifier import (
-    VERIFIER_POLICY_VERSION,
     CandidatePost,
     ServiceProfile,
-    VerificationResult,
     VerifierService,
     verify_candidate_safely,
 )
@@ -418,23 +418,53 @@ def _build_context(
     )
 
 
+def _service_profile_rows_for_watchlists(
+    rows: Sequence[dict[str, Any]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Load each distinct Watchlist profile once, in a single transaction.
+
+    Several Watchlists normally narrow the same website profile, so reading it
+    per Watchlist would repeat one query and open a transaction each time.
+    """
+    profile_keys = [
+        key
+        for key in dict.fromkeys(
+            (
+                _space(row.get("tenant_id"), max_chars=80),
+                _space(row.get("service_profile_id"), max_chars=80),
+            )
+            for row in rows
+        )
+        if key[0] and key[1]
+    ]
+    if not profile_keys:
+        return {}
+
+    profile_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    with _database_engine().begin() as conn:
+        columns = _service_profile_columns(conn)
+        for tenant_id, service_profile_id in profile_keys:
+            profile_row = _load_service_profile(
+                conn,
+                tenant_id,
+                service_profile_id,
+                columns,
+            )
+            if profile_row:
+                profile_rows[(tenant_id, service_profile_id)] = profile_row
+    return profile_rows
+
+
 def _contexts_for_rows(rows: Iterable[dict[str, Any]]) -> list[WatchlistContext]:
     contexts: list[WatchlistContext] = []
+    watchlist_rows = list(rows)
     embedding_service = EmbeddingService()
     try:
-        engine = _database_engine()
-        for row in rows:
+        profile_rows = _service_profile_rows_for_watchlists(watchlist_rows)
+        for row in watchlist_rows:
             tenant_id = _space(row.get("tenant_id"), max_chars=80)
             service_profile_id = _space(row.get("service_profile_id"), max_chars=80)
-            if not tenant_id or not service_profile_id:
-                continue
-            with engine.begin() as conn:
-                profile_row = _load_service_profile(
-                    conn,
-                    tenant_id,
-                    service_profile_id,
-                    _service_profile_columns(conn),
-                )
+            profile_row = profile_rows.get((tenant_id, service_profile_id))
             if not profile_row:
                 continue
             try:
@@ -469,150 +499,21 @@ def _source_is_selected(post: SocialPost, context: WatchlistContext) -> bool:
     )
 
 
-def _cached_watchlist_verification(
-    conn: Any,
-    *,
-    context: WatchlistContext,
-    source_post_id: str,
-    external_key: str,
-    verifier_model: str,
-) -> VerificationResult | None:
-    row = conn.execute(
-        text(
-            """
-            SELECT metadata, verification
-              FROM public.watchlist_matches
-             WHERE tenant_id = :tenant_id
-               AND watchlist_id = CAST(:watchlist_id AS uuid)
-               AND source_post_id = CAST(:source_post_id AS uuid)
-             ORDER BY updated_at DESC NULLS LAST
-             LIMIT 1
-            """
-        ),
-        {
-            "tenant_id": context.tenant_id,
-            "watchlist_id": context.id,
-            "source_post_id": source_post_id,
-        },
-    ).mappings().first()
-    if not row:
-        return None
-    metadata = _as_dict(row.get("metadata"))
-    if (
-        metadata.get("external_key") != external_key
-        or metadata.get("profile_embedding_sha256") != context.embedding_sha256
-        or metadata.get("verifier_model") != verifier_model
-        or metadata.get("verifier_policy_version") != VERIFIER_POLICY_VERSION
-    ):
-        return None
-    try:
-        verification = VerificationResult.model_validate(
-            _as_dict(row.get("verification"))
-        )
-        # A quota/transport/gate skip is retryable rather than a reusable
-        # decision; keep the Watchlist path consistent with lead matches.
-        return verification if verification.verifier_executed else None
-    except Exception:
-        return None
-
-
-def _persist_watchlist_match(
-    conn: Any,
-    *,
-    context: WatchlistContext,
-    source_post_id: str,
-    post: SocialPost,
-    similarity_score: float,
-    verification: VerificationResult,
-    verifier_model: str,
-) -> None:
-    if not verification.verifier_executed:
-        logger.info(
-            "watchlist_match_persistence_skipped tenant_id=%s watchlist_id=%s source_post_id=%s skip_reason=%s",
-            context.tenant_id,
-            context.id,
-            source_post_id,
-            "verifier_not_executed",
-        )
-        return
-
-    now = datetime.now(timezone.utc).isoformat()
-    verification_payload = verification.model_dump()
-    payload = {
-        "tenant_id": context.tenant_id,
-        "watchlist_id": context.id,
-        "service_profile_id": context.service_profile_id,
-        "source_post_id": source_post_id,
-        "match_status": _lead_match_status(verification),
-        "verifier_score": float(verification.confidence or 0.0),
-        "similarity_score": similarity_score,
-        "pain_detected": verification.pain_detected,
-        "match_reason": verification.why_this_matches,
-        "suggested_reply": verification.suggested_reply,
-        "verification": json.dumps(verification_payload),
-        "source_post": json.dumps(post.to_source_post_json()),
-        "metadata": json.dumps(
-            {
-                **(post.metadata or {}),
-                "source": post.source,
-                "external_id": post.external_id,
-                "external_key": post.dedupe_key,
-                "watchlist_id": context.id,
-                "profile_embedding_sha256": context.embedding_sha256,
-                "verifier_model": verifier_model,
-                "verifier_policy_version": VERIFIER_POLICY_VERSION,
-            }
-        ),
-        "matched_at": now,
-        "verified_at": now,
-        "updated_at": now,
-    }
-    conn.execute(
-        text(
-            """
-            INSERT INTO public.watchlist_matches (
-                tenant_id, watchlist_id, service_profile_id, source_post_id,
-                match_status, verifier_score, similarity_score, pain_detected,
-                match_reason, suggested_reply, verification, source_post,
-                metadata, matched_at, verified_at, updated_at
-            ) VALUES (
-                :tenant_id, CAST(:watchlist_id AS uuid), CAST(:service_profile_id AS uuid),
-                CAST(:source_post_id AS uuid), :match_status, :verifier_score,
-                :similarity_score, :pain_detected, :match_reason, :suggested_reply,
-                CAST(:verification AS jsonb), CAST(:source_post AS jsonb),
-                CAST(:metadata AS jsonb), CAST(:matched_at AS timestamptz),
-                CAST(:verified_at AS timestamptz), CAST(:updated_at AS timestamptz)
-            )
-            ON CONFLICT (tenant_id, watchlist_id, source_post_id)
-                WHERE source_post_id IS NOT NULL
-            DO UPDATE SET
-                match_status = EXCLUDED.match_status,
-                verifier_score = EXCLUDED.verifier_score,
-                similarity_score = EXCLUDED.similarity_score,
-                pain_detected = EXCLUDED.pain_detected,
-                match_reason = EXCLUDED.match_reason,
-                suggested_reply = EXCLUDED.suggested_reply,
-                verification = EXCLUDED.verification,
-                source_post = EXCLUDED.source_post,
-                metadata = EXCLUDED.metadata,
-                matched_at = EXCLUDED.matched_at,
-                verified_at = EXCLUDED.verified_at,
-                updated_at = EXCLUDED.updated_at
-            """
-        ),
-        payload,
-    )
-
-
 def _match_post_to_contexts(
     *,
     source_post_id: str,
     post: SocialPost,
     post_embedding: list[float],
     contexts: Iterable[WatchlistContext],
+    verifier: VerifierService | None = None,
 ) -> dict[str, int]:
+    """Verify one post against each Watchlist it plausibly fits.
+
+    A caller matching several posts passes its own ``verifier`` so the
+    provider connection is reused; otherwise one is built here on demand.
+    """
     result = {"candidates": 0, "ready_for_review": 0, "discovery_candidates": 0}
-    verifier: VerifierService | None = None
+    owns_verifier = verifier is None
     engine = _database_engine()
     try:
         for context in contexts:
@@ -733,7 +634,108 @@ def _match_post_to_contexts(
                         comment_scan_exc.__class__.__name__,
                     )
     finally:
-        if verifier is not None:
+        if owns_verifier and verifier is not None:
+            verifier.close()
+    return result
+
+
+def _post_text_sha256(post: SocialPost) -> str:
+    return hashlib.sha256(
+        normalize_embedding_text(post.matching_text[:32_000]).encode("utf-8")
+    ).hexdigest()
+
+
+def process_active_watchlists_for_public_source_posts(
+    source_post_refs: Sequence[tuple[str | None, str]],
+) -> dict[str, int]:
+    """Match already-cached global public posts to active Watchlists.
+
+    The active Watchlists and their matching briefs are the same for every
+    post in a batch, so they are read and prepared once for the batch rather
+    than once per post.
+    """
+    result = {"posts": 0, "watchlists": 0, "candidates": 0, "ready_for_review": 0, "discovery_candidates": 0}
+    refs = [
+        (source, normalized_id)
+        for source, source_post_id in source_post_refs
+        if (normalized_id := _space(source_post_id, max_chars=80))
+    ]
+    if not refs:
+        return result
+
+    engine = _database_engine()
+    rows: list[dict[str, Any]] = []
+    try:
+        with engine.begin() as conn:
+            watchlists = _load_active_watchlist_rows(
+                conn,
+                limit=max(1, env_int("ARCLI_WATCHLIST_GLOBAL_MATCH_LIMIT", 100)),
+            )
+            # Most workspaces have no active Watchlist: do not read the posts
+            # when there is nothing to match them against.
+            if watchlists:
+                for source, source_post_id in refs:
+                    rows.extend(
+                        _load_public_source_post_rows(conn, source_post_id, source=source)
+                    )
+    except Exception as exc:
+        # The schema is additive. Existing source matching must continue while
+        # an operator rolls this contract out.
+        logger.info(
+            "watchlist_source_matching_skipped source_post_count=%s error_type=%s",
+            len(refs),
+            exc.__class__.__name__,
+        )
+        return result
+    result["posts"] = len(rows)
+    result["watchlists"] = len(watchlists)
+    if not rows or not watchlists:
+        return result
+
+    contexts = _contexts_for_rows(watchlists)
+    result["watchlists"] = len(contexts)
+    embedding_service = EmbeddingService()
+    # Shared across the batch so each post does not open its own connection.
+    verifier = VerifierService()
+    try:
+        for row in rows:
+            post = _public_source_post_as_social_post(row)
+            database_post_id = _space(row.get("id"), max_chars=80)
+            if not post or not database_post_id:
+                continue
+            cached_embedding = _cached_public_source_post_embedding(
+                row,
+                text_sha256=_post_text_sha256(post),
+                embedding_model=embedding_service.model,
+            )
+            if not cached_embedding:
+                # The global source actor will have generated this first. Do
+                # not perform another public-post embedding here.
+                continue
+            try:
+                matched = _match_post_to_contexts(
+                    source_post_id=database_post_id,
+                    post=post,
+                    post_embedding=cached_embedding,
+                    contexts=contexts,
+                    verifier=verifier,
+                )
+            except Exception as exc:
+                # One post must not discard Watchlist results for the others.
+                logger.exception(
+                    "watchlist_source_matching_failed source=%s source_post_id=%s error_type=%s error=%s",
+                    post.source,
+                    post.external_id,
+                    exc.__class__.__name__,
+                    exc,
+                )
+                continue
+            for key in ("candidates", "ready_for_review", "discovery_candidates"):
+                result[key] += matched[key]
+    finally:
+        try:
+            embedding_service.close()
+        finally:
             verifier.close()
     return result
 
@@ -747,59 +749,7 @@ def process_active_watchlists_for_public_source_post(
     normalized_id = _space(source_post_id, max_chars=80)
     if not normalized_id:
         raise ValueError("source_post_id is required")
-    engine = _database_engine()
-    try:
-        with engine.begin() as conn:
-            rows = _load_public_source_post_rows(conn, normalized_id, source=source)
-            watchlists = _load_active_watchlist_rows(
-                conn,
-                limit=max(1, env_int("ARCLI_WATCHLIST_GLOBAL_MATCH_LIMIT", 100)),
-            )
-    except Exception as exc:
-        # The schema is additive. Existing source matching must continue while
-        # an operator rolls this contract out.
-        logger.info(
-            "watchlist_source_matching_skipped source_post_id=%s error_type=%s",
-            normalized_id,
-            exc.__class__.__name__,
-        )
-        return {"posts": 0, "watchlists": 0, "candidates": 0, "ready_for_review": 0, "discovery_candidates": 0}
-    if not rows or not watchlists:
-        return {"posts": len(rows), "watchlists": len(watchlists), "candidates": 0, "ready_for_review": 0, "discovery_candidates": 0}
-
-    contexts = _contexts_for_rows(watchlists)
-    result = {"posts": len(rows), "watchlists": len(contexts), "candidates": 0, "ready_for_review": 0, "discovery_candidates": 0}
-    embedding_service = EmbeddingService()
-    try:
-        for row in rows:
-            post = _public_source_post_as_social_post(row)
-            database_post_id = _space(row.get("id"), max_chars=80)
-            if not post or not database_post_id:
-                continue
-            with engine.begin() as conn:
-                cached_embedding = _cached_public_source_post_embedding(
-                    conn,
-                    database_post_id=database_post_id,
-                    text_sha256=hashlib.sha256(
-                        normalize_embedding_text(post.matching_text[:32_000]).encode("utf-8")
-                    ).hexdigest(),
-                    embedding_model=embedding_service.model,
-                )
-            if not cached_embedding:
-                # The global source actor will have generated this first. Do
-                # not perform another public-post embedding here.
-                continue
-            matched = _match_post_to_contexts(
-                source_post_id=database_post_id,
-                post=post,
-                post_embedding=cached_embedding,
-                contexts=contexts,
-            )
-            for key in ("candidates", "ready_for_review", "discovery_candidates"):
-                result[key] += matched[key]
-    finally:
-        embedding_service.close()
-    return result
+    return process_active_watchlists_for_public_source_posts([(source, normalized_id)])
 
 
 def rematch_existing_public_source_posts_for_watchlist(
@@ -831,21 +781,18 @@ def rematch_existing_public_source_posts_for_watchlist(
     context = contexts[0]
     result = {"posts": len(rows), "embedded": 0, "candidates": 0, "ready_for_review": 0, "discovery_candidates": 0}
     embedding_service = EmbeddingService()
+    verifier = VerifierService()
     try:
         for row in rows:
             post = _public_source_post_as_social_post(row)
             database_post_id = _space(row.get("id"), max_chars=80)
             if not post or not database_post_id or not _source_is_selected(post, context):
                 continue
-            with engine.begin() as conn:
-                cached_embedding = _cached_public_source_post_embedding(
-                    conn,
-                    database_post_id=database_post_id,
-                    text_sha256=hashlib.sha256(
-                        normalize_embedding_text(post.matching_text[:32_000]).encode("utf-8")
-                    ).hexdigest(),
-                    embedding_model=embedding_service.model,
-                )
+            cached_embedding = _cached_public_source_post_embedding(
+                row,
+                text_sha256=_post_text_sha256(post),
+                embedding_model=embedding_service.model,
+            )
             if not cached_embedding:
                 continue
             result["embedded"] += 1
@@ -854,11 +801,15 @@ def rematch_existing_public_source_posts_for_watchlist(
                 post=post,
                 post_embedding=cached_embedding,
                 contexts=[context],
+                verifier=verifier,
             )
             for key in ("candidates", "ready_for_review", "discovery_candidates"):
                 result[key] += matched[key]
     finally:
-        embedding_service.close()
+        try:
+            embedding_service.close()
+        finally:
+            verifier.close()
     return result
 
 

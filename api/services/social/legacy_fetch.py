@@ -36,6 +36,7 @@ from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.x_connector import TwitterSourcePost
 from api.services.matching import PostEmbedding, find_candidate_matches
+from api.services.schema_columns import table_columns as _cached_table_columns
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
@@ -363,25 +364,7 @@ def _table_columns(
     conn: Connection,
     table_name: str,
 ) -> dict[str, dict[str, str]]:
-    rows = conn.execute(
-        text(
-            """
-            SELECT column_name, data_type, udt_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public'
-               AND table_name = :table_name
-            """
-        ),
-        {"table_name": table_name},
-    ).mappings()
-
-    return {
-        str(row["column_name"]): {
-            "data_type": str(row["data_type"]),
-            "udt_name": str(row["udt_name"]),
-        }
-        for row in rows
-    }
+    return _cached_table_columns(conn, table_name)
 
 # Cross-module helper imports for static analysis and direct module use.
 from .models import (

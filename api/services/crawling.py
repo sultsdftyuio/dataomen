@@ -17,6 +17,8 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
+from api.services.database_connection import postgres_connect_args
+from api.services.schema_columns import table_columns
 from api.services.crawl_fingerprint import is_near_duplicate_crawl, markdown_fingerprint
 from api.services.cost_controls import (
     env_int,
@@ -209,16 +211,18 @@ def _database_engine() -> Engine:
     if not database_url:
         raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
 
+    normalized_url = _normalize_database_url(database_url)
     return create_engine(
-        _normalize_database_url(database_url),
+        normalized_url,
         pool_pre_ping=True,
         pool_size=4,
         max_overflow=0,
         pool_timeout=5,
         pool_recycle=1_800,
-        connect_args={
-            "connect_timeout": _env_int("ARCLI_DB_CONNECT_TIMEOUT_SECONDS", 3),
-        },
+        connect_args=postgres_connect_args(
+            normalized_url,
+            connect_timeout=_env_int("ARCLI_DB_CONNECT_TIMEOUT_SECONDS", 3),
+        ),
     )
 
 
@@ -1308,24 +1312,10 @@ def _service_profile_payload(
 
 
 def _service_profile_columns(conn: Connection) -> dict[str, dict[str, str]]:
-    rows = conn.execute(
-        text(
-            """
-            SELECT column_name, data_type, udt_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public'
-               AND table_name = 'service_profiles'
-            """
-        )
-    ).mappings()
-
     return {
-        str(row["column_name"]): {
-            "data_type": str(row["data_type"]),
-            "udt_name": str(row["udt_name"]),
-        }
-        for row in rows
-        if str(row["column_name"]) in SERVICE_PROFILE_COLUMNS or row["column_name"] == "id"
+        column_name: metadata
+        for column_name, metadata in table_columns(conn, "service_profiles").items()
+        if column_name in SERVICE_PROFILE_COLUMNS or column_name == "id"
     }
 
 

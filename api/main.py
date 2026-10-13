@@ -19,6 +19,8 @@ from pydantic import (
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from api.services.database_connection import postgres_connect_args
+
 logger = logging.getLogger(__name__)
 
 
@@ -492,7 +494,12 @@ def _database_engine() -> Engine:
     if not database_url:
         raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
 
-    return create_engine(_normalize_database_url(database_url), pool_pre_ping=True)
+    normalized_url = _normalize_database_url(database_url)
+    return create_engine(
+        normalized_url,
+        pool_pre_ping=True,
+        connect_args=postgres_connect_args(normalized_url),
+    )
 
 
 def _validate_internal_tenant_scope(

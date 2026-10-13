@@ -681,9 +681,9 @@ class PublicSourceReferenceTests(unittest.TestCase):
             ) as process,
             patch.object(
                 watchlist_matching,
-                "process_active_watchlists_for_public_source_post",
+                "process_active_watchlists_for_public_source_posts",
                 return_value={"candidates": 0, "ready_for_review": 0},
-            ),
+            ) as watchlists,
             patch.object(actors, "_close_actor_openai_clients"),
         ):
             actors.enqueue_source_post_embedding_batch_job.fn(refs)
@@ -694,6 +694,8 @@ class PublicSourceReferenceTests(unittest.TestCase):
             service_profile_id=None,
             retry_on_not_found=True,
         )
+        # Watchlists are evaluated once for the batch, not once per post.
+        watchlists.assert_called_once_with([("github", "github-42")])
 
     def test_embedding_batch_retries_only_the_not_yet_visible_refs(self) -> None:
         from api.workers import actors

@@ -573,13 +573,11 @@ def rematch_existing_public_source_posts_for_profile(
                 continue
 
             embedding_text = normalize_embedding_text(post.matching_text[:32_000])
-            with engine.begin() as conn:
-                embedding_values = _cached_public_source_post_embedding(
-                    conn,
-                    database_post_id=database_post_id,
-                    text_sha256=_sha256_text(embedding_text),
-                    embedding_model=embedding_service.model,
-                )
+            embedding_values = _cached_public_source_post_embedding(
+                source_row,
+                text_sha256=_sha256_text(embedding_text),
+                embedding_model=embedding_service.model,
+            )
             if not embedding_values:
                 cache_misses += 1
                 continue
@@ -826,6 +824,7 @@ def process_public_source_post_embedding(
     _lead_match_columns: dict[str, dict[str, str]] | None = None,
     _embedding_values_by_database_post_id: dict[str, list[float]] | None = None,
     _embedding_service: EmbeddingService | None = None,
+    _verifier: VerifierService | None = None,
 ) -> dict[str, int]:
     """Embed one global post and create tenant-scoped verified lead matches.
 
@@ -903,14 +902,16 @@ def process_public_source_post_embedding(
 
     embedding_service = _embedding_service or EmbeddingService()
     owns_embedding_service = _embedding_service is None
-    verifier: VerifierService | None = None
+    verifier: VerifierService | None = _verifier
+    owns_verifier = _verifier is None
     embedded_count = 0
     candidate_count = 0
     verification_retry_profiles: set[tuple[str, str]] = set()
     ready_for_review_count = 0
     discovery_candidate_count = 0
     try:
-        verifier = VerifierService()
+        if verifier is None:
+            verifier = VerifierService()
         for source_row in source_rows:
             database_post_id = str(source_row["id"])
             post = _public_source_post_as_social_post(source_row)
@@ -932,13 +933,11 @@ def process_public_source_post_embedding(
                 else None
             )
             if _embedding_values_by_database_post_id is None:
-                with engine.begin() as conn:
-                    embedding_values = _cached_public_source_post_embedding(
-                        conn,
-                        database_post_id=database_post_id,
-                        text_sha256=text_sha256,
-                        embedding_model=embedding_service.model,
-                    )
+                embedding_values = _cached_public_source_post_embedding(
+                    source_row,
+                    text_sha256=text_sha256,
+                    embedding_model=embedding_service.model,
+                )
 
             if embedding_values:
                 logger.info(
@@ -1168,7 +1167,7 @@ def process_public_source_post_embedding(
     finally:
         if owns_embedding_service:
             embedding_service.close()
-        if verifier is not None:
+        if owns_verifier and verifier is not None:
             verifier.close()
 
     if verification_retry_profiles:
@@ -1195,138 +1194,6 @@ def process_public_source_post_embedding(
         "ready_for_review": ready_for_review_count,
         "discovery_candidates": discovery_candidate_count,
     }
-
-
-def _normalized_public_source_post_refs(
-    source_post_refs: Sequence[Any],
-) -> list[tuple[str | None, str]]:
-    """Normalize broker-safe source references without losing source identity."""
-    normalized_refs: list[tuple[str | None, str]] = []
-    seen: set[tuple[str | None, str]] = set()
-    for ref in source_post_refs:
-        if isinstance(ref, tuple) and len(ref) == 2:
-            source = _string_value(ref[0])
-            source_post_id = _string_value(ref[1]) or ""
-        elif isinstance(ref, str):
-            source = None
-            source_post_id = ref.strip()
-        elif isinstance(ref, dict):
-            source = _string_value(ref.get("source"))
-            source_post_id = _string_value(ref.get("source_post_id")) or ""
-        else:
-            source = _string_value(getattr(ref, "source", None))
-            source_post_id = _string_value(getattr(ref, "source_post_id", None)) or ""
-        key = ((source or "").strip() or None, source_post_id.strip())
-        if not key[1] or key in seen:
-            continue
-        seen.add(key)
-        normalized_refs.append(key)
-    return normalized_refs
-
-
-def prewarm_public_source_post_embedding_cache(
-    source_post_refs: Sequence[Any],
-    *,
-    source_rows_by_ref: (
-        dict[tuple[str | None, str], list[dict[str, Any]]] | None
-    ) = None,
-    embedding_service: EmbeddingService | None = None,
-    embedding_values_by_database_post_id: dict[str, list[float]] | None = None,
-) -> int:
-    """Fill missing public-post embeddings with provider-sized batches.
-
-    The downstream matching function remains deliberately per post: it keeps
-    its idempotent cache, verifier policy, and lead persistence semantics.
-    This small preparation step only replaces many one-input embedding calls
-    with one request containing up to the configured batch size.
-    """
-    normalized_refs = _normalized_public_source_post_refs(source_post_refs)
-
-    if not normalized_refs:
-        return 0
-
-    engine = _database_engine()
-    owns_embedding_service = embedding_service is None
-    embedding_service = embedding_service or EmbeddingService()
-    missing_embeddings: list[tuple[str, str, str]] = []
-    try:
-        for source, source_post_id in normalized_refs:
-            source_rows = (source_rows_by_ref or {}).get((source, source_post_id))
-            if source_rows is None:
-                with engine.begin() as conn:
-                    source_rows = _load_public_source_post_rows(
-                        conn,
-                        source_post_id,
-                        source=source,
-                    )
-            for source_row in source_rows:
-                database_post_id = str(source_row["id"])
-                post = _public_source_post_as_social_post(source_row)
-                if not post:
-                    continue
-                embedding_text = normalize_embedding_text(post.matching_text[:32_000])
-                text_sha256 = _sha256_text(embedding_text)
-                with engine.begin() as conn:
-                    cached_embedding = _cached_public_source_post_embedding(
-                        conn,
-                        database_post_id=database_post_id,
-                        text_sha256=text_sha256,
-                        embedding_model=embedding_service.model,
-                    )
-                if cached_embedding:
-                    if embedding_values_by_database_post_id is not None:
-                        embedding_values_by_database_post_id[database_post_id] = (
-                            cached_embedding
-                        )
-                    continue
-                missing_embeddings.append(
-                    (database_post_id, text_sha256, embedding_text)
-                )
-
-        if not missing_embeddings:
-            return 0
-
-        try:
-            embeddings = embedding_service.embed_many(
-                [item[2] for item in missing_embeddings],
-                source_post_ids=[item[0] for item in missing_embeddings],
-                purpose="public_source_matching",
-            )
-        except Exception:
-            for database_post_id, _, _ in missing_embeddings:
-                with engine.begin() as conn:
-                    _mark_public_source_post_embedding_failed(
-                        conn,
-                        database_post_id=database_post_id,
-                    )
-            raise
-
-        for (database_post_id, text_sha256, _), embedding in zip(
-            missing_embeddings,
-            embeddings,
-        ):
-            with engine.begin() as conn:
-                _persist_public_source_post_embedding_cache(
-                    conn,
-                    database_post_id=database_post_id,
-                    text_sha256=text_sha256,
-                    embedding_model=embedding.model,
-                    embedding=embedding.embedding,
-                )
-            if embedding_values_by_database_post_id is not None:
-                embedding_values_by_database_post_id[database_post_id] = (
-                    embedding.embedding
-                )
-
-        logger.info(
-            "public_source_post_embedding_batch_cached posts=%s model=%s",
-            len(missing_embeddings),
-            embedding_service.model,
-        )
-        return len(missing_embeddings)
-    finally:
-        if owns_embedding_service:
-            embedding_service.close()
 
 
 def process_public_source_post_embedding_batch(
@@ -1402,6 +1269,9 @@ def process_public_source_post_embedding_batch(
                         retryable_missing_refs.append((source, source_post_id))
 
     embedding_service = EmbeddingService()
+    # One verifier for the batch: building one per post would open a new
+    # provider connection, with its TLS handshake, before every verification.
+    verifier = VerifierService()
     embedding_values_by_database_post_id: dict[str, list[float]] = {}
     retryable_missing_ref_set = set(retryable_missing_refs)
     totals = {
@@ -1432,11 +1302,15 @@ def process_public_source_post_embedding_batch(
                     embedding_values_by_database_post_id
                 ),
                 _embedding_service=embedding_service,
+                _verifier=verifier,
             )
             for key in totals:
                 totals[key] += int(result.get(key, 0))
     finally:
-        embedding_service.close()
+        try:
+            embedding_service.close()
+        finally:
+            verifier.close()
 
     if retryable_missing_refs:
         retry_source, retry_source_post_id = retryable_missing_refs[0]
@@ -1481,6 +1355,8 @@ from .public_records import (
     _load_public_source_post_rows,
     _load_recent_embedded_public_source_post_rows,
     _mark_public_source_post_embedding_failed,
+    _normalized_public_source_post_refs,
     _persist_public_source_post_embedding_cache,
     _public_source_post_as_social_post,
+    prewarm_public_source_post_embedding_cache,
 )

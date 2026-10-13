@@ -89,6 +89,45 @@ class MatchRejection(BaseModel):
     rejection_reason: str = Field(min_length=1)
 
 
+# ``math.sumprod`` (Python 3.12+) runs the dot product in C. Squared norms
+# inside this range cannot overflow or underflow when multiplied together.
+_sumprod = getattr(math, "sumprod", None)
+_MIN_FAST_NORM_SQUARED = 1e-150
+_MAX_FAST_NORM_SQUARED = 1e150
+
+
+def _fast_cosine_similarity(
+    left: Sequence[float],
+    right: Sequence[float],
+) -> float | None:
+    """Score ordinary embeddings without a Python-level loop.
+
+    Matching compares every post with every candidate profile on a worker
+    whose threads share one interpreter lock, so a per-element Python loop
+    stalls unrelated jobs. ``None`` hands extreme magnitudes, zero vectors and
+    non-finite values to the scaled loop, which handles or rejects them.
+    """
+    if _sumprod is None:
+        return None
+    try:
+        dot_product = _sumprod(left, right)
+        left_norm_squared = _sumprod(left, left)
+        right_norm_squared = _sumprod(right, right)
+    except (TypeError, OverflowError):
+        return None
+    # A NaN fails both comparisons, so non-finite input also falls through.
+    if not (
+        _MIN_FAST_NORM_SQUARED < left_norm_squared < _MAX_FAST_NORM_SQUARED
+        and _MIN_FAST_NORM_SQUARED < right_norm_squared < _MAX_FAST_NORM_SQUARED
+    ):
+        return None
+    score = dot_product / math.sqrt(left_norm_squared * right_norm_squared)
+    if not math.isfinite(score):
+        return None
+    # Rounding can leave a parallel pair a hair outside the valid range.
+    return max(-1.0, min(1.0, score))
+
+
 def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     if len(left) != len(right):
         raise ValueError(
@@ -96,6 +135,10 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
         )
     if not left:
         raise ValueError("Embeddings must not be empty")
+
+    fast_score = _fast_cosine_similarity(left, right)
+    if fast_score is not None:
+        return fast_score
 
     left_scale = 0.0
     right_scale = 0.0

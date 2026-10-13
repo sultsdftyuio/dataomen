@@ -20,6 +20,8 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from api.services.database_connection import postgres_connect_args
+from api.services.schema_columns import table_columns
 from api.services.cost_controls import TenantQuotaGuard, env_int, provider_rate_limiter
 from api.services.openai_lifecycle import OpenAIClientOwner
 
@@ -530,8 +532,9 @@ def _database_engine() -> Engine:
     if not database_url:
         raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
 
+    normalized_url = _normalize_database_url(database_url)
     return create_engine(
-        _normalize_database_url(database_url),
+        normalized_url,
         pool_pre_ping=True,
         # Public-source matching is I/O bound and now runs on up to eight
         # worker threads. Keep enough checked connections available for the
@@ -541,28 +544,15 @@ def _database_engine() -> Engine:
         max_overflow=env_int("ARCLI_DB_MAX_OVERFLOW", 4),
         pool_timeout=5,
         pool_recycle=1_800,
+        connect_args=postgres_connect_args(normalized_url),
     )
 
 
 def _service_profile_columns(conn: Connection) -> dict[str, dict[str, str]]:
-    rows = conn.execute(
-        text(
-            """
-            SELECT column_name, data_type, udt_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public'
-               AND table_name = 'service_profiles'
-            """
-        )
-    ).mappings()
-
     return {
-        str(row["column_name"]): {
-            "data_type": str(row["data_type"]),
-            "udt_name": str(row["udt_name"]),
-        }
-        for row in rows
-        if str(row["column_name"]) in SERVICE_PROFILE_EMBEDDING_COLUMNS
+        column_name: metadata
+        for column_name, metadata in table_columns(conn, "service_profiles").items()
+        if column_name in SERVICE_PROFILE_EMBEDDING_COLUMNS
     }
 
 
@@ -1138,25 +1128,7 @@ def _table_columns(
     conn: Connection,
     table_name: str,
 ) -> dict[str, dict[str, str]]:
-    rows = conn.execute(
-        text(
-            """
-            SELECT column_name, data_type, udt_name
-              FROM information_schema.columns
-             WHERE table_schema = 'public'
-               AND table_name = :table_name
-            """
-        ),
-        {"table_name": table_name},
-    ).mappings()
-
-    return {
-        str(row["column_name"]): {
-            "data_type": str(row["data_type"]),
-            "udt_name": str(row["udt_name"]),
-        }
-        for row in rows
-    }
+    return table_columns(conn, table_name)
 
 
 def _persist_service_profile_embedding_record(

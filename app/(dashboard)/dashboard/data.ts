@@ -26,6 +26,11 @@ import {
   type SourceFeedbackInsight,
 } from "@/lib/source-feedback-insights";
 import type { Database, Json } from "@/types/supabase";
+import {
+  LEAD_MATCH_SELECTS,
+  WATCHLIST_MATCH_SELECTS,
+  readWithSelectFallback,
+} from "./lead-match-select";
 import type {
   BuyerDemandReportView,
   CrawlJobView,
@@ -766,25 +771,11 @@ export async function fetchQualifiedLeads(
 ): Promise<QualifiedLeadView[]> {
   if (!serviceProfileId) return [];
 
-  let result = await runLeadQuery(
-    supabase,
-    tenantId,
-    serviceProfileId,
-    "*, source_posts(*)",
-    true,
-    activeSince,
+  // Read only what a lead card renders, falling back to the wider selects
+  // for a deployment whose schema predates one of those columns.
+  let result = await readWithSelectFallback(LEAD_MATCH_SELECTS, (select) =>
+    runLeadQuery(supabase, tenantId, serviceProfileId, select, true, activeSince),
   );
-
-  if (result.error) {
-    result = await runLeadQuery(
-      supabase,
-      tenantId,
-      serviceProfileId,
-      "*",
-      true,
-      activeSince,
-    );
-  }
 
   if (result.error) {
     result = await runLeadQuery(
@@ -867,27 +858,17 @@ async function fetchReviewOnlyMatches(
 ): Promise<QualifiedLeadView[]> {
   if (!serviceProfileId) return [];
 
-  let result = await runReviewOnlyMatchQuery(
-    supabase,
-    tenantId,
-    serviceProfileId,
-    matchStatus,
-    "*, source_posts(*)",
-    true,
-    activeSince,
-  );
-
-  if (result.error) {
-    result = await runReviewOnlyMatchQuery(
+  let result = await readWithSelectFallback(LEAD_MATCH_SELECTS, (select) =>
+    runReviewOnlyMatchQuery(
       supabase,
       tenantId,
       serviceProfileId,
       matchStatus,
-      "*",
+      select,
       true,
       activeSince,
-    );
-  }
+    ),
+  );
 
   if (result.error) {
     result = await runReviewOnlyMatchQuery(
@@ -1026,26 +1007,17 @@ export async function fetchWatchlistResults(
 ): Promise<WatchlistResultsView[]> {
   if (watchlists.length === 0) return [];
   const watchlistIds = watchlists.map((watchlist) => watchlist.id);
-  const joinedResult = await supabase
-    .from("watchlist_matches")
-    .select("*, source_posts(*)")
-    .eq("tenant_id", tenantId)
-    .in("watchlist_id", watchlistIds)
-    .in("match_status", ["ready_for_review", "discovery_candidate"])
-    .order("verifier_score", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(72);
-  const result = joinedResult.error
-    ? await supabase
+  const result = await readWithSelectFallback(WATCHLIST_MATCH_SELECTS, (select) =>
+    supabase
       .from("watchlist_matches")
-      .select("*")
+      .select(select)
       .eq("tenant_id", tenantId)
       .in("watchlist_id", watchlistIds)
       .in("match_status", ["ready_for_review", "discovery_candidate"])
       .order("verifier_score", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(72)
-    : joinedResult;
+      .limit(72),
+  );
   if (result.error) {
     if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
       console.error("[ProspectDashboard] Watchlist match lookup failed", {

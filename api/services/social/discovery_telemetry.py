@@ -28,6 +28,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from api.services.database_connection import postgres_connect_args
+
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,9 @@ def _database_engine() -> Engine:
     if normalized_url.startswith("postgresql"):
         # psycopg accepts this option and it bounds an unavailable database
         # without applying it to non-Postgres test engines.
-        engine_options["connect_args"] = {"connect_timeout": 3}
+        engine_options["connect_args"] = postgres_connect_args(
+            normalized_url, connect_timeout=3
+        )
 
     return create_engine(normalized_url, **engine_options)
 

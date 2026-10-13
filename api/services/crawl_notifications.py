@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
+from api.services.database_connection import postgres_connect_args
 from api.services.integrations.email_connector import (
     EmailConfig,
     EmailConnector,
@@ -104,18 +105,20 @@ def _database_engine() -> Engine:
             "DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required."
         )
 
+    normalized_url = _normalize_database_url(database_url)
     return create_engine(
-        _normalize_database_url(database_url),
+        normalized_url,
         pool_pre_ping=True,
         pool_size=2,
         max_overflow=0,
         pool_timeout=3,
         pool_recycle=300,
-        connect_args={
-            "connect_timeout": _env_int(
+        connect_args=postgres_connect_args(
+            normalized_url,
+            connect_timeout=_env_int(
                 "ARCLI_DB_CONNECT_TIMEOUT_SECONDS", 3, minimum=1
             ),
-        },
+        ),
     )
 
 

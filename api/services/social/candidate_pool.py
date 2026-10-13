@@ -28,6 +28,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import text
 
+from .candidate_lifecycle import advanceable_from
 from .candidate_privacy import (
     MAX_EVIDENCE_TEXT_CHARS,
     MAX_IDENTIFIER_CHARS,
@@ -906,6 +907,8 @@ def advance_candidate_status(
 
     The database guard permits only ``raw → plausible → review →
     qualified/rejected`` (with rejection permitted at each pre-terminal stage).
+    An advance that no longer applies to the candidate's current status is a
+    no-op that returns ``False``.
     This service-side function must be called only after the caller has made
     its own tenant-membership authorization decision.
     """
@@ -986,6 +989,7 @@ def advance_candidate_status(
                            updated_at = NOW()
                      WHERE id = CAST(:candidate_id AS uuid)
                        AND tenant_id = :tenant_id
+                       AND candidate_status = ANY(CAST(:advanceable_from AS text[]))
                     RETURNING id
                     """
                 ),
@@ -1007,6 +1011,10 @@ def advance_candidate_status(
                     "is_terminal": normalized_status in _TERMINAL_CANDIDATE_STATUSES,
                     "is_qualified": is_qualified,
                     "is_rejected": is_rejected,
+                    # A post is re-evaluated on every rematch and re-scan.
+                    # Without this guard an already-advanced candidate violates
+                    # the lifecycle trigger, and that error pauses the whole pool.
+                    "advanceable_from": advanceable_from(normalized_status),
                 },
             ).scalar_one_or_none()
             return result is not None
