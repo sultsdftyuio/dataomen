@@ -3,7 +3,16 @@ import { type EmailOtpType } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
-import { resolvePostAuthRedirectPath } from '@/utils/auth-redirects';
+import {
+  PASSWORD_RESET_PATH,
+  RECOVERY_LINK_INVALID_PATH,
+  resolvePostAuthRedirectPath,
+} from '@/utils/auth-redirects';
+import {
+  RECOVERY_GRANT_COOKIE,
+  createRecoveryGrant,
+  recoveryGrantCookieOptions,
+} from '@/lib/auth/recovery-grant';
 
 // ---------------------------------------------------------------------------
 // CONSTANTS & ALLOWLISTS
@@ -57,6 +66,9 @@ export async function GET(request: Request) {
     const tokenHash = searchParams.get('token_hash');
     const rawType = searchParams.get('type');
     const requestedNext = searchParams.get('next');
+    // Supabase reports a rejected email link (expired, already used) by
+    // redirecting here with error parameters instead of a code.
+    const providerErrorCode = searchParams.get('error_code');
 
     // -----------------------------------------------------------------------
     // INPUT SANITIZATION & VALIDATION
@@ -70,6 +82,22 @@ export async function GET(request: Request) {
     // 2. Validate Redirect Path (Traversal & Open Redirect Protection)
     const nextPath = resolvePostAuthRedirectPath(requestedNext);
 
+    // 3. Explain failures in the right place. Someone whose reset link failed
+    // needs the page that sends a new one; the login page cannot help them.
+    // This only chooses where an error is shown and grants nothing.
+    const looksLikePasswordReset =
+      rawType === 'recovery' ||
+      providerErrorCode === 'otp_expired' ||
+      nextPath === PASSWORD_RESET_PATH;
+
+    const failureRedirect = (loginError: string) =>
+      NextResponse.redirect(
+        new URL(
+          looksLikePasswordReset ? RECOVERY_LINK_INVALID_PATH : `/login?error=${loginError}`,
+          origin
+        )
+      );
+
     // -----------------------------------------------------------------------
     // INVALID FLOW REJECTION
     // -----------------------------------------------------------------------
@@ -78,11 +106,10 @@ export async function GET(request: Request) {
         hasCode: !!code,
         hasTokenHash: !!tokenHash,
         rawTypeProvided: rawType,
+        providerErrorCode,
       });
 
-      return NextResponse.redirect(
-        new URL('/login?error=invalid_auth_callback', origin)
-      );
+      return failureRedirect('invalid_auth_callback');
     }
 
     // -----------------------------------------------------------------------
@@ -91,6 +118,9 @@ export async function GET(request: Request) {
     const cookieStore = await cookies();
     const supabase = await createClient(cookieStore);
     let sessionUser = null; // Track user for synchronous provisioning
+    // True only when Supabase itself confirms the session came from a reset
+    // email. Never derived from `next`, which the visitor controls.
+    let isPasswordRecovery = false;
 
     // -----------------------------------------------------------------------
     // AUTHENTICATE: OAUTH FLOW
@@ -108,12 +138,14 @@ export async function GET(request: Request) {
           status: error.status,
         });
         
-        return NextResponse.redirect(
-          new URL('/login?error=oauth_failed', origin)
-        );
+        return failureRedirect('oauth_failed');
       }
       
       sessionUser = data?.user;
+      // The client records what a code was requested for next to its PKCE
+      // verifier and hands it back here; the published types omit the field.
+      isPasswordRecovery =
+        (data as { redirectType?: string | null }).redirectType === 'PASSWORD_RECOVERY';
     } 
     // -----------------------------------------------------------------------
     // AUTHENTICATE: MAGIC LINK / OTP FLOW
@@ -135,12 +167,11 @@ export async function GET(request: Request) {
           status: error.status,
         });
 
-        return NextResponse.redirect(
-          new URL('/login?error=otp_failed', origin)
-        );
+        return failureRedirect('otp_failed');
       }
       
       sessionUser = data?.user;
+      isPasswordRecovery = otpType === 'recovery';
     }
 
     // -----------------------------------------------------------------------
@@ -181,6 +212,16 @@ export async function GET(request: Request) {
     }
 
     revalidatePath('/', 'layout');
+
+    if (isPasswordRecovery && sessionUser) {
+      cookieStore.set(
+        RECOVERY_GRANT_COOKIE,
+        createRecoveryGrant(sessionUser.id),
+        recoveryGrantCookieOptions()
+      );
+      return NextResponse.redirect(new URL(PASSWORD_RESET_PATH, origin));
+    }
+
     return NextResponse.redirect(new URL(nextPath, origin));
 
   } catch (error) {

@@ -1,12 +1,17 @@
 'use server'
 
-import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
+import { PASSWORD_RESET_PATH } from '@/utils/auth-redirects'
 
-export type ActionState = {
-  error?: string;
-  success?: boolean;
+export type ForgotPasswordState = {
+  error?: string
+  /** What the user typed, so a failed attempt does not clear the field. */
+  email?: string
+  /** Set once a request was accepted; the page then shows the confirmation. */
+  sentTo?: string
 }
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const resolveSiteUrl = () => {
   const url =
@@ -19,48 +24,54 @@ const resolveSiteUrl = () => {
 }
 
 /**
- * resetPassword: Secure password recovery handler.
- * Adheres to "The Modular Strategy" by offloading auth logic to the Python core API,
- * and "Security by Design" by providing generic feedback to mitigate enumeration attacks.
- * * @param state - The previous ActionState (required for useFormState compatibility)
- * @param formData - The form data containing the user's email
+ * Emails a password-reset link.
+ *
+ * The answer is the same whether or not an account exists for the address, so
+ * this form cannot be used to find out who has an Arcli account.
  */
-export async function resetPassword(state: ActionState, formData: FormData): Promise<ActionState> {
-  const email = formData.get('email')?.toString() || ''
+export async function requestPasswordReset(
+  _state: ForgotPasswordState,
+  formData: FormData
+): Promise<ForgotPasswordState> {
+  const emailField = formData.get('email')
+  const email = (typeof emailField === 'string' ? emailField : '').trim().toLowerCase()
 
-  // 1. Initial Validation
   if (!email) {
-    return { error: 'A valid work email is required to send recovery instructions.' }
+    return { error: 'Enter your work email' }
+  }
+
+  if (!EMAIL_PATTERN.test(email)) {
+    return { error: 'Work email must include an @ and a domain, like name@company.com', email }
   }
 
   try {
     const supabase = await createClient()
-    const recoveryNext = '/settings?recovery=1'
 
+    // `next` only labels the link as a password reset so a failed link can be
+    // explained properly. Permission to set a password comes from the callback
+    // verifying the link, never from this parameter.
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${resolveSiteUrl()}/auth/callback?next=${encodeURIComponent(recoveryNext)}`,
+      redirectTo: `${resolveSiteUrl()}/auth/callback?next=${encodeURIComponent(PASSWORD_RESET_PATH)}`,
     })
 
-    /**
-     * 4. Security by Design: Mitigation of User Enumeration
-     * Even if the email is not found in our database, we do not disclose that 
-     * to the client. We only return a structural error if the service itself fails.
-     */
     if (error) {
-      console.error('Supabase Forgot Password Failure:', error)
-      return { error: 'The authentication service is currently unavailable. Please try again later.' }
-    }
+      // Supabase only rate-limits addresses that have an account, so showing
+      // this differently would reveal that the account exists.
+      if (error.status === 429) {
+        console.warn('[FORGOT_PASSWORD] Reset email rate limited', { code: error.code })
+        return { sentTo: email }
+      }
 
+      console.error('[FORGOT_PASSWORD] Reset email request failed', {
+        code: error.code,
+        status: error.status,
+      })
+      return { error: 'The reset email could not be sent. Try again in a few minutes.', email }
+    }
   } catch (error) {
-    // Capture network or connectivity issues
-    console.error('Password Reset Network Failure:', error)
-    return { error: 'Could not connect to the authentication service. Please check your connection.' }
+    console.error('[FORGOT_PASSWORD] Reset email request threw', error)
+    return { error: 'The reset email could not be sent. Check your connection and try again.', email }
   }
 
-  /**
-   * 5. Final Orchestration: Success Redirect
-   * Per Next.js standards, redirect must be placed outside the try-catch block 
-   * to allow the internal redirect error to propagate to the Next.js router.
-   */
-  redirect('/login?reset=sent')
+  return { sentTo: email }
 }

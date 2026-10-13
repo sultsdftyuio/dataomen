@@ -6,7 +6,10 @@ import { z } from "zod";
 
 // 1. Strict Validation Schema
 const PasswordChangeSchema = z.object({
-  currentPassword: z.string().optional(),
+  // Required: a session alone must not be enough to replace the password, or a
+  // borrowed session becomes a permanent takeover. Users who no longer know
+  // their password go through the emailed reset link (app/reset-password).
+  currentPassword: z.string().min(1, "Current password is required"),
   newPassword: z.string().min(8, "New password must be at least 8 characters"),
 });
 
@@ -32,8 +35,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized or invalid session." }, { status: 401 });
     }
 
-    // 2. Verify current password (if not in recovery mode)
-    if (currentPassword) {
+    // 2. Verify current password
+    {
       // Initialize a stateless client that DOES NOT modify cookies
       const verifyClient = createStatelessClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,

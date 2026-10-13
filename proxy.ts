@@ -43,6 +43,9 @@ export default async function proxy(request: NextRequest) {
   const isRootAuthCallback =
     pathname === '/' &&
     (request.nextUrl.searchParams.has('code') ||
+      // A rejected email link (for example an expired password reset) comes
+      // back with error parameters; the callback explains it to the user.
+      request.nextUrl.searchParams.has('error_code') ||
       (request.nextUrl.searchParams.has('token_hash') &&
         request.nextUrl.searchParams.has('type')))
 
@@ -179,7 +182,10 @@ export default async function proxy(request: NextRequest) {
   // ---------------------------------------------------------------------------
   // 4. Route Topology
   // ---------------------------------------------------------------------------
-  const isAuthRoute = ['/login', '/register', '/forgot-password', '/signup', '/sign-up'].some(
+  // /forgot-password is left out on purpose: a signed-in user has no other way
+  // to change a password they no longer remember, and a reset link that expired
+  // mid-flow sends them back there while they are still signed in.
+  const isAuthRoute = ['/login', '/register', '/signup', '/sign-up'].some(
     route => pathname.startsWith(route)
   )
 

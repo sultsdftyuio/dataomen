@@ -1,151 +1,107 @@
 "use client";
 
-import React, { Suspense, useState } from "react";
+import { Suspense, useActionState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2, MailCheck } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useFormState } from "react-dom";
-import { resetPassword } from "./actions";
-import { Logo } from "@/components/ui/logo";
+import { requestPasswordReset, type ForgotPasswordState } from "./actions";
 
-/* ─── Shared Landing Page Design Tokens ─── */
-const C = {
-  navy: "#0A1628",
-  blue: "#1B6EBF",
-  offWhite: "#F6FAFE",
-  rule: "#DDE8F2",
-  ruleDark: "#C8D9E8",
-  muted: "#546F8A",
-  green: "#10B981",
-};
+const INITIAL_STATE: ForgotPasswordState = {};
 
-/**
- * ForgotPasswordPage Component
- * Optimized for clarity and brand consistency. 
- * Replaces generic "DataOmen" branding with "arcli".
- */
+const backToLogin = (
+  <>
+    Remembered it?{" "}
+    <Link href="/login" className="font-semibold text-foreground underline underline-offset-2">
+      Back to log in
+    </Link>
+  </>
+);
+
 function ForgotPasswordForm() {
-  const [state, formAction] = useFormState(resetPassword, {});
-  const [isPending, setIsPending] = useState(false);
+  const [state, formAction, isPending] = useActionState(requestPasswordReset, INITIAL_STATE);
   const searchParams = useSearchParams();
-  const showRecoveryLinkError = searchParams.get("error") === "recovery_link_invalid";
+  const linkFailed = searchParams.get("error") === "recovery_link_invalid";
 
-  const handleSubmit = async (formData: FormData) => {
-    setIsPending(true);
-    try {
-      await formAction(formData);
-    } finally {
-      setIsPending(false);
-    }
-  };
+  if (state.sentTo) {
+    return (
+      <AuthShell title="Check your email" footer={backToLogin}>
+        <div role="status" className="space-y-4 text-sm text-foreground">
+          <p>
+            If an Arcli account exists for{" "}
+            <span className="font-semibold break-all">{state.sentTo}</span>, a link to
+            choose a new password is on its way.
+          </p>
+          <p className="text-muted-foreground">
+            Open the link in this browser. It works once, so use the newest email if
+            you asked more than once. Nothing after a few minutes? Check your spam
+            folder.
+          </p>
+          {/* A full navigation is what clears the confirmation state. */}
+          <a
+            href="/forgot-password"
+            className="inline-block font-semibold text-primary underline underline-offset-2"
+          >
+            Use a different email
+          </a>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
-    <main
-      className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden py-12"
-      style={{ backgroundColor: C.offWhite, fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+    <AuthShell
+      title="Reset your password"
+      intro="Enter the email you use for Arcli and we'll send a link to choose a new password."
+      footer={backToLogin}
     >
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        .dot-grid { background-image: radial-gradient(${C.ruleDark} 1px, transparent 1px); background-size: 24px 24px; }
-        .pfd { font-family: 'Playfair Display', serif; }
-      `}} />
-
-      {/* Decorative Background Elements */}
-      <div className="absolute inset-0 dot-grid opacity-60 z-0" />
-      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[#F0F7FF] blur-[120px] z-0" />
-
-      <div className="relative z-10 w-full max-w-md px-6">
-
-        {/* Logo Header */}
-        <div className="flex flex-col items-center mb-8">
-          <Link href="/" className="mb-6 transition-transform hover:scale-105">
-            <Logo className="h-10 w-auto" />
-          </Link>
-          <h1 className="pfd text-3xl font-bold text-center mb-2" style={{ color: C.navy }}>
-            Reset Password
-          </h1>
-          <p className="text-center px-4" style={{ color: C.muted }}>
-            Enter your email and we&apos;ll send you a secure link to get back into <span className="font-semibold" style={{ color: C.navy }}>arcli</span>.
+      <form action={formAction} className="space-y-5" noValidate>
+        {linkFailed && !state.error && (
+          <p
+            role="alert"
+            className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            That reset link can&apos;t be used. It may have expired, been used
+            already, or been opened in a different browser from the one that
+            requested it. Request a new link below.
           </p>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="email">Work email</Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            autoFocus
+            defaultValue={state.email ?? ""}
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "email-error" : undefined}
+            className="h-11 text-base"
+          />
+          {state.error && (
+            <p id="email-error" role="alert" className="text-sm font-medium text-destructive">
+              {state.error}
+            </p>
+          )}
         </div>
 
-        {/* Auth Card */}
-        <div
-          className="bg-white p-8 rounded-2xl shadow-xl"
-          style={{ border: `1.5px solid ${C.ruleDark}`, boxShadow: "0 20px 40px rgba(10,22,40,0.06)" }}
-        >
-          <form action={handleSubmit} className="space-y-6">
-            {showRecoveryLinkError && (
-              <div className="p-3 text-sm font-medium text-amber-700 bg-amber-50 rounded-lg border border-amber-100">
-                Your recovery link is invalid or expired. Request a new one below.
-              </div>
-            )}
-
-            {/* Action State Feedback */}
-            {state?.error && (
-              <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">
-                {state.error}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="email" style={{ color: C.navy, fontWeight: 600 }}>Work Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="name@company.com"
-                required
-                disabled={isPending}
-                className="h-11 bg-slate-50/50"
-                style={{ borderColor: C.rule }}
-              />
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full h-12 text-base font-bold transition-all"
-              style={{ backgroundColor: C.navy, color: "#fff" }}
-              disabled={isPending}
-            >
-              {isPending ? (
-                <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Sending Link...</>
-              ) : (
-                <>Send Recovery Link <ArrowRight className="ml-2 h-5 w-5" /></>
-              )}
-            </Button>
-
-            {/* Security Assurance */}
-            <div className="flex items-center justify-center gap-2 text-xs font-medium" style={{ color: C.muted }}>
-              <MailCheck size={14} style={{ color: C.green }} />
-              <span>Standard encryption enabled</span>
-            </div>
-          </form>
-        </div>
-
-        {/* Footer Link */}
-        <p className="text-center mt-8 text-sm" style={{ color: C.muted }}>
-          Remember your password?{' '}
-          <Link href="/login" style={{ color: C.navy, fontWeight: 700 }} className="hover:underline">
-            Back to login
-          </Link>
-        </p>
-
-      </div>
-    </main>
+        <Button type="submit" size="lg" className="h-11 w-full text-base" disabled={isPending}>
+          {isPending && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {isPending ? "Sending link" : "Send reset link"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }
 
 export default function ForgotPasswordPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[#F6FAFE]">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-      </div>
-    }>
+    <Suspense fallback={<div className="min-h-screen bg-muted/40" />}>
       <ForgotPasswordForm />
     </Suspense>
   );

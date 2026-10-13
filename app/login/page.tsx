@@ -40,8 +40,14 @@ function LoginForm() {
   const safeNextPath = resolvePostAuthRedirectPath(searchParams.get("next"));
 
   const authError = searchParams.get("error");
-  const showResetMessage = searchParams.get("reset") === "sent";
-  const showOauthError = authError === "oauth_callback_failed";
+  const showResetMessage = searchParams.get("reset") === "done";
+  // Every code the auth callback can send back here.
+  const showOauthError = [
+    "oauth_failed",
+    "otp_failed",
+    "invalid_auth_callback",
+    "auth_processing_failed",
+  ].includes(authError ?? "");
   const showSignupLoginRequired = authError === "signup_created_login_required";
 
   const handleEmailSubmit = async (formData: FormData) => {
@@ -149,7 +155,7 @@ function LoginForm() {
           <form action={handleEmailSubmit} className="space-y-5">
             {showResetMessage && (
               <div className="p-3 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-100">
-                Recovery instructions were sent if the account exists.
+                Password updated. Log in with your new password.
               </div>
             )}
 

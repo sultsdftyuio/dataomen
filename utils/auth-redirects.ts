@@ -1,5 +1,11 @@
 export const DEFAULT_POST_AUTH_REDIRECT_PATH = "/dashboard";
 
+/** Where a verified password-reset link lands so the user can set a password. */
+export const PASSWORD_RESET_PATH = "/reset-password";
+
+/** Where a reset link that can no longer be used sends the user to get a new one. */
+export const RECOVERY_LINK_INVALID_PATH = "/forgot-password?error=recovery_link_invalid";
+
 const AUTH_ENTRY_PATHS = [
   "/auth/callback",
   "/forgot-password",
