@@ -2,9 +2,9 @@
 
 The `arcli-design` skill distils these repositories. `.claude/hooks/design-refs.sh`
 restores sparse, shallow clones of their documentation (~35MB) under
-`~/.cache/arcli-design-refs/` in the background. It runs automatically when
-registered as a SessionStart hook in `.claude/settings.json`; otherwise run it
-by hand. If a folder is missing, check `~/.cache/arcli-design-refs/clone.log`.
+`~/.cache/arcli-design-refs/` in the background. It is registered as a
+SessionStart hook in `.claude/settings.json`, so it runs at the start of every
+session. If a folder is missing, check `~/.cache/arcli-design-refs/clone.log`.
 It only acts in cloud sessions unless `ARCLI_DESIGN_REFS=1` is set.
 
 Treat the clones as reading material: never build, install or execute
