@@ -27,11 +27,14 @@ import { Button } from "@/components/ui/button";
 export type BriefSaveOutcome = { ok: boolean; message: string };
 
 type SectionSaver = () => Promise<BriefSaveOutcome>;
+/** Returns a failure to block the whole save, or null when the section is valid. */
+type SectionValidator = () => BriefSaveOutcome | null;
+type SectionHandlers = { save: SectionSaver; validate: SectionValidator };
 
 type SectionReport = { changeCount: number; saveLabel: string };
 
 type BriefSaveRegistry = {
-  report: (id: string, report: SectionReport, save: SectionSaver) => void;
+  report: (id: string, report: SectionReport, handlers: SectionHandlers) => void;
   remove: (id: string) => void;
   isSaving: boolean;
 };
@@ -46,20 +49,29 @@ export function useBriefSaveSection(
     changeCount,
     saveLabel,
     save,
-  }: { changeCount: number; saveLabel: string; save: SectionSaver },
+    validate,
+  }: {
+    changeCount: number;
+    saveLabel: string;
+    save: SectionSaver;
+    validate: SectionValidator;
+  },
 ) {
   const registry = useContext(BriefSaveContext);
-  // The latest closure is read at save time, so registration does not need to
-  // re-run on every render just because the function identity changed.
-  const saveRef = useRef(save);
+  // The latest closures are read at save time, so registration does not need
+  // to re-run on every render just because the function identities changed.
+  const handlersRef = useRef({ save, validate });
   useEffect(() => {
-    saveRef.current = save;
+    handlersRef.current = { save, validate };
   });
 
   const report = registry?.report;
   const remove = registry?.remove;
   useEffect(() => {
-    report?.(id, { changeCount, saveLabel }, () => saveRef.current());
+    report?.(id, { changeCount, saveLabel }, {
+      save: () => handlersRef.current.save(),
+      validate: () => handlersRef.current.validate(),
+    });
   }, [report, id, changeCount, saveLabel]);
 
   useEffect(() => () => remove?.(id), [remove, id]);
@@ -74,13 +86,13 @@ function changesLabel(count: number) {
 export function BriefSaveProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [reports, setReports] = useState<Record<string, SectionReport>>({});
-  const saversRef = useRef(new Map<string, SectionSaver>());
+  const handlersRef = useRef(new Map<string, SectionHandlers>());
   const [outcome, setOutcome] = useState<BriefSaveOutcome | null>(null);
   const [isSaving, startSaving] = useTransition();
 
   const report = useCallback(
-    (id: string, next: SectionReport, save: SectionSaver) => {
-      saversRef.current.set(id, save);
+    (id: string, next: SectionReport, handlers: SectionHandlers) => {
+      handlersRef.current.set(id, handlers);
       setReports((current) => {
         const previous = current[id];
         if (
@@ -96,7 +108,7 @@ export function BriefSaveProvider({ children }: { children: ReactNode }) {
   );
 
   const remove = useCallback((id: string) => {
-    saversRef.current.delete(id);
+    handlersRef.current.delete(id);
     setReports((current) => {
       if (!(id in current)) return current;
       const next = { ...current };
@@ -128,14 +140,25 @@ export function BriefSaveProvider({ children }: { children: ReactNode }) {
 
   const saveAll = () => {
     const ids = dirtySections.map(([id]) => id);
+    // Validate everything first: an invalid part blocks the whole save, so a
+    // half-saved brief never needs explaining. Runs before inputs are disabled
+    // so a section can move focus to its invalid field.
+    const invalid = ids
+      .map((id) => handlersRef.current.get(id)?.validate() ?? null)
+      .filter((result): result is BriefSaveOutcome => result !== null);
+    if (invalid.length > 0) {
+      setOutcome({ ok: false, message: invalid.map((result) => result.message).join(" ") });
+      return;
+    }
+
     setOutcome(null);
     startSaving(async () => {
       const outcomes: BriefSaveOutcome[] = [];
       // Sequential on purpose: each save may refresh the page's server data,
       // and the editors keep unsaved edits across those refreshes.
       for (const id of ids) {
-        const save = saversRef.current.get(id);
-        if (save) outcomes.push(await save());
+        const handlers = handlersRef.current.get(id);
+        if (handlers) outcomes.push(await handlers.save());
       }
 
       const hasFailure = outcomes.some((result) => !result.ok);
@@ -161,17 +184,17 @@ export function BriefSaveProvider({ children }: { children: ReactNode }) {
         <div
           role="region"
           aria-label="Save targeting brief"
-          className="sticky bottom-3 z-10 flex flex-col gap-3 rounded-lg border border-border bg-card p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between sm:pl-4"
+          className="sticky bottom-3 z-10 flex items-center justify-between gap-3 rounded-lg border border-border bg-card py-2.5 pl-4 pr-2.5 shadow-lg"
         >
-          <div className="min-w-0 text-sm leading-6" aria-live="polite">
+          <div className="min-w-0 flex-1 text-sm leading-5" aria-live="polite">
             {outcome && !outcome.ok ? (
               <p className="flex items-start gap-2 text-danger">
-                <CircleAlert className="mt-1 size-4 shrink-0" aria-hidden="true" />
+                <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 {outcome.message}
               </p>
             ) : outcome?.ok && totalChanges === 0 ? (
               <p className="flex items-start gap-2 text-success">
-                <CheckCircle2 className="mt-1 size-4 shrink-0" aria-hidden="true" />
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 {outcome.message}
               </p>
             ) : (
@@ -183,7 +206,6 @@ export function BriefSaveProvider({ children }: { children: ReactNode }) {
           {totalChanges > 0 || isSaving ? (
             <Button
               type="button"
-              className="w-full sm:w-auto"
               disabled={isSaving}
               onClick={saveAll}
             >

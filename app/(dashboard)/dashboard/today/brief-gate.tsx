@@ -5,7 +5,10 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 
-/** Shown until the workspace has an approved targeting brief to deliver against. */
+/**
+ * Shown until the workspace has a saved target universe (the targeting_profiles
+ * row, labelled "Target universe" on the brief page) to deliver against.
+ */
 export function BriefGate() {
   return (
     <div className="arc-workspace-page">
@@ -13,11 +16,11 @@ export function BriefGate() {
       <EmptyState
         variant="never-used"
         icon={FileCheck2}
-        title="Approve your targeting brief to start deliveries"
-        description="Every prospect here is checked by hand against your targeting brief, so deliveries start once you've approved it."
+        title="Set up your target universe to start deliveries"
+        description="Every prospect here is checked by hand against the target universe in your targeting brief, so deliveries start once you've saved it."
         action={
           <Button asChild>
-            <Link href="/dashboard/brief">Review your targeting brief</Link>
+            <Link href="/dashboard/brief#target-universe">Set up target universe</Link>
           </Button>
         }
       />

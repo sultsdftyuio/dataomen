@@ -1,16 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import {
-  CheckCircle2,
-  ChevronDown,
-  CircleAlert,
-  Globe2,
-  Loader2,
-  Save,
-  Settings2,
-  Target,
-} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { ChevronDown, CircleAlert, FileSearch } from "lucide-react";
 
 import type {
   BuyerDemandReportView,
@@ -18,209 +10,266 @@ import type {
   ServiceProfileFields,
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import {
+  useBriefSaveSection,
+  type BriefSaveOutcome,
+} from "@/app/(dashboard)/dashboard/brief/brief-save";
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { DiscoveryQueryEditor } from "@/components/onboarding/workspace-provisioning-profile";
-import { ResultText } from "@/components/onboarding/workspace-provisioning-states";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import type { DiscoveryQuery } from "@/lib/discovery-queries";
-import { C } from "@/lib/tokens";
-import { SignalField, TextProfileField } from "./targeting-fields";
+import { cn } from "@/lib/utils";
+import { SignalField, TagList, TextProfileField } from "./targeting-fields";
 import { websiteDomain } from "./website-url";
+
+type LatestScan = Pick<
+  BuyerDemandReportView,
+  "status" | "updatedAt" | "isTerminal" | "summary"
+> | null;
+
+export type DiscoveryQueryError = { message: string; inputId: string };
 
 type TargetingEditorProps = {
   serviceProfile: ServiceProfileView;
+  /** The unsaved draft. serviceProfile.fields is the saved copy. */
   fields: ServiceProfileFields;
   isPro: boolean;
   changedFieldCount: number;
-  isPending: boolean;
-  isWebsitePending: boolean;
-  result: ProspectActionResult | null;
+  queryError: DiscoveryQueryError | null;
+  latestScan: LatestScan;
+  savedWebsiteUrl: string;
   websiteDraft: string;
   websiteChanged: boolean;
-  latestScan: Pick<
-    BuyerDemandReportView,
-    "status" | "updatedAt" | "isTerminal" | "summary"
-  > | null;
+  isWebsitePending: boolean;
+  websiteResult: ProspectActionResult | null;
+  isRefreshing: boolean;
+  refreshResult: ProspectActionResult | null;
   onFieldChange: <Key extends keyof ServiceProfileFields>(
     key: Key,
     value: ServiceProfileFields[Key],
   ) => void;
   onDiscoveryQueriesChange: (value: DiscoveryQuery[]) => void;
-  onSave: () => void;
+  /** Saves the draft. Called by the page's shared save bar. */
+  onSave: () => Promise<BriefSaveOutcome>;
+  /** Checks the draft before anything on the page is saved. */
+  onValidate: () => BriefSaveOutcome | null;
+  onRefreshTargeting: () => void;
+  onRefreshWebsite: () => void;
   onWebsiteDraftChange: (value: string) => void;
+  onWebsiteReset: () => void;
   onWebsiteSave: () => void;
 };
 
 type Readiness = {
+  tone: StatusTone;
   label: string;
   detail: string;
-  color: string;
-  backgroundColor: string;
+  action?: { label: string; run: "website" | "targeting" };
 };
 
+// Only the saved profile decides readiness: an unsaved draft changes nothing
+// about what the next scan will use.
 function targetingReadiness(
   serviceProfile: ServiceProfileView,
   isPro: boolean,
+  requiresProfileRefresh: boolean,
 ): Readiness {
+  const saved = serviceProfile.fields;
   if (!serviceProfile.hasProfile) {
     return {
+      tone: "progress",
       label: "Preparing",
-      detail: "Reading your website to prepare targeting.",
-      color: C.blue,
-      backgroundColor: C.bluePale,
+      detail: "Arcli is reading your website to draft this brief.",
     };
   }
-  if (serviceProfile.embeddingStatus === "failed") {
+  if (requiresProfileRefresh) {
     return {
+      tone: "warning",
       label: "Needs refresh",
-      detail: "Refresh the targeting profile before the next scan.",
-      color: C.amber,
-      backgroundColor: C.amberPale,
+      detail: "Matching is paused: the last scan needs a fresh read of your website.",
+      action: { label: "Refresh website profile", run: "website" },
+    };
+  }
+  if (isPro && serviceProfile.embeddingStatus === "failed") {
+    return {
+      tone: "warning",
+      label: "Needs refresh",
+      detail: "Arcli couldn't apply your last save, so scans use the previous version.",
+      action: { label: "Refresh targeting", run: "targeting" },
+    };
+  }
+  if (!saved?.target_audience.length || !saved.core_problem.trim()) {
+    return {
+      tone: "warning",
+      label: "Incomplete",
+      detail: "Add a buyer and a problem so scans know what to look for.",
     };
   }
   if (!isPro) {
     return {
-      label: "Profile ready",
-      detail: "Your saved targeting is ready when lead discovery is available.",
-      color: C.green,
-      backgroundColor: C.greenPale,
+      tone: "success",
+      label: "Saved",
+      detail: "Prospect scans are part of Pro. This brief is used once you upgrade.",
     };
   }
   if (serviceProfile.embeddingStatus !== "completed") {
     return {
+      tone: "progress",
       label: "Updating",
-      detail: "Your last saved targeting remains active while this updates.",
-      color: C.blue,
-      backgroundColor: C.bluePale,
+      detail: "Applying your last save. Scans use the previous version until it finishes.",
+      action: { label: "Refresh targeting", run: "targeting" },
     };
   }
   return {
-    label: "Active",
-    detail: "This targeting is used in your next discovery scan.",
-    color: C.green,
-    backgroundColor: C.greenPale,
+    tone: "success",
+    label: "Ready",
+    detail: "The next scan uses this brief.",
   };
 }
 
+function latestScanMessage(latestScan: LatestScan) {
+  if (!latestScan) return "No scan has used this brief yet.";
+
+  if (latestScan.summary.stopReason === "profile_refresh_required") {
+    return "Stopped before matching because your website needs a fresh read.";
+  }
+
+  if (!latestScan.isTerminal) {
+    return "A scan is running with this brief. New prospects appear in Prospects when it finishes.";
+  }
+
+  const conversations = latestScan.summary.totalHits;
+  const plausible = latestScan.summary.plausibleHits;
+  if (conversations !== null && plausible !== null) {
+    return `Checked ${conversations} public ${conversations === 1 ? "conversation" : "conversations"} and found ${plausible} plausible ${plausible === 1 ? "prospect" : "prospects"}.`;
+  }
+
+  return "The last scan finished. Its matches are in Prospects.";
+}
+
+function ResultLine({
+  result,
+  id,
+  className,
+}: {
+  result: ProspectActionResult | null;
+  id?: string;
+  className?: string;
+}) {
+  if (!result) return null;
+  return (
+    <p
+      id={id}
+      className={cn(
+        "text-sm leading-5",
+        result.ok ? "text-success" : "text-danger",
+        className,
+      )}
+    >
+      {result.message}
+    </p>
+  );
+}
+
 function WebsiteSourceControl({
+  savedWebsiteUrl,
   websiteDraft,
   websiteChanged,
-  requiresProfileRefresh,
   isPending,
+  result,
   onWebsiteDraftChange,
+  onWebsiteReset,
   onWebsiteSave,
-}: Pick<
-  TargetingEditorProps,
-  | "websiteDraft"
-  | "websiteChanged"
-  | "onWebsiteDraftChange"
-  | "onWebsiteSave"
-> & { isPending: boolean; requiresProfileRefresh: boolean }) {
+}: {
+  savedWebsiteUrl: string;
+  websiteDraft: string;
+  websiteChanged: boolean;
+  isPending: boolean;
+  result: ProspectActionResult | null;
+  onWebsiteDraftChange: (value: string) => void;
+  onWebsiteReset: () => void;
+  onWebsiteSave: () => void;
+}) {
   const [isChanging, setIsChanging] = useState(false);
-  const domain = websiteDomain(websiteDraft) ?? "Website needed";
+  // The header always names the saved source, never the unsaved draft.
+  const savedDomain = websiteDomain(savedWebsiteUrl) ?? "No website yet";
+  const draftDomain = websiteDomain(websiteDraft);
+  const showForm = isChanging && !result?.ok;
+  const hasError = result !== null && !result.ok;
 
   return (
-    <section
-      className="rounded-xl border bg-white px-4 py-3"
-      style={{ borderColor: C.rule }}
-      aria-labelledby="targeting-website-title"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-md"
-            style={{ backgroundColor: C.bluePale, color: C.blue }}
-          >
-            <Globe2 className="size-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <p
-              id="targeting-website-title"
-              className="text-[10px] font-bold uppercase tracking-[0.12em]"
-              style={{ color: C.blue }}
-            >
-              Website source
-            </p>
-            <p className="truncate text-sm font-semibold" style={{ color: C.navy }}>
-              {domain}
-            </p>
-          </div>
+    <div className="border-t border-border px-4 py-3 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <p className="text-xs leading-5 text-subtle">Website source</p>
+          <p className="truncate text-sm font-medium text-foreground">{savedDomain}</p>
         </div>
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
           disabled={isPending}
-          onClick={() => setIsChanging((current) => !current)}
-          style={{ color: C.blue }}
+          aria-expanded={showForm}
+          aria-controls="targeting-website-form"
+          onClick={() => {
+            onWebsiteReset();
+            setIsChanging(!showForm);
+          }}
         >
-          {isChanging ? "Cancel" : "Change website"}
+          {showForm ? "Cancel" : "Change website"}
         </Button>
       </div>
 
-      {isChanging ? (
-        <div
-          className="mt-3 border-t pt-3"
-          style={{ borderColor: C.rule }}
+      {showForm ? (
+        <form
+          id="targeting-website-form"
+          className="mt-3"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            onWebsiteSave();
+          }}
         >
-          <label
-            htmlFor="targeting-website-url"
-            className="text-xs font-semibold"
-            style={{ color: C.navy }}
-          >
-            New website URL
+          <label htmlFor="targeting-website-url" className="text-sm font-semibold text-foreground">
+            New website
           </label>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <input
+          <p id="targeting-website-help" className="mt-0.5 text-sm leading-5 text-muted-foreground">
+            Changing the source rebuilds this targeting profile before Arcli looks for new conversations.
+          </p>
+          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+            <Input
               id="targeting-website-url"
-              type="url"
+              type="text"
               inputMode="url"
               autoComplete="url"
               spellCheck={false}
               value={websiteDraft}
               disabled={isPending}
-              className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-              style={{ borderColor: C.rule, color: C.navy }}
+              aria-invalid={hasError || undefined}
+              aria-describedby={
+                hasError ? "targeting-website-help targeting-website-result" : "targeting-website-help"
+              }
+              className="h-9 bg-card text-sm sm:flex-1"
               onChange={(event) => onWebsiteDraftChange(event.target.value)}
             />
-            <Button
-              type="button"
-              className="h-10 shrink-0"
-              disabled={isPending || !websiteDraft.trim() || !websiteChanged}
-              onClick={onWebsiteSave}
-            >
-              {isPending ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              ) : null}
-              {isPending ? "Saving..." : "Save and rebuild"}
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Saving…" : "Save and rebuild"}
             </Button>
           </div>
-          <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-            Changing the source rebuilds this targeting profile before Arcli looks for new conversations.
-          </p>
-        </div>
+          {websiteChanged && draftDomain && !hasError ? (
+            <p className="mt-2 text-sm leading-5 text-warning">
+              Buyers, problem and signals will be redrafted from {draftDomain}. Your current answers will be replaced.
+            </p>
+          ) : null}
+        </form>
       ) : null}
 
-      {requiresProfileRefresh ? (
-        <div
-          className="mt-3 flex flex-col gap-2 rounded-lg border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-          style={{ borderColor: C.amber, backgroundColor: C.amberPale }}
-        >
-          <p className="text-xs leading-5" style={{ color: C.amber }}>
-            The latest scan needs a fresh website profile before matching can resume.
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={onWebsiteSave}
-            style={{ borderColor: C.amber, color: C.amber }}
-          >
-            {isPending ? "Refreshing..." : "Refresh website profile"}
-          </Button>
-        </div>
-      ) : null}
-    </section>
+      <div aria-live="polite">
+        <ResultLine result={result} id="targeting-website-result" className="mt-2" />
+      </div>
+    </div>
   );
 }
 
@@ -232,340 +281,380 @@ const targetingStepPanelId: Record<TargetingStep, string> = {
   signals: "targeting-signals-panel",
 };
 
+/** One part of the brief: its saved answer, or its fields while editing. */
 function TargetingStepCard({
-  step,
   title,
   description,
-  summary,
   isOpen,
-  onClick,
+  isEmpty,
+  isChanged,
   panelId,
+  onToggle,
+  view,
+  children,
 }: {
-  step: number;
   title: string;
   description: string;
-  summary: string;
   isOpen: boolean;
-  onClick: () => void;
+  isEmpty: boolean;
+  isChanged: boolean;
   panelId: string;
+  onToggle: () => void;
+  view: ReactNode;
+  children: ReactNode;
 }) {
+  const headingId = `${panelId}-title`;
+
   return (
-    <button
-      type="button"
-      className="flex min-h-44 w-full flex-col rounded-xl border bg-white p-4 text-left transition-colors hover:bg-[#F8FBFD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      style={{ borderColor: isOpen ? C.blue : C.rule }}
-      aria-expanded={isOpen}
-      aria-controls={panelId}
-      onClick={onClick}
-    >
-      <div className="flex w-full items-start justify-between gap-3">
-        <span
-          className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-          style={{ backgroundColor: C.bluePale, color: C.blue }}
+    <section aria-labelledby={headingId} className="px-4 py-4 sm:px-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 id={headingId} className="text-base font-semibold text-foreground">
+              {title}
+            </h3>
+            {isChanged ? (
+              <StatusBadge tone="info" size="compact">Unsaved</StatusBadge>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-sm leading-5 text-muted-foreground">{description}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-expanded={isOpen}
+          aria-controls={panelId}
+          onClick={onToggle}
         >
-          {step}
-        </span>
-        <ChevronDown
-          className={isOpen ? "size-4 rotate-180" : "size-4"}
-          style={{ color: C.muted }}
-          aria-hidden="true"
-        />
+          {isOpen ? "Done" : isEmpty ? "Add" : "Edit"}
+          <span className="sr-only">: {title}</span>
+        </Button>
       </div>
-      <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>
-        {title}
-      </h2>
-      <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-        {description}
-      </p>
-      <p
-        className="mt-auto line-clamp-2 pt-3 text-xs font-semibold leading-5"
-        style={{ color: C.blue }}
-      >
-        {summary}
-      </p>
-    </button>
+      <div id={panelId} className="mt-3">
+        {isOpen ? children : view}
+      </div>
+    </section>
   );
 }
 
-function latestScanMessage(
-  latestScan: TargetingEditorProps["latestScan"],
-) {
-  if (!latestScan) {
-    return "No current discovery result yet. Your saved targeting will be used when the next scan runs.";
-  }
-
-  if (latestScan.summary.stopReason === "profile_refresh_required") {
-    return "The last scan stopped before matching because its website profile needs a refresh.";
-  }
-
-  if (!latestScan.isTerminal) {
-    return "A discovery scan is still using this targeting. Results will appear in Prospects when it finishes.";
-  }
-
-  const conversations = latestScan.summary.totalHits;
-  const plausible = latestScan.summary.plausibleHits;
-  if (conversations !== null && plausible !== null) {
-    return `Latest scan checked ${conversations} public ${conversations === 1 ? "conversation" : "conversations"} and surfaced ${plausible} plausible ${plausible === 1 ? "opportunity" : "opportunities"}.`;
-  }
-
-  return "The latest discovery scan finished. Review Prospects for its matching results.";
+function EmptyAnswer({ children }: { children: ReactNode }) {
+  return <p className="text-sm leading-5 text-subtle">{children}</p>;
 }
+
+function SignalGroups({ fields }: { fields: ServiceProfileFields }) {
+  const groups = [
+    { label: "Problems buyers mention", items: fields.pain_points },
+    { label: "Moments that make it urgent", items: fields.buying_triggers },
+  ].filter((group) => group.items.length > 0);
+
+  if (groups.length === 0) return <EmptyAnswer>No signals yet.</EmptyAnswer>;
+  return (
+    <div className="space-y-3">
+      {groups.map((group) => (
+        <div key={group.label}>
+          <p className="text-xs leading-5 text-subtle">{group.label}</p>
+          <TagList items={group.items} className="mt-1" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function sameValue(a: unknown, b: unknown) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// While the website is being read there is nothing to edit yet. Refreshing
+// lets the editor appear on its own once the first draft exists.
+const PREPARING_REFRESH_MS = 10_000;
 
 export function TargetingEditor({
   serviceProfile,
   fields,
   isPro,
   changedFieldCount,
-  isPending,
-  isWebsitePending,
-  result,
+  queryError,
+  latestScan,
+  savedWebsiteUrl,
   websiteDraft,
   websiteChanged,
-  latestScan,
+  isWebsitePending,
+  websiteResult,
+  isRefreshing,
+  refreshResult,
   onFieldChange,
   onDiscoveryQueriesChange,
   onSave,
+  onValidate,
+  onRefreshTargeting,
+  onRefreshWebsite,
   onWebsiteDraftChange,
+  onWebsiteReset,
   onWebsiteSave,
 }: TargetingEditorProps) {
+  const router = useRouter();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeStep, setActiveStep] = useState<TargetingStep | null>(null);
-  const readiness = targetingReadiness(serviceProfile, isPro);
-  const hasCategorizedQueries = fields.discovery_queries.length > 0;
+  const { isSaving } = useBriefSaveSection("profile", {
+    changeCount: changedFieldCount,
+    saveLabel: "Save & update targeting",
+    save: onSave,
+    validate: onValidate,
+  });
   const requiresProfileRefresh =
     latestScan?.summary.stopReason === "profile_refresh_required";
-  const needsRefresh =
-    serviceProfile.hasProfile &&
-    isPro &&
-    serviceProfile.embeddingStatus !== "completed";
-  const canSave = changedFieldCount > 0 || needsRefresh;
-  const saveLabel = isPending
-    ? "Saving..."
-    : changedFieldCount > 0
-      ? "Save & update targeting"
-      : "Refresh targeting";
-  const buyerSummary =
-    fields.target_audience.length > 0
-      ? `${fields.target_audience.length} buyer ${fields.target_audience.length === 1 ? "group" : "groups"} defined`
-      : "Add target buyers";
-  const problemSummary = fields.core_problem.trim() || "Describe the problem";
-  const signalCount = fields.pain_points.length + fields.buying_triggers.length;
-  const signalSummary =
-    signalCount > 0
-      ? `${signalCount} public ${signalCount === 1 ? "signal" : "signals"} defined`
-      : "Add public signals";
+  const readiness = targetingReadiness(serviceProfile, isPro, requiresProfileRefresh);
+  const saved = serviceProfile.fields;
+  const hasCategorizedQueries = fields.discovery_queries.length > 0;
+  // A failed prompt check opens Advanced targeting so the invalid field is visible.
+  const isAdvancedOpen = advancedOpen || queryError !== null;
 
-  return (
-    <div className="space-y-4">
-      <section
-        className="rounded-xl border bg-white p-4 sm:p-5"
-        style={{ borderColor: C.rule }}
-        aria-labelledby="targeting-title"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-              style={{ backgroundColor: C.bluePale, color: C.blue }}
-            >
-              <Target className="size-4" aria-hidden="true" />
-            </span>
-            <div>
-              <h2 id="targeting-title" className="text-xl font-semibold" style={{ color: C.navy }}>
-                Who should Arcli look for?
-              </h2>
-            </div>
+  useEffect(() => {
+    if (serviceProfile.hasProfile) return;
+    const timer = window.setInterval(() => router.refresh(), PREPARING_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [router, serviceProfile.hasProfile]);
+
+  useEffect(() => {
+    if (!activeStep) return;
+    document
+      .getElementById(targetingStepPanelId[activeStep])
+      ?.querySelector<HTMLElement>("input, textarea")
+      ?.focus();
+  }, [activeStep]);
+
+  useEffect(() => {
+    if (!queryError) return;
+    document.getElementById(queryError.inputId)?.focus();
+  }, [queryError]);
+
+  const toggleStep = (step: TargetingStep) =>
+    setActiveStep((current) => (current === step ? null : step));
+
+  const statusPanel = (
+    <section
+      aria-labelledby="targeting-status-title"
+      className={cn(
+        "rounded-lg border bg-card",
+        readiness.tone === "warning" ? "border-warning/40" : "border-border",
+      )}
+    >
+      <h2 id="targeting-status-title" className="sr-only">
+        Brief status
+      </h2>
+      <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <StatusBadge tone={readiness.tone}>{readiness.label}</StatusBadge>
+            <p className="text-sm leading-5 text-foreground">{readiness.detail}</p>
           </div>
-          <span
-            className="rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{ color: readiness.color, backgroundColor: readiness.backgroundColor }}
-          >
-            {readiness.label}
-          </span>
+          {isPro && serviceProfile.hasProfile ? (
+            <p className="text-sm leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground">Latest discovery:</span>{" "}
+              {latestScanMessage(latestScan)}
+            </p>
+          ) : null}
+          <div aria-live="polite">
+            <ResultLine result={refreshResult} />
+          </div>
         </div>
-        <p className="mt-3 max-w-3xl text-sm leading-6" style={{ color: C.navySoft }}>
-          Give Arcli a practical buyer, problem, and a few public signals. You do not need a perfect customer profile—plausible conversations are enough to review.
-        </p>
-        <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-          {readiness.detail}
-        </p>
-        <p className="mt-2 text-xs leading-5" style={{ color: C.navySoft }}>
-          <span className="font-semibold" style={{ color: C.navy }}>
-            Latest discovery: 
-          </span>
-          {latestScanMessage(latestScan)}
-        </p>
-      </section>
+        {readiness.action ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isRefreshing || isWebsitePending}
+            onClick={
+              readiness.action.run === "website" ? onRefreshWebsite : onRefreshTargeting
+            }
+          >
+            {isRefreshing || isWebsitePending ? "Refreshing…" : readiness.action.label}
+          </Button>
+        ) : null}
+      </div>
 
       <WebsiteSourceControl
+        savedWebsiteUrl={savedWebsiteUrl}
         websiteDraft={websiteDraft}
         websiteChanged={websiteChanged}
-        requiresProfileRefresh={requiresProfileRefresh}
         isPending={isWebsitePending}
+        result={websiteResult}
         onWebsiteDraftChange={onWebsiteDraftChange}
+        onWebsiteReset={onWebsiteReset}
         onWebsiteSave={onWebsiteSave}
       />
+    </section>
+  );
 
-      {!serviceProfile.hasProfile ? (
-        <section
-          className="rounded-xl border px-4 py-5"
-          style={{ borderColor: C.blueLight, backgroundColor: C.bluePale }}
-        >
-          <div className="flex items-start gap-3">
-            <Loader2 className="mt-0.5 size-4 animate-spin" style={{ color: C.blue }} aria-hidden="true" />
-            <div>
-              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>
-                Preparing your starting point
-              </h2>
-              <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-                Arcli is turning the website into an editable targeting draft. Return here when preparation finishes to refine the buyer, problem, and signals.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <TargetingStepCard
-              step={1}
-              title="Who has the problem?"
-              description="Name the people, teams, or company situations most likely to act."
-              summary={buyerSummary}
-              isOpen={activeStep === "buyer"}
-              onClick={() => setActiveStep((current) => current === "buyer" ? null : "buyer")}
-              panelId={targetingStepPanelId.buyer}
-            />
-            <TargetingStepCard
-              step={2}
-              title="What are they trying to solve?"
-              description="Describe the costly or frustrating situation in the buyer's own terms."
-              summary={problemSummary}
-              isOpen={activeStep === "problem"}
-              onClick={() => setActiveStep((current) => current === "problem" ? null : "problem")}
-              panelId={targetingStepPanelId.problem}
-            />
-            <TargetingStepCard
-              step={3}
-              title="What should Arcli recognise publicly?"
-              description="Add the problems and moments that make a conversation worth a human review."
-              summary={signalSummary}
-              isOpen={activeStep === "signals"}
-              onClick={() => setActiveStep((current) => current === "signals" ? null : "signals")}
-              panelId={targetingStepPanelId.signals}
-            />
-          </div>
+  if (!serviceProfile.hasProfile) {
+    return (
+      <>
+        {statusPanel}
+        <EmptyState
+          icon={FileSearch}
+          title="Your brief will appear here"
+          description="Arcli drafts buyers, a problem and public signals from your website. This page updates on its own when the draft is ready, usually within a few minutes."
+        />
+      </>
+    );
+  }
 
-          {activeStep === "buyer" ? (
-            <section
-              id={targetingStepPanelId.buyer}
-              className="rounded-xl border bg-white p-4"
-              style={{ borderColor: C.blue }}
-            >
+  return (
+    <>
+      {statusPanel}
+
+      <section
+        aria-labelledby="targeting-title"
+        className="rounded-lg border border-border bg-card"
+      >
+        <div className="px-4 pt-4 sm:px-5 sm:pt-5">
+          <h2 id="targeting-title" className="text-lg font-semibold text-foreground">
+            Who should Arcli look for?
+          </h2>
+          <p className="mt-0.5 max-w-[70ch] text-sm leading-5 text-muted-foreground">
+            A practical buyer, problem and a few public signals are enough. Plausible conversations are worth a review.
+          </p>
+        </div>
+
+        <div className="mt-4 divide-y divide-border border-t border-border">
+          <TargetingStepCard
+            title="Who has the problem?"
+            description="The people, teams or company situations most likely to act."
+            isOpen={activeStep === "buyer"}
+            isEmpty={fields.target_audience.length === 0}
+            isChanged={!sameValue(fields.target_audience, saved?.target_audience)}
+            panelId={targetingStepPanelId.buyer}
+            onToggle={() => toggleStep("buyer")}
+            view={
+              fields.target_audience.length > 0 ? (
+                <TagList items={fields.target_audience} />
+              ) : (
+                <EmptyAnswer>No buyers yet.</EmptyAnswer>
+              )
+            }
+          >
+            <SignalField
+              label="Target buyers"
+              description="Roles, teams, company types or situations. A few clear groups beat a long list of job titles."
+              value={fields.target_audience}
+              placeholder="RevOps leaders, B2B SaaS founders"
+              disabled={isSaving}
+              onChange={(value) => onFieldChange("target_audience", value)}
+            />
+          </TargetingStepCard>
+
+          <TargetingStepCard
+            title="What are they trying to solve?"
+            description="The costly or frustrating situation, in the buyer's own words."
+            isOpen={activeStep === "problem"}
+            isEmpty={!fields.core_problem.trim()}
+            isChanged={fields.core_problem !== (saved?.core_problem ?? "")}
+            panelId={targetingStepPanelId.problem}
+            onToggle={() => toggleStep("problem")}
+            view={
+              fields.core_problem.trim() ? (
+                <p className="max-w-[75ch] text-sm leading-6 text-foreground">
+                  {fields.core_problem}
+                </p>
+              ) : (
+                <EmptyAnswer>No problem described yet.</EmptyAnswer>
+              )
+            }
+          >
+            <TextProfileField
+              label="Core problem"
+              description="The delay, risk, cost or manual work that makes someone look for help."
+              value={fields.core_problem}
+              placeholder="Teams spend hours sorting noisy conversations before they know who is worth contacting."
+              disabled={isSaving}
+              onChange={(value) => onFieldChange("core_problem", value)}
+            />
+          </TargetingStepCard>
+
+          <TargetingStepCard
+            title="What should Arcli recognise publicly?"
+            description="Problems and moments that make a conversation worth a human review."
+            isOpen={activeStep === "signals"}
+            isEmpty={fields.pain_points.length + fields.buying_triggers.length === 0}
+            isChanged={
+              !sameValue(fields.pain_points, saved?.pain_points) ||
+              !sameValue(fields.buying_triggers, saved?.buying_triggers)
+            }
+            panelId={targetingStepPanelId.signals}
+            onToggle={() => toggleStep("signals")}
+            view={<SignalGroups fields={fields} />}
+          >
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
               <SignalField
-                label="Target buyers"
-                description="Use roles, teams, company types, or situations—not a long list of job titles."
-                value={fields.target_audience}
-                placeholder="RevOps leaders, B2B SaaS founders"
-                disabled={isPending}
-                onChange={(value) => onFieldChange("target_audience", value)}
+                label="Problems buyers mention"
+                description="Frustrations or outcomes that come up before someone looks for a solution."
+                value={fields.pain_points}
+                placeholder="Manual lead research takes too long"
+                disabled={isSaving}
+                onChange={(value) => onFieldChange("pain_points", value)}
               />
-            </section>
-          ) : null}
-
-          {activeStep === "problem" ? (
-            <section
-              id={targetingStepPanelId.problem}
-              className="rounded-xl border bg-white p-4"
-              style={{ borderColor: C.blue }}
-            >
-              <TextProfileField
-                label="Core problem"
-                description="Focus on the delay, risk, cost, or manual work that makes someone look for help."
-                value={fields.core_problem}
-                placeholder="Teams spend hours sorting noisy conversations before they know who is worth contacting."
-                disabled={isPending}
-                onChange={(value) => onFieldChange("core_problem", value)}
+              <SignalField
+                label="Moments that make it urgent"
+                description="Events or wording that suggest the buyer needs help soon."
+                value={fields.buying_triggers}
+                placeholder="New growth target, evaluating a tool"
+                disabled={isSaving}
+                onChange={(value) => onFieldChange("buying_triggers", value)}
               />
-            </section>
-          ) : null}
+            </div>
+          </TargetingStepCard>
 
-          {activeStep === "signals" ? (
-            <section
-              id={targetingStepPanelId.signals}
-              className="rounded-xl border bg-white p-4"
-              style={{ borderColor: C.blue }}
-            >
-              <div className="grid gap-3 lg:grid-cols-2">
-                <SignalField
-                  label="Problems buyers mention"
-                  description="Frustrations or outcomes that appear before someone seeks a solution."
-                  value={fields.pain_points}
-                  placeholder="Manual lead research takes too long"
-                  disabled={isPending}
-                  onChange={(value) => onFieldChange("pain_points", value)}
-                />
-                <SignalField
-                  label="Moments that make it urgent"
-                  description="Events or wording that suggest the buyer may need help soon."
-                  value={fields.buying_triggers}
-                  placeholder="New growth target, evaluating a tool"
-                  disabled={isPending}
-                  onChange={(value) => onFieldChange("buying_triggers", value)}
-                />
-              </div>
-            </section>
-          ) : null}
-
-          <section className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
+          <div>
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
-              aria-expanded={advancedOpen}
-              onClick={() => setAdvancedOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 rounded-b-lg px-4 py-3.5 text-left transition-colors hover:bg-off-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:px-5"
+              aria-expanded={isAdvancedOpen}
+              aria-controls="targeting-advanced-panel"
+              onClick={() => setAdvancedOpen(!isAdvancedOpen)}
             >
-              <span className="flex items-center gap-2.5">
-                <Settings2 className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-                <span>
-                  <span className="block text-sm font-semibold" style={{ color: C.navy }}>
-                    Advanced targeting
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5" style={{ color: C.muted }}>
-                    Fine-tune buyer language and keep common false positives out.
-                  </span>
+              <span className="min-w-0">
+                <span className="block text-base font-semibold text-foreground">
+                  Advanced targeting
+                </span>
+                <span className="mt-0.5 block text-sm leading-5 text-muted-foreground">
+                  Buyer language, competitors and what to ignore.
                 </span>
               </span>
               <ChevronDown
-                className={advancedOpen ? "size-4 rotate-180" : "size-4"}
-                style={{ color: C.muted }}
+                className={cn(
+                  "size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
+                  isAdvancedOpen && "rotate-180",
+                )}
                 aria-hidden="true"
               />
             </button>
 
-            {advancedOpen ? (
-              <div className="space-y-4 border-t p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-                <div className="grid gap-3 lg:grid-cols-2">
+            {isAdvancedOpen ? (
+              <div id="targeting-advanced-panel" className="space-y-6 px-4 pb-5 pt-1 sm:px-5">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
                   <SignalField
                     label="Useful outcomes"
                     description="Results a buyer is actively trying to achieve."
                     value={fields.use_cases}
                     placeholder="Avoid manual handoffs that delay work"
-                    disabled={isPending}
+                    disabled={isSaving}
                     onChange={(value) => onFieldChange("use_cases", value)}
                   />
                   <SignalField
                     label="Urgency signals"
-                    description="Specific words or events that show a problem needs attention soon."
+                    description="Words or events that show a problem needs attention soon."
                     value={fields.urgency_signals}
                     placeholder="Customers are blocked, deadline this week"
-                    disabled={isPending}
+                    disabled={isSaving}
                     onChange={(value) => onFieldChange("urgency_signals", value)}
                   />
                   <SignalField
                     label="Competitors to monitor"
-                    description="Alternatives that can reveal comparison or switching conversations."
+                    description="Alternatives that reveal comparison or switching conversations. A name alone never makes a prospect."
                     value={fields.competitor_terms}
                     placeholder="ExampleCRM, manual spreadsheets"
-                    disabled={isPending}
+                    disabled={isSaving}
                     onChange={(value) => onFieldChange("competitor_terms", value)}
                   />
                   {!hasCategorizedQueries ? (
@@ -574,7 +663,7 @@ export function TargetingEditor({
                       description="Natural phrases a buyer might use when asking for help."
                       value={fields.search_terms}
                       placeholder="Need a better way to handle failed payments"
-                      disabled={isPending}
+                      disabled={isSaving}
                       onChange={(value) => onFieldChange("search_terms", value)}
                     />
                   ) : null}
@@ -582,26 +671,34 @@ export function TargetingEditor({
 
                 <TextProfileField
                   label="Why you are a good fit"
-                  description="Optional context that helps distinguish the problem you solve from a broad category."
+                  description="Optional. Helps separate the problem you solve from a broad category."
                   value={fields.unique_value_prop}
                   placeholder="We turn public buyer signals into explainable prospect matches."
-                  disabled={isPending}
+                  disabled={isSaving}
                   onChange={(value) => onFieldChange("unique_value_prop", value)}
                 />
 
-                <DiscoveryQueryEditor
-                  value={fields.discovery_queries}
-                  disabled={isPending}
-                  onChange={onDiscoveryQueriesChange}
-                />
+                <div>
+                  {queryError ? (
+                    <p role="alert" className="mb-2 flex items-start gap-2 text-sm leading-5 text-danger">
+                      <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      {queryError.message}
+                    </p>
+                  ) : null}
+                  <DiscoveryQueryEditor
+                    value={fields.discovery_queries}
+                    disabled={isSaving}
+                    onChange={onDiscoveryQueriesChange}
+                  />
+                </div>
 
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
                   <SignalField
                     label="Exclude these audiences"
-                    description="People or companies Arcli should not treat as prospects."
+                    description="People or companies whose conversations should never count as prospects."
                     value={fields.excluded_audiences}
                     placeholder="Agencies, job seekers"
-                    disabled={isPending}
+                    disabled={isSaving}
                     onChange={(value) => onFieldChange("excluded_audiences", value)}
                   />
                   <SignalField
@@ -609,40 +706,15 @@ export function TargetingEditor({
                     description="Words that commonly create weak or irrelevant matches."
                     value={fields.negative_keywords}
                     placeholder="Student, free template"
-                    disabled={isPending}
+                    disabled={isSaving}
                     onChange={(value) => onFieldChange("negative_keywords", value)}
                   />
                 </div>
               </div>
             ) : null}
-          </section>
-
-          <div
-            className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between"
-            style={{ borderColor: C.rule }}
-          >
-            <div className="min-w-0" aria-live="polite">
-              <ResultText result={result} />
-              <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                {changedFieldCount > 0
-                  ? `${changedFieldCount} ${changedFieldCount === 1 ? "change" : "changes"} will update matching for the next scan.`
-                  : needsRefresh
-                    ? "Refresh the targeting profile before the next scan."
-                    : "Your saved targeting is ready for the next scan."}
-              </p>
-            </div>
-            <Button
-              type="button"
-              disabled={isPending || !canSave}
-              className="h-10 shrink-0"
-              onClick={onSave}
-            >
-              {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
-              {saveLabel}
-            </Button>
           </div>
-        </>
-      )}
-    </div>
+        </div>
+      </section>
+    </>
   );
 }

@@ -120,8 +120,9 @@ export default async function TargetsPage() {
   }));
   const createTarget = createManualProspectTarget.bind(null, serviceProfile.id);
 
-  // Every target is assessed against the approved brief, so without one the
-  // page has a single job: send the person to approve it.
+  // Every target is assessed against the saved target universe (the
+  // targeting_profiles row, shown as "Target universe" on the brief page), so
+  // without one the page has a single job: send the person to set it up.
   if (!targetingBrief.hasBrief) {
     return (
       <div className="arc-workspace-page arc-workspace-page--targets">
@@ -129,11 +130,11 @@ export default async function TargetsPage() {
         <EmptyState
           variant="never-used"
           icon={FileCheck2}
-          title="Approve your targeting brief to start adding targets"
-          description="Arcli checks every target against your targeting brief, so you can add accounts here once you've approved it."
+          title="Set up your target universe to start adding targets"
+          description="Arcli checks every target against the target universe in your targeting brief: the kinds of accounts worth researching. Save it once, then add accounts here."
           action={
             <Button asChild>
-              <Link href={BRIEF_HREF}>Review your targeting brief</Link>
+              <Link href={`${BRIEF_HREF}#target-universe`}>Set up target universe</Link>
             </Button>
           }
         />

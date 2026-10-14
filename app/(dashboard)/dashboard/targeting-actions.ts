@@ -8,7 +8,6 @@ import {
   TARGET_TYPES,
   normalizeSeedUrl,
   normalizeTargetingBriefInput,
-  type TargetingBriefInput,
   type TargetType,
 } from "@/lib/targeting-brief";
 import { retainedPublicTargetMonitoringUiIsEnabled } from "@/lib/retained-public-monitoring-server";
@@ -95,6 +94,22 @@ async function requireTenant(): Promise<TenantContext | ProspectActionResult> {
   return actionError("Workspace access could not be verified.");
 }
 
+const TARGETING_BRIEF_FIELD_LABELS: Record<string, string> = {
+  idealCustomerTraits: "Ideal customer traits",
+  changeTriggers: "Relevant change triggers",
+  strongEvidenceDefinitions: "Strong buyer evidence",
+  exclusions: "Outside the target universe",
+  seedUrls: "Starting points",
+};
+
+function targetingBriefIssueMessage(field: PropertyKey | undefined): string {
+  if (field === "targetTypes") return "Choose at least one target type.";
+  const label = typeof field === "string" ? TARGETING_BRIEF_FIELD_LABELS[field] : undefined;
+  return label
+    ? `Target universe wasn't saved: check "${label}". Each item needs at least 2 characters, and each list holds up to ${TARGETING_BRIEF_LIMITS.maxItemsPerField}.`
+    : "Target universe wasn't saved. Check the lists and try again.";
+}
+
 function validServiceProfileId(value: string | null): string | null {
   const result = z.string().uuid().safeParse(value);
   return result.success ? result.data : null;
@@ -114,14 +129,13 @@ export async function saveTargetingBrief(
 
   const profileId = validServiceProfileId(serviceProfileId);
   if (!profileId) {
-    return actionError("Finish preparing the website profile before saving targeting.");
+    return actionError("Arcli is still reading your website. Save the target universe once your brief appears.");
   }
 
   const parsed = TARGETING_BRIEF_SCHEMA.safeParse(values);
   if (!parsed.success) {
-    return actionError(
-      parsed.error.issues[0]?.message ?? "Check the targeting brief and try again.",
-    );
+    // zod's default issue text is developer wording, so name the field instead.
+    return actionError(targetingBriefIssueMessage(parsed.error.issues[0]?.path[0]));
   }
 
   const normalized = normalizeTargetingBriefInput(parsed.data);
@@ -147,13 +161,13 @@ export async function saveTargetingBrief(
       error: result.error,
     });
     return actionError(
-      "Could not save targeting yet. Confirm the targeting database migration is deployed, then try again.",
+      "Target universe wasn't saved. Your changes are still here; try again in a minute.",
     );
   }
 
   revalidatePath("/dashboard/brief");
   revalidatePath("/dashboard/targets");
-  return actionOk("Targeting brief saved. Add a public target when you are ready to research it.");
+  return actionOk("Target universe saved.");
 }
 
 /**
@@ -321,7 +335,7 @@ export async function setProspectTargetMonitoring(
   enabled: boolean,
 ): Promise<ProspectActionResult> {
   if (!retainedPublicTargetMonitoringUiIsEnabled()) {
-    return actionError("Target monitoring is not available until its evidence worker is deployed.");
+    return actionError("Target monitoring isn't available in this workspace yet.");
   }
 
   const context = await requireTenant();

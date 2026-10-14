@@ -135,6 +135,35 @@ function actionError(message: string): ProspectActionResult {
   return { ok: false, message };
 }
 
+/**
+ * The dashboard loaders throw on query failures so pages can't mistake a
+ * failed read for an empty workspace. Actions keep their result contract
+ * instead, so callers show the failure inline rather than losing the page.
+ */
+async function readForAction<T>(
+  tenantId: string,
+  read: () => Promise<T>,
+): Promise<{ value: T } | ProspectActionResult> {
+  try {
+    return { value: await read() };
+  } catch (error) {
+    console.error("[ProspectDashboard] workspace read failed in action", {
+      tenant_id: tenantId,
+      error,
+    });
+    return actionError(
+      "Your workspace details couldn't be loaded, so nothing was started. Try again in a moment.",
+    );
+  }
+}
+
+/** Website URL and its service profile, as the scan actions need them. */
+async function readWebsiteProfile(supabase: TenantContext["supabase"], tenantId: string) {
+  const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
+  const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
+  return { websiteUrl, serviceProfile };
+}
+
 function actionOk(message: string): ProspectActionResult {
   return { ok: true, message };
 }
@@ -884,15 +913,11 @@ export async function activateSuggestedBuyerGroup(
     return actionError("That website buyer-group suggestion is no longer available.");
   }
 
-  const websiteUrl = await fetchTenantWebsiteUrl(
-    context.supabase,
-    context.tenantId,
+  const workspace = await readForAction(context.tenantId, () =>
+    readWebsiteProfile(context.supabase, context.tenantId),
   );
-  const serviceProfile = await fetchServiceProfile(
-    context.supabase,
-    context.tenantId,
-    websiteUrl,
-  );
+  if ("ok" in workspace) return workspace;
+  const { serviceProfile } = workspace.value;
   if (!serviceProfile.id || !isServiceProfileApproved(serviceProfile)) {
     return actionError(
       "Create and approve a website matching brief before testing a buyer group.",
@@ -1067,10 +1092,11 @@ export async function rebuildCurrentWebsiteProfile(): Promise<ProspectActionResu
   const context = await requireTenant();
   if ("ok" in context) return context;
 
-  const websiteUrl = await fetchTenantWebsiteUrl(
-    context.supabase,
-    context.tenantId,
+  const website = await readForAction(context.tenantId, () =>
+    fetchTenantWebsiteUrl(context.supabase, context.tenantId),
   );
+  if ("ok" in website) return website;
+  const websiteUrl = website.value;
   if (!websiteUrl) {
     return actionError("Add a website before rebuilding its profile.");
   }
@@ -1103,15 +1129,11 @@ export async function startWebsiteDemandScan(): Promise<ProspectActionResult> {
   const context = await requireProTenant();
   if ("ok" in context) return context;
 
-  const websiteUrl = await fetchTenantWebsiteUrl(
-    context.supabase,
-    context.tenantId,
+  const workspace = await readForAction(context.tenantId, () =>
+    readWebsiteProfile(context.supabase, context.tenantId),
   );
-  const serviceProfile = await fetchServiceProfile(
-    context.supabase,
-    context.tenantId,
-    websiteUrl,
-  );
+  if ("ok" in workspace) return workspace;
+  const { websiteUrl, serviceProfile } = workspace.value;
 
   if (!websiteUrl) {
     return actionError("Add a website before scanning website demand.");
