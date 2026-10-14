@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import {
-  dashboardNavigationItems,
+  dashboardNavigationItemsFor,
   isDashboardNavigationItemActive,
 } from "@/lib/dashboard-navigation";
 import { PRO_PRICE_NOTE } from "@/lib/entitlements";
@@ -41,6 +41,13 @@ const ICONS: Record<string, LucideIcon> = {
   "/settings": Settings2,
 };
 
+// Sidebar section headings, shown above the first item of each group.
+const SIDEBAR_GROUPS: Record<string, string> = {
+  "/dashboard": "Review",
+  "/dashboard/brief": "Research",
+  "/settings": "Workspace",
+};
+
 type DashboardNavigationProps = {
   compact?: boolean;
   variant?: "sidebar";
@@ -56,23 +63,17 @@ export function DashboardNavigation({
 }: DashboardNavigationProps) {
   const pathname = usePathname();
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
-  const items = assistedPilot
-    ? [
-        dashboardNavigationItems[0],
-        {
-          href: "/dashboard/today",
-          label: "Today's prospects",
-          description: "Review delivered, evidence-backed prospects.",
-        },
-        ...dashboardNavigationItems.slice(1),
-      ]
-    : dashboardNavigationItems;
+  // The mobile tab bar leaves Settings to the menu drawer so the remaining
+  // tabs have room for whole labels.
+  const items = dashboardNavigationItemsFor(assistedPilot).filter(
+    (item) => !compact || item.href !== "/settings",
+  );
 
-  const navigationItemClassName = (isActive: boolean) =>
+  const navigationItemClassName = () =>
     cn(
-      "flex items-center rounded-md bg-[var(--nav-background)] text-xs font-semibold text-[var(--nav-foreground)] transition-colors hover:bg-[var(--nav-hover-background)] hover:text-[var(--nav-hover-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2",
+      "flex items-center rounded-md bg-[var(--nav-background)] text-[13px] font-semibold text-[var(--nav-foreground)] transition-colors hover:bg-[var(--nav-hover-background)] hover:text-[var(--nav-hover-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
       compact
-        ? "h-12 flex-col justify-center gap-0.5 px-1 text-[10px]"
+        ? "h-12 flex-col justify-center gap-0.5 px-0.5 text-[11px] font-medium"
         : variant === "sidebar" ? "h-9 w-full gap-2.5 px-3" : "h-9 shrink-0 gap-1.5 px-3",
     );
 
@@ -91,7 +92,7 @@ export function DashboardNavigation({
         style={compact ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` } : undefined}
         className={
           compact
-            ? assistedPilot ? "grid w-full grid-cols-6 items-center" : "grid w-full grid-cols-5 items-center"
+            ? "grid w-full items-center"
             : variant === "sidebar" ? "arc-sidebar-nav flex min-h-0 flex-col items-stretch gap-1 overflow-y-auto px-2" : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
         }
       >
@@ -99,7 +100,8 @@ export function DashboardNavigation({
           const Icon = ICONS[item.href];
           const isActive = isDashboardNavigationItemActive(pathname, item.href);
           const isLocked = !isPro && item.href === "/dashboard/watchlists";
-          const group = variant === "sidebar" && (item.href === "/dashboard" ? "Review" : item.href === "/dashboard/brief" ? "Research" : null);
+          const group = variant === "sidebar" ? SIDEBAR_GROUPS[item.href] ?? null : null;
+          const label = compact ? item.shortLabel ?? item.label : item.label;
 
           if (isLocked) {
             return (
@@ -110,12 +112,12 @@ export function DashboardNavigation({
                 onClick={() => setIsUpgradeOpen(true)}
                 aria-haspopup="dialog"
                 title={`${item.description} Available on Pro.`}
-                className={navigationItemClassName(false)}
+                className={navigationItemClassName()}
                 style={navigationItemStyle(false)}
               >
                 <LockKeyhole className="size-4" aria-hidden="true" />
                 <span className={compact ? "max-w-full truncate" : "inline"}>
-                  {item.label}
+                  {label}
                 </span>
               </button>
               </Fragment>
@@ -129,12 +131,12 @@ export function DashboardNavigation({
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               title={item.description}
-              className={navigationItemClassName(isActive)}
+              className={navigationItemClassName()}
               style={navigationItemStyle(isActive)}
             >
               <Icon className="size-4" aria-hidden="true" />
               <span className={compact ? "max-w-full truncate" : "inline"}>
-                {item.label}
+                {label}
               </span>
             </Link>
             </Fragment>
@@ -143,15 +145,14 @@ export function DashboardNavigation({
       </nav>
 
       <Dialog open={isUpgradeOpen} onOpenChange={setIsUpgradeOpen}>
-        <DialogContent className="max-w-md border-[#B8DCF8] bg-white p-0">
+        <DialogContent className="border-border bg-card p-0 sm:max-w-md">
           <div className="overflow-hidden rounded-lg">
-            <div className="relative px-6 pb-5 pt-6" style={{ background: "linear-gradient(135deg, #F4FAFF 0%, #FFFFFF 82%)" }}>
-              <div className="absolute -right-10 -top-10 size-32 rounded-full bg-[#DCEEFF]" aria-hidden="true" />
-              <DialogHeader className="relative text-left">
-                <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#EAF4FE] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue }}>
+            <div className="px-6 pb-5 pt-6">
+              <DialogHeader className="text-left">
+                <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-blue-pale px-2.5 py-1 text-xs font-semibold" style={{ color: C.blue }}>
                   <Sparkles className="size-3" aria-hidden="true" /> Pro prospect desk
                 </div>
-                <DialogTitle className="pfd mt-3 text-3xl leading-none" style={{ color: C.navy }}>
+                <DialogTitle className="mt-3 text-xl leading-7 font-semibold" style={{ color: C.navy }}>
                   Review the evidence behind a match.
                 </DialogTitle>
                 <DialogDescription className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
@@ -173,9 +174,9 @@ export function DashboardNavigation({
                   </li>
                 ))}
               </ul>
-              <div className="flex items-center justify-between gap-3 border-t pt-4" style={{ borderColor: C.rule }}>
-                <p className="text-xs font-semibold" style={{ color: C.navySoft }}>{PRO_PRICE_NOTE}</p>
-                <UpgradeButton />
+              <div className="space-y-3 border-t pt-4" style={{ borderColor: C.rule }}>
+                <p className="text-xs leading-5" style={{ color: C.navySoft }}>{PRO_PRICE_NOTE}</p>
+                <UpgradeButton className="w-full justify-center" />
               </div>
             </div>
           </div>

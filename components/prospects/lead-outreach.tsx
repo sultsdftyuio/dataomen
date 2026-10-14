@@ -1,67 +1,101 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Check,
-  Copy,
-  ExternalLink,
-  MessageSquareText,
-  Radar,
-  RotateCcw,
-  ShieldCheck,
-} from "lucide-react";
+import { Check, CircleHelp, Copy, ExternalLink, RotateCcw } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { sourceDisplayName } from "@/components/prospects/lead-desk-presentation";
-import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { trackProductEvent } from "@/lib/analytics/product-events";
 import {
-  isScreenedMatch,
+  isPotentialBuyer,
   isVerifiedLead,
   leadCategoryLabel,
 } from "@/app/(dashboard)/dashboard/lead-queue-filter";
+import { sourceDisplayName } from "@/components/prospects/lead-desk-presentation";
 import type { QualifiedLeadView } from "@/app/(dashboard)/dashboard/prospect-types";
 
-// Editable reply draft plus source/qualify actions for one lead. Drafts are
-// kept per lead in localStorage so switching leads never loses edits.
-export function LeadOutreach({
+type CopyState = "idle" | "copied" | "empty" | "error";
+
+const COPY_MESSAGES: Record<CopyState, string | null> = {
+  idle: null,
+  copied: "Reply copied.",
+  empty: "Write a reply before copying it.",
+  error: "Couldn't copy the reply. Select the text and copy it yourself.",
+};
+
+/**
+ * Source link and qualification for one prospect. Only a verifier-confirmed
+ * lead can be qualified (which can also export it to a CRM). The server and
+ * RLS policy enforce the same boundary; keeping it explicit here prevents a
+ * misleading action on a Maybe or a screened-out record.
+ */
+export function LeadOutreachActions({
   lead,
-  disabled,
-  qualificationMessage,
-  onQualify,
   reviewOnly,
-  compact = false,
-  showQualification = true,
-  showSourceAction = true,
+  sourceIsPrimary,
+  qualificationPending,
+  onQualify,
 }: {
   lead: QualifiedLeadView;
-  disabled: boolean;
-  qualificationMessage: string | null;
-  onQualify: (leadId: string) => void;
   reviewOnly: boolean;
-  compact?: boolean;
-  showQualification?: boolean;
-  /** Off when the surrounding panel already renders its own source link. */
-  showSourceAction?: boolean;
+  /** Filled when there is no reply to copy, so the view keeps one primary action. */
+  sourceIsPrimary: boolean;
+  qualificationPending: boolean;
+  onQualify: (leadId: string) => void;
 }) {
+  const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate" || !isVerifiedLead(lead);
+  const isQualified = lead.matchStatus === "qualified";
+
+  const sourceAction = lead.sourcePost.url ? (
+    <Button asChild variant={sourceIsPrimary ? "default" : "outline"}>
+      <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
+        <ExternalLink aria-hidden="true" />
+        Open {sourceDisplayName(lead.sourcePost.source)}
+        <span className="sr-only">(opens in a new tab)</span>
+      </a>
+    </Button>
+  ) : null;
+
+  const qualificationAction = !isReviewOnly ? (
+    isQualified ? null : (
+      <Button type="button" variant="outline" onClick={() => onQualify(lead.id)} disabled={qualificationPending}>
+        <Check aria-hidden="true" />
+        {qualificationPending ? "Qualifying…" : "Mark qualified"}
+      </Button>
+    )
+  ) : null;
+
+  return (
+    <>
+      {sourceAction}
+      {qualificationAction}
+    </>
+  );
+}
+
+/** Review-only guidance shown in place of qualification for a Maybe. */
+export function ReviewOnlyNotice({ lead }: { lead: QualifiedLeadView }) {
+  if (!isPotentialBuyer(lead)) return null;
+
+  return (
+    <p className="flex items-start gap-2 rounded-md bg-warning-pale px-3 py-2 text-sm leading-5 text-warning">
+      <CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      {"Not verified, so it can't be qualified or exported yet. Read the original post before you reply."}
+    </p>
+  );
+}
+
+// Editable reply draft for one prospect. Drafts are kept per prospect in
+// localStorage so switching prospects never loses edits.
+export function LeadOutreach({ lead }: { lead: QualifiedLeadView }) {
   const [draft, setDraft] = useState(lead.suggestedReply);
   const [isDraftReady, setIsDraftReady] = useState(false);
   const [restoredLocalDraft, setRestoredLocalDraft] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "empty" | "error">(
-    "idle",
-  );
-  const isQualified = lead.matchStatus === "qualified";
+  const [copyState, setCopyState] = useState<CopyState>("idle");
   const draftStorageKey = `arcli:reply-draft:${lead.id}`;
-  const sourceName = sourceDisplayName(lead.sourcePost.source);
-  // Relevant and screened opportunities are useful evidence to inspect, but only a
-  // verifier-confirmed lead can be promoted. The server and RLS policy enforce
-  // the same boundary; keeping it explicit prevents a misleading CRM action.
-  const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate" || !isVerifiedLead(lead);
-  const hasSuggestedReply = Boolean(lead.suggestedReply.trim());
   const draftId = `suggested-reply-${lead.id}`;
+  const isEdited = draft !== lead.suggestedReply;
 
   useEffect(() => {
     setIsDraftReady(false);
@@ -125,194 +159,54 @@ export function LeadOutreach({
     }
   };
 
-  const copyMessage =
-    copyState === "copied"
-      ? "Draft copied."
-      : copyState === "empty"
-        ? "Add a draft before copying."
-        : copyState === "error"
-          ? "Could not copy the draft."
-          : null;
-
   const resetDraft = () => {
     setDraft(lead.suggestedReply);
     setRestoredLocalDraft(false);
   };
 
-  const sourceAction = !showSourceAction ? null : lead.sourcePost.url ? (
-    <Button asChild size="sm" style={{ backgroundColor: C.blue, color: C.white }}>
-      <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
-        <ExternalLink className="size-4" />
-        <span className="hidden sm:inline">Open on {sourceName}</span>
-        <span className="sm:hidden">Open source</span>
-      </a>
-    </Button>
-  ) : (
-    <Button type="button" size="sm" disabled>
-      <ExternalLink className="size-4" />
-      Source unavailable
-    </Button>
-  );
-
-  const qualificationAction = !isReviewOnly ? (
-    showQualification ? (
-      <Button
-        type="button"
-        size="sm"
-        disabled={disabled || isQualified}
-        onClick={() => onQualify(lead.id)}
-        style={{ backgroundColor: C.green, color: C.white }}
-      >
-        {disabled ? (
-          <Radar className="size-4 animate-spin" />
-        ) : isQualified ? (
-          <Check className="size-4" />
-        ) : (
-          <ShieldCheck className="size-4" />
-        )}
-        {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark qualified"}
-      </Button>
-    ) : null
-  ) : null;
-
-  const reviewOnlyNotice = isReviewOnly ? (
-    <p className="text-xs font-medium" style={{ color: isScreenedMatch(lead) ? C.red : C.amber }}>
-      {isScreenedMatch(lead)
-        ? "Screened out — for inspection only, not outreach."
-        : "Maybe — check the evidence first. It can't be qualified or exported yet."}
-    </p>
-  ) : null;
-
-  if (!hasSuggestedReply) {
-    return (
-      <section
-        aria-label="Lead actions"
-        className={cn("rounded-md border", compact ? "p-3" : "p-4")}
-        style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          {sourceAction}
-          {qualificationAction}
-          {isQualified ? (
-            <Badge
-              variant="outline"
-              className="rounded-md"
-              style={{
-                borderColor: C.green,
-                backgroundColor: C.greenPale,
-                color: C.green,
-              }}
-            >
-              <Check className="size-3" />
-              Qualified
-            </Badge>
-          ) : null}
-        </div>
-        {reviewOnlyNotice ? <div className="mt-2">{reviewOnlyNotice}</div> : null}
-        {qualificationMessage ? (
-          <p className="mt-2 text-xs font-medium" aria-live="polite" style={{ color: C.navySoft }}>
-            {qualificationMessage}
-          </p>
-        ) : null}
-      </section>
-    );
-  }
+  const draftNote = restoredLocalDraft
+    ? "Restored your saved draft"
+    : isDraftReady && isEdited
+      ? "Saved in this browser"
+      : null;
+  const copyMessage = COPY_MESSAGES[copyState];
 
   return (
-    <section
-      aria-labelledby={`${draftId}-label`}
-      className={cn("rounded-md border", compact ? "p-3" : "p-4")}
-      style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
-    >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <label
-            htmlFor={draftId}
-            id={`${draftId}-label`}
-            className="flex items-center gap-2 text-xs font-bold uppercase"
-            style={{ color: C.blue }}
-          >
-            <MessageSquareText className="size-3.5" />
-            Suggested reply
-          </label>
-        </div>
-        {isQualified ? (
-          <Badge
-            variant="outline"
-            className="rounded-md"
-            style={{
-              borderColor: C.green,
-              backgroundColor: C.greenPale,
-              color: C.green,
-            }}
-          >
-            <Check className="size-3" />
-            Qualified
-          </Badge>
-        ) : null}
+    <section aria-labelledby={`${draftId}-label`} className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <label htmlFor={draftId} id={`${draftId}-label`} className="text-sm font-medium text-foreground">
+          Suggested reply
+        </label>
+        {/* Only speak up once the draft differs from the generated one. */}
+        <p className="text-xs text-subtle" aria-live="polite">{draftNote}</p>
       </div>
 
       <Textarea
         id={draftId}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        placeholder="A suggested public reply will appear here after verification."
-        className={cn(
-          compact ? "min-h-20" : "min-h-28",
-          "resize-y bg-white text-sm leading-6",
-        )}
-        style={{ borderColor: C.blueLight, color: C.navy }}
+        placeholder="Write a reply to post on the original conversation."
+        className="min-h-28 resize-y bg-card leading-6 text-foreground"
       />
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px]" style={{ color: C.muted }} aria-live="polite">
-          {/* Only speak up once the draft differs from the generated one. */}
-          {restoredLocalDraft
-            ? "Restored your saved draft."
-            : isDraftReady && draft !== lead.suggestedReply
-              ? "Saved in this browser."
-              : null}
-        </p>
-        {draft !== lead.suggestedReply ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            onClick={resetDraft}
-            style={{ color: C.navySoft }}
-          >
-            <RotateCcw className="size-3" />
-            Reset
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" onClick={copyDraft}>
+          {copyState === "copied" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+          {copyState === "copied" ? "Copied" : "Copy reply"}
+        </Button>
+        {isEdited ? (
+          <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" onClick={resetDraft}>
+            <RotateCcw aria-hidden="true" />
+            Reset to suggestion
           </Button>
         ) : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={copyDraft}
-          style={{
-            borderColor: C.blueLight,
-            backgroundColor: C.white,
-            color: C.blue,
-          }}
+        <p
+          className={cn("text-xs", copyState === "copied" ? "sr-only" : "text-danger")}
+          aria-live="polite"
         >
-          {copyState === "copied" ? <Check className="size-4" /> : <Copy className="size-4" />}
-          {copyState === "copied" ? "Copied" : "Copy draft"}
-        </Button>
-        {sourceAction}
-        {qualificationAction}
-      </div>
-
-      {reviewOnlyNotice ? <div className="mt-2">{reviewOnlyNotice}</div> : null}
-
-      {copyMessage || qualificationMessage ? (
-        <p className="mt-2 text-xs font-medium" aria-live="polite" style={{ color: C.navySoft }}>
-          {[copyMessage, qualificationMessage].filter(Boolean).join(" ")}
+          {copyMessage}
         </p>
-      ) : null}
+      </div>
     </section>
   );
 }

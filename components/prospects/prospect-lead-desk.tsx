@@ -1,57 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type KeyboardEvent } from "react";
-import {
-  Check,
-  CircleCheck,
-  CircleCheckBig,
-  Inbox,
-  SlidersHorizontal,
-  ExternalLink,
-  Globe2,
-  RefreshCw,
-  Search,
-  Sparkles,
-  UsersRound,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 
+import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
-import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import { EmptyQueue } from "@/components/prospects/empty-queue";
+import { HandledNoticeBar } from "@/components/prospects/handled-notice";
+import { LeadDetail } from "@/components/prospects/lead-detail";
+import { QueueSortSelect, QueueToolbar, type QueueCounts } from "@/components/prospects/queue-toolbar";
 import { ScanActivityDialog, type ManualScanControl } from "@/components/prospects/scan-activity-dialog";
 import { ProfileHealthBanner } from "@/components/prospects/profile-health-banner";
-import { LeadOutreach } from "@/components/prospects/lead-outreach";
 import { profileHealthIssue } from "@/app/(dashboard)/dashboard/profile-health";
-import {
-  DETAIL_TABS, DetailTabButton, LeadControlSelect,
-  LeadRow, Metric, ScreenedMatchOutcome, SignalPoint, SourcePlatformBadge,
-  SourcePlatformMark, exactDateTime, formatScore, freshnessLabel, leadStatus, metricValue,
-  relativeTime, signalLabel, sourceDisplayName,
-  type DetailTab,
-} from "@/components/prospects/lead-desk-presentation";
+import { DETAIL_TABS, LeadRow, freshnessLabel, metricValue } from "@/components/prospects/lead-desk-presentation";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
 import {
   isHandledLead,
   isPotentialBuyer,
   isScreenedMatch,
+  type LeadQueueConfidence,
   type LeadQueueFilter,
+  type LeadQueueSort,
 } from "@/app/(dashboard)/dashboard/lead-queue-filter";
 import type {
   BuyerGroupActivationAction,
   BuyerDemandReportView,
   CrawlJobView,
+  HandledNotice,
   LeadFeedbackValue,
   ProspectActionResult,
   QualifiedLeadView,
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 
-type QueueFilter = LeadQueueFilter;
-type QueueSort = "priority" | "newest" | "confidence";
-type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
+const VIEW_TITLES: Record<LeadQueueFilter, string> = {
+  all: "Inbox",
+  leads: "Leads",
+  potential: "Maybes",
+  done: "Done",
+  screened: "Screened out",
+};
+
 type ProspectLeadDeskProps = {
   serviceProfile: ServiceProfileView;
   crawlJob: CrawlJobView | null;
@@ -59,51 +51,49 @@ type ProspectLeadDeskProps = {
   potentialBuyers: QualifiedLeadView[];
   buyerGroupSuggestions: BuyerGroupSuggestion[];
   activateBuyerGroup: BuyerGroupActivationAction;
-  reviewedConversationCount: number;
+  /** Every stored record, including done and screened out. */
+  queueItemCount: number;
   screenedMatches: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
   filteredQueueItems: QualifiedLeadView[];
   selectedLead: QualifiedLeadView | null;
   selectedLeadId: string | null;
   queueQuery: string;
-  queueFilter: QueueFilter;
-  queueSort: QueueSort;
-  queueConfidence: QueueConfidenceFilter;
+  queueFilter: LeadQueueFilter;
+  queueSort: LeadQueueSort;
+  queueConfidence: LeadQueueConfidence;
   queueSource: string;
   queueSources: string[];
   isRefreshing: boolean;
   isProfileRebuildPending: boolean;
   lastUpdatedAt: Date | null;
   profileRebuildResult: ProspectActionResult | null;
-  feedbackNotice: { message: string; ok: boolean } | null;
+  feedbackNotice: ProspectActionResult | null;
   feedbackPending: boolean;
   qualificationPending: boolean;
-  qualificationMessage: string | null;
+  qualificationNotice: ProspectActionResult | null;
+  handledNotice: HandledNotice | null;
   /** Operator-only on-demand scan; null for customers. */
   manualScan: ManualScanControl | null;
   onRefresh: () => void;
   onRebuildProfile: () => void;
   onQueryChange: (value: string) => void;
-  onFilterChange: (value: QueueFilter) => void;
-  onSortChange: (value: QueueSort) => void;
-  onConfidenceChange: (value: QueueConfidenceFilter) => void;
+  onFilterChange: (value: LeadQueueFilter) => void;
+  onSortChange: (value: LeadQueueSort) => void;
+  onConfidenceChange: (value: LeadQueueConfidence) => void;
   onSourceChange: (value: string) => void;
   onSelectLead: (leadId: string) => void;
   /** A deliberate click on a lead, as opposed to automatic selection. */
   onLeadOpened: (leadId: string) => void;
   onSetHandled: (leadId: string, handled: boolean) => void;
+  onDismissHandledNotice: () => void;
   onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
   onQualify: (leadId: string) => void;
 };
 
-const FEEDBACK_ACTIONS: Array<{
-  value: LeadFeedbackValue;
-  label: string;
-}> = [
-  { value: "good_fit", label: "Good fit" },
-  { value: "wrong_buyer", label: "Wrong buyer" },
-  { value: "not_relevant", label: "Not relevant" },
-];
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function ProspectLeadDesk({
   serviceProfile,
@@ -112,7 +102,7 @@ export function ProspectLeadDesk({
   potentialBuyers,
   buyerGroupSuggestions,
   activateBuyerGroup,
-  reviewedConversationCount,
+  queueItemCount,
   screenedMatches,
   buyerDemandReport,
   filteredQueueItems,
@@ -131,7 +121,8 @@ export function ProspectLeadDesk({
   feedbackNotice,
   feedbackPending,
   qualificationPending,
-  qualificationMessage,
+  qualificationNotice,
+  handledNotice,
   manualScan,
   onRefresh,
   onRebuildProfile,
@@ -143,57 +134,67 @@ export function ProspectLeadDesk({
   onSelectLead,
   onLeadOpened,
   onSetHandled,
+  onDismissHandledNotice,
   onFeedback,
   onQualify,
 }: ProspectLeadDeskProps) {
-  // Reply comes first: drafting a response is the job people came to do.
-  const [detailTab, setDetailTab] = useState<DetailTab>("reply");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [scanActivityOpen, setScanActivityOpen] = useState(false);
   const signalDetailRef = useRef<HTMLElement>(null);
   const profileDomain = serviceProfile.websiteUrl
     ?.replace(/^https?:\/\//, "")
-    .replace(/\/$/, "") ?? "Your matching brief";
-  const selectedStatus = selectedLead ? leadStatus(selectedLead) : null;
+    .replace(/\/$/, "") ?? null;
   const healthIssue = profileHealthIssue(crawlJob, serviceProfile);
-  const exactEvidence = selectedLead?.evidenceExcerpt?.trim() || null;
-  const sourceText = selectedLead?.sourcePost.text?.trim() || null;
   const isScreenedAudit = queueFilter === "screened";
-  const isDoneView = queueFilter === "done";
-  const selectedIsScreened = selectedLead ? isScreenedMatch(selectedLead) : false;
-  // Screened records have no reply, so fall back to the evidence tabs.
-  const visibleTabs = DETAIL_TABS.filter((tab) => tab !== "reply" || !selectedIsScreened);
-  const activeTab: DetailTab = visibleTabs.includes(detailTab) ? detailTab : "match";
-  const openLeads = leads.filter((lead) => !isHandledLead(lead));
-  const openMaybes = potentialBuyers.filter((lead) => !isHandledLead(lead));
+  const openLeads = leads.filter((lead) => !isHandledLead(lead)).length;
+  const openMaybes = potentialBuyers.filter((lead) => !isHandledLead(lead)).length;
   const doneCount = [...leads, ...potentialBuyers].filter(isHandledLead).length;
-  const hasActiveFilters =
-    queueQuery.length > 0 ||
-    queueFilter !== "all" ||
-    queueConfidence !== "all" ||
-    queueSource !== "all" ||
-    queueSort !== "priority";
-  const advancedFilterCount = Number(queueFilter !== "all") + Number(queueConfidence !== "all") +
-    Number(queueSource !== "all") + Number(queueSort !== "priority");
-  const resultSummary = `${filteredQueueItems.length} ${
-    filteredQueueItems.length === 1 ? "signal" : "signals"
+  const counts: QueueCounts = {
+    all: openLeads + openMaybes,
+    leads: openLeads,
+    potential: openMaybes,
+    done: doneCount,
+    screened: screenedMatches.length,
+  };
+  // Sort only reorders, so it never counts as a filter or blocks "caught up".
+  const activeFilterCount =
+    Number(queueQuery.trim().length > 0) +
+    Number(queueConfidence !== "all") +
+    Number(queueSource !== "all");
+  const hasActiveFilters = activeFilterCount > 0;
+  const hasItems = filteredQueueItems.length > 0;
+  // Screened records and Maybes have no reply to draft, so their detail opens
+  // on the evidence instead of an empty Reply tab.
+  const selectedIsScreened = selectedLead ? isScreenedMatch(selectedLead) : false;
+  const selectedHasReply = Boolean(selectedLead?.suggestedReply.trim());
+  const detailTabs = DETAIL_TABS
+    .filter((tab) => tab !== "reply" || !selectedIsScreened)
+    .filter((tab) => tab !== "reply" || selectedHasReply);
+  const resultSummary = `${metricValue(filteredQueueItems.length)} ${
+    filteredQueueItems.length === 1 ? "prospect" : "prospects"
   } shown`;
-  const metricActive = (category: QueueFilter) =>
-    queueFilter === category && !queueQuery.trim() && queueConfidence === "all" && queueSource === "all";
 
   const clearFilters = () => {
     onQueryChange("");
-    onFilterChange("all");
     onConfidenceChange("all");
     onSourceChange("all");
-    onSortChange("priority");
+    if (queueFilter === "screened") onFilterChange("all");
   };
-  const showQueueCategory = (category: QueueFilter) => {
+  const showQueueCategory = (category: LeadQueueFilter) => {
     onQueryChange("");
     onConfidenceChange("all");
     onSourceChange("all");
     onFilterChange(category);
   };
+
+  // When the selection moves on its own (after Done, or a refresh), keep the
+  // new row in view inside the desktop list. Below xl the list is part of the
+  // page, so scrolling there would pull people away from the detail.
+  useEffect(() => {
+    if (!selectedLeadId || !window.matchMedia("(min-width: 1280px)").matches) return;
+    document
+      .querySelector(`#prospect-signal-list [data-lead-id="${CSS.escape(selectedLeadId)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedLeadId]);
 
   const selectLead = (leadId: string) => {
     onSelectLead(leadId);
@@ -205,132 +206,47 @@ export function ProspectLeadDesk({
 
     window.requestAnimationFrame(() => {
       signalDetailRef.current?.scrollIntoView({
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "auto"
-          : "smooth",
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
         block: "start",
       });
     });
   };
 
-  const handleDetailTabKeyDown = (
-    event: KeyboardEvent<HTMLButtonElement>,
-    tab: DetailTab,
-  ) => {
-    const currentIndex = visibleTabs.indexOf(tab);
-    let nextIndex: number | null = null;
-
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % visibleTabs.length;
-    if (event.key === "ArrowLeft") {
-      nextIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
-    }
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = visibleTabs.length - 1;
-    if (nextIndex === null) return;
-
-    event.preventDefault();
-    const nextTab = visibleTabs[nextIndex];
-    setDetailTab(nextTab);
-    document.getElementById(`signal-detail-tab-${nextTab}`)?.focus();
+  // Return to the row just reviewed, not the top of the list, so working
+  // down a long queue on a phone doesn't mean scrolling back each time.
+  const backToList = () => {
+    const row = selectedLeadId
+      ? document.querySelector<HTMLButtonElement>(
+          `#prospect-signal-list [data-lead-id="${CSS.escape(selectedLeadId)}"]`,
+        )
+      : null;
+    const target = row ?? document.getElementById("prospect-signal-list");
+    target?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" });
+    row?.focus({ preventScroll: true });
   };
 
   return (
-    <div className="arc-pro-lead-desk flex w-full flex-col gap-2.5 sm:gap-3 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ color: C.text }}>
-      <header className="flex shrink-0 flex-col gap-2 border-b pb-2 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: C.rule }}>
-        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
-          <h1 className="pfd shrink-0 text-2xl leading-none sm:text-[28px]" style={{ color: C.navy }}>
-            Prospects
-          </h1>
-          <p className="max-w-4xl text-[12px] leading-5" style={{ color: C.navySoft }}>
-            {metricValue(reviewedConversationCount)} public conversations reviewed
-          </p>
-        </div>
-
-        <section
-          aria-label="Matching brief"
-          className="flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 lg:w-[280px]"
-          style={{ borderColor: C.rule, backgroundColor: C.white }}
-        >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: C.blueTint, color: C.blue }}>
-            <Globe2 className="size-3.5" aria-hidden="true" />
+    <div className="arc-pro-lead-desk flex w-full flex-col gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+      <PageHeader
+        title="Prospects"
+        description="Public conversations where someone describes the problem you solve."
+        meta={
+          <span className="flex flex-wrap gap-x-3">
+            {profileDomain ? <span>Targeting {profileDomain}</span> : null}
+            <span aria-live="polite">{isRefreshing ? "Updating…" : freshnessLabel(lastUpdatedAt)}</span>
           </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Targeting</p>
-            <p className="truncate text-[13px] font-semibold" style={{ color: C.navy }}>{profileDomain}</p>
-          </div>
-        </section>
-      </header>
-
-      <section aria-label="Find and filter signals" className="shrink-0 rounded-lg border bg-white p-2.5 sm:p-3" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="relative min-w-[12rem] flex-1">
-            <span className="sr-only">Search public signals</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.faint }} aria-hidden="true" />
-            <input
-              type="search"
-              value={queueQuery}
-              onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="Search topic, source, author, or problem"
-              className="h-10 w-full rounded-md border bg-white py-2 pr-3 pl-9 text-sm outline-none transition focus-visible:ring-2"
-              style={{ borderColor: C.ruleDark, color: C.text, outlineColor: C.blueLight }}
-            />
-          </label>
-          <Button type="button" variant="outline" className="h-10 border-[#C8D9E8]" aria-expanded={filtersOpen} aria-controls="prospect-advanced-filters" onClick={() => setFiltersOpen((open) => !open)}>
-            <SlidersHorizontal className="size-4" aria-hidden="true" />
-            Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
-          </Button>
-          {hasActiveFilters ? (
-            <Button type="button" variant="ghost" className="h-10 px-2 text-xs" onClick={clearFilters} style={{ color: C.blue }}>
-              Clear all
+        }
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={() => setScanActivityOpen(true)}>
+              Scan activity
             </Button>
-          ) : null}
-          <Button asChild variant="outline" className="h-10 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]">
-            <Link href="/dashboard/brief">Edit targeting</Link>
-          </Button>
-          <Button type="button" variant="ghost" className="h-10 px-2 text-xs" onClick={() => setScanActivityOpen(true)} style={{ color: C.blue }}>
-            Scan activity
-          </Button>
-        </div>
-
-        <div id="prospect-advanced-filters" hidden={!filtersOpen} className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]" style={{ borderColor: C.rule, display: filtersOpen ? "grid" : "none" }}>
-          <LeadControlSelect label="View" value={queueFilter} onChange={(value) => onFilterChange(value as QueueFilter)}>
-            <option value="all">Inbox</option>
-            <option value="leads">Leads</option>
-            <option value="potential">Maybes</option>
-            <option value="done">Done</option>
-            <option value="screened">Screened out</option>
-          </LeadControlSelect>
-          <LeadControlSelect label="Match strength" value={queueConfidence} onChange={(value) => onConfidenceChange(value as QueueConfidenceFilter)}>
-            <option value="all">All levels</option>
-            <option value="high">High (80%+)</option>
-            <option value="sixty_plus">60%+ strength</option>
-          </LeadControlSelect>
-          <LeadControlSelect label="Source" value={queueSource} onChange={onSourceChange}>
-            <option value="all">All sources</option>
-            {queueSources.map((source) => (
-              <option key={source} value={source}>{sourceDisplayName(source)}</option>
-            ))}
-          </LeadControlSelect>
-          <LeadControlSelect label="Sort" value={queueSort} onChange={(value) => onSortChange(value as QueueSort)}>
-            <option value="priority">Most relevant</option>
-            <option value="newest">Newest first</option>
-            <option value="confidence">Match strength</option>
-          </LeadControlSelect>
-          <div className="sm:col-span-2 xl:col-span-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 whitespace-nowrap border-[#C8D9E8] text-[#17324D] hover:bg-[#F4F8FC]"
-              disabled={isProfileRebuildPending || !serviceProfile.websiteUrl}
-              onClick={onRebuildProfile}
-              title="Re-crawl the current website and rebuild its AI profile"
-            >
-              <RefreshCw className={cn("size-3.5", isProfileRebuildPending && "animate-spin")} aria-hidden="true" />
-              {isProfileRebuildPending ? "Rebuilding..." : "Rebuild AI profile"}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/dashboard/brief">Edit targeting</Link>
             </Button>
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
       {healthIssue ? (
         <ProfileHealthBanner
@@ -342,316 +258,176 @@ export function ProspectLeadDesk({
         />
       ) : null}
 
-      {profileRebuildResult ? (
+      {profileRebuildResult && !scanActivityOpen ? (
         <p
-          role="status"
-          className="shrink-0 text-xs"
-          style={{ color: profileRebuildResult.ok ? C.green : C.red }}
+          role={profileRebuildResult.ok ? "status" : "alert"}
+          className={cn(
+            "flex shrink-0 items-start gap-1.5 text-sm",
+            profileRebuildResult.ok ? "text-success" : "text-danger",
+          )}
         >
+          {profileRebuildResult.ok
+            ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
           {profileRebuildResult.message}
         </p>
       ) : null}
 
       <section
-        aria-label="Lead discovery summary"
-        className="shrink-0 grid divide-y overflow-hidden rounded-lg border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
-        style={{ borderColor: C.rule, backgroundColor: C.white }}
+        aria-label="Prospect review"
+        // Only a populated desk stretches to the viewport; an empty one stays
+        // its natural height so the buyer groups below remain in view.
+        className={cn(
+          "relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card",
+          hasItems && "xl:min-h-[520px] xl:flex-1 xl:shrink",
+        )}
       >
-        <Metric label="Inbox" value={metricValue(openLeads.length + openMaybes.length)} icon={<Inbox className="size-5" />} active={metricActive("all")} onClick={() => showQueueCategory("all")} />
-        <Metric label="Leads" value={metricValue(openLeads.length)} icon={<CircleCheckBig className="size-5" />} active={metricActive("leads")} onClick={() => showQueueCategory("leads")} />
-        <Metric label="Maybes" value={metricValue(openMaybes.length)} icon={<UsersRound className="size-5" />} active={metricActive("potential")} onClick={() => showQueueCategory("potential")} />
-        <Metric
-          label="Done"
-          value={metricValue(doneCount)}
-          icon={<CircleCheck className="size-5" />}
-          tone="quiet"
-          active={metricActive("done")}
-          onClick={() => showQueueCategory("done")}
+        <QueueToolbar
+          view={queueFilter}
+          counts={counts}
+          query={queueQuery}
+          confidence={queueConfidence}
+          source={queueSource}
+          sources={queueSources}
+          activeFilterCount={activeFilterCount + Number(isScreenedAudit)}
+          onViewChange={onFilterChange}
+          onQueryChange={onQueryChange}
+          onConfidenceChange={onConfidenceChange}
+          onSourceChange={onSourceChange}
+          onClearFilters={clearFilters}
         />
+
+        {handledNotice ? (
+          <HandledNoticeBar notice={handledNotice} onSetHandled={onSetHandled} onDismiss={onDismissHandledNotice} />
+        ) : null}
+
+        <p className="sr-only" role="status" aria-live="polite">
+          {resultSummary}
+        </p>
+
+        {hasItems ? (
+          <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(320px,.85fr)_minmax(440px,1.15fr)]">
+            <div className="relative flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-1.5 md:px-5">
+                <div className="flex items-baseline gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">{VIEW_TITLES[queueFilter]}</h2>
+                  <span className="text-xs tabular-nums text-subtle" aria-hidden="true">
+                    {metricValue(filteredQueueItems.length)} shown
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <QueueSortSelect value={queueSort} onChange={onSortChange} />
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    aria-label="Reload prospects"
+                    title="Reload prospects"
+                    onClick={onRefresh}
+                    disabled={isRefreshing}
+                  >
+                    <RefreshCw className={cn("size-4", isRefreshing && "motion-safe:animate-spin")} aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+
+              <p id="prospect-list-help" className="sr-only">Use the arrow keys, Home or End to move through prospects.</p>
+              <div
+                id="prospect-signal-list"
+                aria-describedby="prospect-list-help"
+                className="min-h-0 flex-1 divide-y divide-border xl:overflow-y-auto"
+                onKeyDown={(event) => {
+                  if (!(event.target instanceof HTMLButtonElement) || !event.target.dataset.leadId) return;
+                  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-lead-id]"));
+                  const currentIndex = rows.indexOf(event.target);
+                  const nextIndex = event.key === "Home" ? 0
+                    : event.key === "End" ? rows.length - 1
+                    : Math.max(0, Math.min(rows.length - 1, currentIndex + (event.key === "ArrowDown" ? 1 : -1)));
+                  const nextRow = rows[nextIndex];
+                  if (!nextRow?.dataset.leadId) return;
+                  event.preventDefault();
+                  nextRow.focus();
+                  onSelectLead(nextRow.dataset.leadId);
+                }}
+              >
+                {filteredQueueItems.map((lead) => (
+                  <LeadRow
+                    key={lead.id}
+                    lead={lead}
+                    selected={lead.id === selectedLeadId}
+                    onSelect={() => selectLead(lead.id)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <aside
+              ref={signalDetailRef}
+              className="relative flex min-h-0 min-w-0 scroll-mt-4 flex-col xl:overflow-y-auto"
+              aria-label="Prospect details"
+            >
+              {selectedLead ? (
+                <LeadDetail
+                  lead={selectedLead}
+                  tabs={detailTabs}
+                  reviewOnly={isPotentialBuyer(selectedLead)}
+                  feedbackNotice={feedbackNotice}
+                  feedbackPending={feedbackPending}
+                  qualificationNotice={qualificationNotice}
+                  qualificationPending={qualificationPending}
+                  onSetHandled={onSetHandled}
+                  onFeedback={onFeedback}
+                  onQualify={onQualify}
+                  onBackToList={backToList}
+                />
+              ) : (
+                <p className="p-5 text-sm text-muted-foreground">
+                  Select a prospect to see the evidence and a suggested reply.
+                </p>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <EmptyQueue
+            hasProfile={serviceProfile.hasProfile}
+            hasActiveFilters={hasActiveFilters}
+            query={queueQuery}
+            view={queueFilter}
+            inboxCount={counts.all}
+            screenedMatchCount={screenedMatches.length}
+            doneCount={doneCount}
+            report={buyerDemandReport}
+            onOpenDone={() => showQueueCategory("done")}
+            onShowInbox={() => showQueueCategory("all")}
+            onClearFilters={clearFilters}
+            onOpenScanActivity={() => setScanActivityOpen(true)}
+            onOpenScreenedAudit={() => showQueueCategory("screened")}
+          />
+        )}
       </section>
 
       <WebsiteDemandMap
         suggestions={buyerGroupSuggestions}
         activateBuyerGroup={activateBuyerGroup}
         collapsible
-        defaultExpanded={reviewedConversationCount === 0}
+        defaultExpanded={queueItemCount === 0}
       />
 
-      <section
-        aria-label="Lead review workspace"
-        className="grid min-h-[420px] overflow-hidden rounded-xl border bg-white xl:flex-1 xl:grid-cols-[minmax(300px,.8fr)_minmax(420px,1.2fr)]"
-        style={{ borderColor: C.rule }}
-      >
-        <div className="flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0" style={{ borderColor: C.rule }}>
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: C.rule }}>
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-base font-semibold" style={{ color: C.navy }}>
-                {isScreenedAudit ? "Screened out" : isDoneView ? "Done" : "Inbox"}
-              </h2>
-              <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-                {filteredQueueItems.length}
-              </span>
-            </div>
-            <p className="sr-only" role="status" aria-live="polite">
-              {resultSummary}
-            </p>
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs" style={{ color: C.muted }}>
-                {isScreenedAudit
-                  ? "Inspection only"
-                  : isRefreshing
-                    ? "Updating results..."
-                    : freshnessLabel(lastUpdatedAt)}
-              </p>
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Reload current results"
-                title="Reload current results"
-                onClick={onRefresh}
-                disabled={isRefreshing}
-                style={{ color: C.blue }}
-              >
-                <RefreshCw className={cn("size-3.5", isRefreshing && "animate-spin")} aria-hidden="true" />
-              </Button>
-            </div>
-          </div>
-
-          {filteredQueueItems.length > 0 ? (
-            <>
-            <p id="prospect-list-help" className="sr-only">Use the arrow keys, Home, or End to move through signals.</p>
-            <div
-              id="prospect-signal-list"
-              aria-describedby="prospect-list-help"
-              className="min-h-0 flex-1 divide-y overflow-y-auto"
-              style={{ borderColor: C.rule }}
-              onKeyDown={(event) => {
-                if (!(event.target instanceof HTMLButtonElement) || !event.target.dataset.leadId) return;
-                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-lead-id]"));
-                const currentIndex = rows.indexOf(event.target);
-                const nextIndex = event.key === "Home" ? 0
-                  : event.key === "End" ? rows.length - 1
-                  : Math.max(0, Math.min(rows.length - 1, currentIndex + (event.key === "ArrowDown" ? 1 : -1)));
-                const nextRow = rows[nextIndex];
-                if (!nextRow?.dataset.leadId) return;
-                event.preventDefault();
-                nextRow.focus();
-                onSelectLead(nextRow.dataset.leadId);
-              }}
-            >
-              {filteredQueueItems.map((lead) => (
-                <LeadRow
-                  key={lead.id}
-                  lead={lead}
-                  selected={lead.id === selectedLeadId}
-                  onSelect={() => selectLead(lead.id)}
-                />
-              ))}
-            </div>
-            </>
-          ) : (
-            <EmptyQueue
-              hasProfile={serviceProfile.hasProfile}
-              hasActiveFilters={hasActiveFilters}
-              screenedMatchCount={screenedMatches.length}
-              showingScreenedAudit={isScreenedAudit}
-              showingDone={isDoneView}
-              doneCount={doneCount}
-              onOpenDone={() => showQueueCategory("done")}
-              report={buyerDemandReport}
-              onClearFilters={clearFilters}
-              onOpenScanActivity={() => setScanActivityOpen(true)}
-              onOpenScreenedAudit={() => {
-                onQueryChange("");
-                onConfidenceChange("all");
-                onSourceChange("all");
-                onFilterChange("screened");
-              }}
-            />
-          )}
-        </div>
-
-        <aside
-          ref={signalDetailRef}
-          className="flex min-h-0 min-w-0 scroll-mt-4 flex-col overflow-y-auto"
-          aria-label="Lead details"
-        >
-          {selectedLead && selectedStatus ? (
-            <>
-              <button type="button" className="border-b px-4 py-2 text-left text-xs font-semibold xl:hidden" style={{ borderColor: C.rule, color: C.blue }} onClick={() => document.getElementById("prospect-signal-list")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })}>
-                Back to inbox
-              </button>
-              <div className="flex flex-1 flex-col gap-3 p-3 sm:p-3.5">
-                <div className="flex gap-3">
-                  <SourcePlatformMark source={selectedLead.sourcePost.source} size="detail" />
-                  <div className="min-w-0 flex-1">
-                    <h2 className="line-clamp-2 text-sm font-semibold leading-5" style={{ color: C.navy }}>
-                      {selectedLead.sourcePost.title || signalLabel(selectedLead)}
-                    </h2>
-                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs" style={{ color: C.muted }}>
-                      <SourcePlatformBadge source={selectedLead.sourcePost.source} />
-                      {selectedLead.sourcePost.community ? <span className="truncate" title={selectedLead.sourcePost.community}>{selectedLead.sourcePost.community}</span> : null}
-                      {selectedLead.sourcePost.author ? <span className="truncate" title={selectedLead.sourcePost.author}>by {selectedLead.sourcePost.author}</span> : null}
-                      <span title={exactDateTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}>
-                        · {relativeTime(selectedLead.sourcePost.publishedAt ?? selectedLead.matchedAt)}
-                      </span>
-                      {!isScreenedMatch(selectedLead) ? (
-                        <span title="Ranks relevance to your website; it is not a likelihood of purchase.">
-                          · Match {formatScore(selectedLead.verifierScore)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <span
-                    className="h-fit shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                    title={selectedStatus.description}
-                    aria-label={`${selectedStatus.label}. ${selectedStatus.description}`}
-                    style={{ backgroundColor: selectedStatus.background, color: selectedStatus.color }}
-                  >
-                    {selectedStatus.label}
-                  </span>
-                </div>
-
-                <blockquote className="rounded-lg border-l-[3px] px-3 py-2.5 text-xs leading-5" style={{ borderColor: exactEvidence ? C.blue : C.ruleDark, backgroundColor: C.offWhite, color: C.navySoft }}>
-                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
-                    {exactEvidence ? "Verified quote" : "Source preview"}
-                  </span>
-                  <span className="line-clamp-3">{exactEvidence ?? sourceText ?? "No source text is available for this signal."}</span>
-                </blockquote>
-
-                {isScreenedMatch(selectedLead) ? (
-                  <ScreenedMatchOutcome lead={selectedLead} />
-                ) : null}
-
-                <div className="flex gap-4 border-b" role="tablist" aria-label="Signal details" style={{ borderColor: C.rule }}>
-                  {!selectedIsScreened ? (
-                    <DetailTabButton active={activeTab === "reply"} tab="reply" onClick={() => setDetailTab("reply")} onKeyDown={handleDetailTabKeyDown}>Reply</DetailTabButton>
-                  ) : null}
-                  <DetailTabButton active={activeTab === "match"} tab="match" onClick={() => setDetailTab("match")} onKeyDown={handleDetailTabKeyDown}>Why it matched</DetailTabButton>
-                  <DetailTabButton active={activeTab === "evidence"} tab="evidence" onClick={() => setDetailTab("evidence")} onKeyDown={handleDetailTabKeyDown}>Original post</DetailTabButton>
-                </div>
-
-                <div
-                  id={`signal-detail-panel-${activeTab}`}
-                  role="tabpanel"
-                  aria-labelledby={`signal-detail-tab-${activeTab}`}
-                  tabIndex={0}
-                  className="min-h-[142px] rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
-                >
-                  {activeTab === "reply" ? (
-                    <LeadOutreach
-                      key={`outreach-${selectedLead.id}`}
-                      lead={selectedLead}
-                      disabled={qualificationPending}
-                      qualificationMessage={null}
-                      onQualify={onQualify}
-                      reviewOnly={isPotentialBuyer(selectedLead)}
-                      compact
-                      showQualification={false}
-                      showSourceAction={false}
-                    />
-                  ) : null}
-
-                  {activeTab === "match" ? (
-                    <div className="space-y-3">
-                      <p className="text-sm leading-6" style={{ color: C.navySoft }}>{selectedLead.matchReason}</p>
-                      <ul className="grid gap-1.5 text-xs leading-5" style={{ color: C.navySoft }}>
-                        <SignalPoint>{signalLabel(selectedLead)}</SignalPoint>
-                        {selectedLead.urgencyReason ? <SignalPoint>{selectedLead.urgencyReason}</SignalPoint> : null}
-                        {selectedLead.purchaseStage ? <SignalPoint>Stage: {selectedLead.purchaseStage.replace(/_/g, " ")}</SignalPoint> : null}
-                        {selectedLead.competitorMention ? <SignalPoint>Also mentioned: {selectedLead.competitorMention}</SignalPoint> : null}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {activeTab === "evidence" ? (
-                    <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6" style={{ color: C.navySoft }}>
-                      {sourceText ?? "No source text was kept for this record."}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="mt-auto space-y-3 border-t pt-4" style={{ borderColor: C.rule }}>
-                  <div className="flex flex-wrap gap-2">
-                    {!selectedIsScreened ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="bg-[#1B6EBF] text-white hover:bg-[#155a9f]"
-                        onClick={() => onSetHandled(selectedLead.id, !isHandledLead(selectedLead))}
-                      >
-                        {isHandledLead(selectedLead) ? <Inbox aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
-                        {isHandledLead(selectedLead) ? "Move to inbox" : "Done"}
-                      </Button>
-                    ) : null}
-                    {selectedLead.sourcePost.url ? (
-                      <Button asChild variant="outline" size="sm" className="border-[#C8D9E8]">
-                        <a href={selectedLead.sourcePost.url} target="_blank" rel="noreferrer">
-                          <ExternalLink aria-hidden="true" />
-                          Open {sourceDisplayName(selectedLead.sourcePost.source)}
-                        </a>
-                      </Button>
-                    ) : null}
-                    {selectedLead.matchStatus === "ready_for_review" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="min-w-[7.75rem] border-[#6EE7B7] text-[#047857] hover:bg-[#ECFDF5]"
-                        onClick={() => onQualify(selectedLead.id)}
-                        disabled={qualificationPending}
-                      >
-                        <Check aria-hidden="true" />
-                        {qualificationPending ? "Qualifying..." : "Mark qualified"}
-                      </Button>
-                    ) : null}
-                  </div>
-
-                  <div>
-                    <p className="mb-2 text-[11px] font-semibold" style={{ color: C.muted }}>Your feedback</p>
-                    <div className="flex flex-wrap gap-2">
-                      {FEEDBACK_ACTIONS.map((action) => (
-                        <Button
-                          key={action.value}
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          className="border-[#DDE8F2]"
-                          onClick={() => onFeedback(selectedLead.id, action.value)}
-                          disabled={feedbackPending}
-                        >
-                          {action.label}
-                        </Button>
-                      ))}
-                    </div>
-                    {feedbackPending ? (
-                      <p className="mt-2 text-xs" role="status" aria-live="polite" style={{ color: C.muted }}>
-                        Saving feedback...
-                      </p>
-                    ) : null}
-                    {feedbackNotice ? (
-                      <p className="mt-2 text-xs" role="status" aria-live="polite" style={{ color: feedbackNotice.ok ? C.green : C.red }}>{feedbackNotice.message}</p>
-                    ) : null}
-                    {qualificationMessage ? (
-                      <p className="mt-2 text-xs" role="status" aria-live="polite" style={{ color: C.green }}>{qualificationMessage}</p>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex min-h-[360px] flex-1 flex-col items-center justify-center p-8 text-center">
-              <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-                <Sparkles className="size-5" aria-hidden="true" />
-              </span>
-              <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>Pick a lead to review</h2>
-            </div>
-          )}
-        </aside>
-      </section>
-      <ScanActivityDialog open={scanActivityOpen} onOpenChange={setScanActivityOpen} report={buyerDemandReport} onRefresh={onRefresh} manualScan={manualScan} />
+      <ScanActivityDialog
+        open={scanActivityOpen}
+        onOpenChange={setScanActivityOpen}
+        report={buyerDemandReport}
+        onRefresh={onRefresh}
+        manualScan={manualScan}
+        profileRebuild={{
+          pending: isProfileRebuildPending,
+          available: Boolean(serviceProfile.websiteUrl),
+          result: profileRebuildResult,
+          onStart: onRebuildProfile,
+        }}
+      />
     </div>
   );
 }

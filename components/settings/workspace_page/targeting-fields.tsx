@@ -2,14 +2,16 @@
 
 import {
   type KeyboardEvent,
+  useId,
   useMemo,
   useState,
 } from "react";
 import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { C } from "@/lib/tokens";
+import { cn } from "@/lib/utils";
 
 const MAX_SIGNAL_LENGTH = 100;
 const MAX_TEXT_LENGTH = 1_000;
@@ -41,6 +43,56 @@ function signalDraftItems(value: string) {
     .filter(Boolean);
 }
 
+const tagClassName =
+  "inline-flex max-w-full min-w-0 items-center rounded-md bg-blue-tint text-[13px] leading-5 text-navy-soft";
+
+/** Read-only list of brief items, shown when a section is not being edited. */
+export function TagList({
+  items,
+  className,
+}: {
+  items: readonly string[];
+  className?: string;
+}) {
+  return (
+    <ul className={cn("flex min-w-0 flex-wrap gap-1.5", className)}>
+      {items.map((item) => (
+        <li key={item.toLowerCase()} className={cn(tagClassName, "px-2 py-0.5")}>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One editable item. Long text wraps rather than widening its container. */
+export function RemovableTag({
+  label,
+  disabled,
+  onRemove,
+}: {
+  label: string;
+  disabled: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <li className={cn(tagClassName, "gap-0.5 py-0.5 pl-2 pr-0.5")}>
+      <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={`Remove ${label}`}
+        disabled={disabled}
+        className="text-muted-foreground hover:bg-blue-pale hover:text-foreground"
+        onClick={onRemove}
+      >
+        <X aria-hidden="true" />
+      </Button>
+    </li>
+  );
+}
+
 export function SignalField({
   label,
   description,
@@ -56,6 +108,8 @@ export function SignalField({
   disabled: boolean;
   onChange: (value: string[]) => void;
 }) {
+  const inputId = useId();
+  const descriptionId = `${inputId}-description`;
   const [draft, setDraft] = useState("");
   const signals = useMemo(() => normalizeSignals(value), [value]);
   const canAdd = normalizeSignal(draft).length > 0;
@@ -82,52 +136,36 @@ export function SignalField({
   };
 
   return (
-    <div className="rounded-lg border bg-background p-3" style={{ borderColor: C.rule }}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <label className="text-sm font-semibold" style={{ color: C.navy }}>
-            {label}
-          </label>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {description}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-          {signals.length}
-        </span>
-      </div>
+    <div className="min-w-0">
+      <label htmlFor={inputId} className="text-sm font-semibold text-foreground">
+        {label}
+      </label>
+      <p id={descriptionId} className="mt-0.5 text-sm leading-5 text-muted-foreground">
+        {description}
+      </p>
 
       {signals.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <ul className="mt-2.5 flex min-w-0 flex-wrap gap-1.5" aria-label={label}>
           {signals.map((signal) => (
-            <span
+            <RemovableTag
               key={signal.toLowerCase()}
-              className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs font-medium"
-              style={{ color: C.navy, borderColor: C.rule }}
-            >
-              <span className="truncate">{signal}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${signal}`}
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-black/5"
-                disabled={disabled}
-                onClick={() => removeSignal(signal)}
-              >
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </span>
+              label={signal}
+              disabled={disabled}
+              onRemove={() => removeSignal(signal)}
+            />
           ))}
-        </div>
+        </ul>
       ) : null}
 
-      <div className="mt-3 flex min-w-0 gap-2">
-        <input
+      <div className="mt-2.5 flex min-w-0 gap-2">
+        <Input
+          id={inputId}
           value={draft}
           maxLength={MAX_SIGNAL_LENGTH * 4}
           placeholder={placeholder}
           disabled={disabled}
-          className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-          style={{ borderColor: C.rule, color: C.navy }}
+          aria-describedby={descriptionId}
+          className="flex-1 bg-card text-sm"
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(event) => {
@@ -145,12 +183,10 @@ export function SignalField({
         <Button
           type="button"
           variant="outline"
-          size="sm"
           disabled={disabled || !canAdd}
-          className="h-9 shrink-0 rounded-md"
           onClick={commitDraft}
         >
-          <Plus className="size-4" aria-hidden="true" />
+          <Plus aria-hidden="true" />
           Add
         </Button>
       </div>
@@ -173,28 +209,32 @@ export function TextProfileField({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const inputId = useId();
+  const descriptionId = `${inputId}-description`;
+  const countId = `${inputId}-count`;
+
   return (
-    <div className="rounded-lg border bg-background p-3" style={{ borderColor: C.rule }}>
+    <div className="min-w-0">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <label className="text-sm font-semibold" style={{ color: C.navy }}>
-            {label}
-          </label>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {description}
-          </p>
-        </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
+        <label htmlFor={inputId} className="text-sm font-semibold text-foreground">
+          {label}
+        </label>
+        <span id={countId} className="shrink-0 text-xs tabular-nums text-subtle">
           {value.length}/{MAX_TEXT_LENGTH}
         </span>
       </div>
+      <p id={descriptionId} className="mt-0.5 text-sm leading-5 text-muted-foreground">
+        {description}
+      </p>
       <Textarea
+        id={inputId}
         maxLength={MAX_TEXT_LENGTH}
         rows={3}
         value={value}
         placeholder={placeholder}
         disabled={disabled}
-        className="mt-3 min-h-24 resize-y rounded-md text-sm leading-6 disabled:opacity-60"
+        aria-describedby={`${descriptionId} ${countId}`}
+        className="mt-2.5 min-h-24 resize-y bg-card text-sm leading-6"
         onChange={(event) => onChange(event.target.value)}
       />
     </div>

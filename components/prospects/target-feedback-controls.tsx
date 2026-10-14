@@ -5,84 +5,93 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { C } from "@/lib/tokens";
 import {
   TARGET_FEEDBACK_OPTIONS,
   type ProspectActionResult,
   type TargetFeedbackAction,
   type TargetFeedbackValue,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import { ActionNotice } from "./target-action-notice";
+
+// A rejected target has no pipeline to report on; the only useful outcomes
+// are disagreeing with the rejection or confirming it.
+const REJECTED_TARGET_OUTCOMES = new Set<TargetFeedbackValue>(["target", "not_relevant"]);
 
 /**
  * A compact human-outcome recorder. It supplies only an assessment ID and a
  * fixed vocabulary; tenant ownership, persistence, and any future calibration
  * remain server-owned. Recording feedback does not send outreach or create a
- * CRM record.
+ * CRM record. Render it with `key={assessmentId}` so a notice never carries
+ * over to another target.
  */
 export function TargetFeedbackControls({
   assessmentId,
   onFeedback,
+  rejected = false,
 }: {
   assessmentId: string;
   onFeedback: TargetFeedbackAction;
+  rejected?: boolean;
 }) {
   const router = useRouter();
   const [notice, setNotice] = useState<ProspectActionResult | null>(null);
+  const [pendingValue, setPendingValue] = useState<TargetFeedbackValue | null>(null);
+  const [recordedValue, setRecordedValue] = useState<TargetFeedbackValue | null>(null);
   const [isPending, startTransition] = useTransition();
+  const options = rejected
+    ? TARGET_FEEDBACK_OPTIONS.filter((option) => REJECTED_TARGET_OUTCOMES.has(option.value))
+    : TARGET_FEEDBACK_OPTIONS;
 
   const submit = (feedback: TargetFeedbackValue) => {
     setNotice(null);
+    setPendingValue(feedback);
     startTransition(async () => {
       try {
         const result = await onFeedback(assessmentId, feedback);
         setNotice(result);
-        if (result.ok) router.refresh();
+        if (result.ok) {
+          setRecordedValue(feedback);
+          router.refresh();
+        }
       } catch {
         setNotice({
           ok: false,
-          message: "Could not record that outcome. The target itself was not changed.",
+          message: "Couldn't record that outcome. Check your connection and try again.",
         });
+      } finally {
+        setPendingValue(null);
       }
     });
   };
 
   return (
-    <section
-      className="mt-5 rounded-lg border p-3"
-      style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
-      aria-labelledby="target-feedback-heading"
-    >
-      <h4 id="target-feedback-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
+    <section className="mt-5 border-t border-border pt-4" aria-labelledby="target-feedback-heading">
+      <h4 id="target-feedback-heading" className="text-sm font-semibold text-foreground">
         Record outcome
       </h4>
-      <p className="mt-1 text-[11px] leading-4" style={{ color: C.navySoft }}>
-        Save your workflow result for future ranking review. This never sends outreach or creates a CRM record.
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+        What happened with this target? Recording an outcome never sends outreach or creates a CRM record.
       </p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {TARGET_FEEDBACK_OPTIONS.map((option) => (
+      <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Outcome">
+        {options.map((option) => (
           <Button
             key={option.value}
             type="button"
-            size="xs"
+            size="sm"
             variant="outline"
+            aria-pressed={recordedValue === option.value}
             disabled={isPending}
-            className="border-[#C8D9E8] bg-white text-[#51687B] hover:bg-[#F6FAFE]"
+            className="aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary"
             onClick={() => submit(option.value)}
           >
-            {isPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+            {pendingValue === option.value ? (
+              <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+            ) : null}
             {option.label}
           </Button>
         ))}
       </div>
-      {notice ? (
-        <p
-          className="mt-2 text-[11px] leading-4"
-          role="status"
-          style={{ color: notice.ok ? C.green : C.amber }}
-        >
-          {notice.message}
-        </p>
-      ) : null}
+      <ActionNotice notice={notice} />
     </section>
   );
 }

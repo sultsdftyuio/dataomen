@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, Compass, Radar } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import {
+  createOutcome,
+  thrownOutcome,
+  type ActionOutcome,
+} from "@/app/(dashboard)/dashboard/watchlists/action-outcome";
+import { OutcomeNotice } from "@/app/(dashboard)/dashboard/watchlists/outcome-notice";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/use-toast";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
-import { C } from "@/lib/tokens";
-import "./website-demand-map.css";
+import { cn } from "@/lib/utils";
 
 type WebsiteDemandMapProps = {
   suggestions: BuyerGroupSuggestion[];
@@ -20,10 +26,14 @@ type WebsiteDemandMapProps = {
   defaultExpanded?: boolean;
 };
 
+function sameText(left: string, right: string) {
+  return left.trim().toLocaleLowerCase() === right.trim().toLocaleLowerCase();
+}
+
 /**
  * The first result from a website is a set of evidence-backed directions, not
- * an invented lead list. Activating a direction delegates to the existing
- * tenant-scoped Buyer Groups/Watchlist pipeline.
+ * an invented lead list. Activating a direction creates a buyer group through
+ * the existing tenant-scoped pipeline and starts its first scan.
  */
 export function WebsiteDemandMap({
   suggestions,
@@ -33,126 +43,136 @@ export function WebsiteDemandMap({
 }: WebsiteDemandMapProps) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<ActionOutcome | null>(null);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [expandedDefault, setExpandedDefault] = useState(defaultExpanded);
   const [isPending, startTransition] = useTransition();
 
   // Open suggestions during an empty first scan, then give new signals room
   // when results arrive. Manual toggles remain intact while that state holds.
-  useEffect(() => setIsExpanded(defaultExpanded), [defaultExpanded]);
+  if (expandedDefault !== defaultExpanded) {
+    setExpandedDefault(defaultExpanded);
+    setIsExpanded(defaultExpanded);
+  }
 
   if (suggestions.length === 0) return null;
 
+  // Website profiles often describe one problem for several audiences. Say it
+  // once rather than repeating the same paragraph on every suggestion.
+  const sharedProblem =
+    suggestions.length > 1 &&
+    suggestions.every((suggestion) => sameText(suggestion.problemToSolve, suggestions[0].problemToSolve))
+      ? suggestions[0].problemToSolve
+      : null;
+
   const activate = (suggestionId: string) => {
-    setNotice(null);
+    setOutcome(null);
     setPendingId(suggestionId);
     startTransition(async () => {
       try {
         const result = await activateBuyerGroup(suggestionId);
-        setNotice(result.message);
-        if (result.ok) router.refresh();
+        const next = createOutcome(result);
+        setOutcome(next);
+        if (result.ok) {
+          // The new group may replace this panel's position on the page, so
+          // the confirmation also goes to a toast that survives the refresh.
+          toast({ title: next.title, description: next.description });
+          router.refresh();
+        }
       } catch {
-        setNotice("We could not start a focused buyer-group scan. Please try again.");
+        setOutcome(thrownOutcome("Couldn't save the buyer group"));
       } finally {
         setPendingId(null);
       }
     });
   };
 
-  const suggestionCards = (
-    <div className="arc-buyer-suggestions">
-      {suggestions.map((suggestion) => {
-        const isActivating = pendingId === suggestion.id;
-        return (
-          <article key={suggestion.id} className="arc-buyer-suggestions__card">
-            <div className="flex flex-wrap items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold leading-5" title={suggestion.name} style={{ color: C.navy }}>
-                  {suggestion.name}
-                </h3>
+  const suggestionList = (
+    <div className="px-4 pb-4 md:px-5">
+      {sharedProblem ? (
+        <p className="pb-3 text-sm leading-6 text-muted-foreground">
+          <span className="font-medium text-foreground">Problem they share: </span>
+          {sharedProblem}
+        </p>
+      ) : null}
+      <ul className="divide-y divide-border border-y border-border">
+        {suggestions.map((suggestion) => {
+          const isActivating = pendingId === suggestion.id;
+          const showAudience = !sameText(suggestion.name, suggestion.targetBuyer);
+          return (
+            <li key={suggestion.id} className="flex flex-col gap-3 py-3 md:flex-row md:items-start md:justify-between md:gap-6">
+              <div className="min-w-0 space-y-1">
+                <h3 className="text-sm leading-6 font-semibold text-foreground">{suggestion.name}</h3>
+                {showAudience ? (
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    <span className="font-medium text-foreground">Audience: </span>
+                    {suggestion.targetBuyer}
+                  </p>
+                ) : null}
+                {sharedProblem ? null : (
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    <span className="font-medium text-foreground">Problem: </span>
+                    {suggestion.problemToSolve}
+                  </p>
+                )}
+                <p className="text-xs leading-5 text-subtle">
+                  Sources: {suggestion.communityPlan.sources.map((source) => source.label).join(", ")}
+                </p>
               </div>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-7 shrink-0 border-[#B8D8EE] bg-white px-2.5 text-[11px] text-[#1B6EBF] hover:bg-[#F0F7FD]"
+                className="self-start md:shrink-0"
                 disabled={isPending || pendingId !== null}
                 aria-busy={isActivating}
                 onClick={() => activate(suggestion.id)}
               >
-                <Radar className="size-3" aria-hidden="true" />
-                {isActivating ? "Starting..." : "Start scan"}
+                {isActivating ? "Creating…" : "Create group and scan"}
               </Button>
-            </div>
-
-            <p className="mt-1.5 truncate text-[11px] leading-4" title={suggestion.targetBuyer} style={{ color: C.navySoft }}>
-              <span className="font-semibold" style={{ color: C.muted }}>Audience: </span>
-              {suggestion.targetBuyer}
-            </p>
-            <p className="mt-1 text-[11px] leading-4" title={suggestion.problemToSolve} style={{ color: C.navySoft }}>
-              <span className="font-semibold" style={{ color: C.muted }}>Problem: </span>
-              {suggestion.problemToSolve}
-            </p>
-            <p className="mt-1 text-[11px] leading-4" style={{ color: C.navySoft }}>
-              <span className="font-semibold" style={{ color: C.muted }}>Sources: </span>
-              {suggestion.communityPlan.sources.map((source) => source.label).join(" · ")}
-            </p>
-          </article>
-        );
-      })}
+            </li>
+          );
+        })}
+      </ul>
+      {outcome ? <OutcomeNotice outcome={outcome} className="mt-3" /> : null}
     </div>
   );
-
-  const activationNotice = notice ? (
-    <p className="border-t px-4 py-2.5 text-xs leading-5" role="status" style={{ borderColor: C.rule, color: C.navySoft }}>
-      {notice}
-    </p>
-  ) : null;
 
   if (collapsible) {
     return (
       <section
         aria-labelledby="website-demand-map-heading"
-        className="arc-buyer-suggestions__section shrink-0 overflow-hidden rounded-xl border"
-        style={{ borderColor: C.ruleDark, backgroundColor: C.white }}
+        className="shrink-0 overflow-hidden rounded-lg border border-border bg-card"
       >
-        <button
-          type="button"
-          className="flex w-full flex-col gap-3 p-3 text-left transition-colors hover:bg-[#F8FBFD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-4 lg:flex-row lg:items-center lg:justify-between"
-          aria-label="Buyer groups from your website"
-          aria-expanded={isExpanded}
-          aria-controls="website-demand-map-suggestions"
-          onClick={() => setIsExpanded((current) => !current)}
-        >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span
-              className="flex size-8 shrink-0 items-center justify-center rounded-md"
-              style={{ backgroundColor: C.blueTint, color: C.blue }}
-            >
-              <Compass className="size-4" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <h2 id="website-demand-map-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+        <h2 id="website-demand-map-heading">
+          <button
+            type="button"
+            className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-off-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:px-5"
+            aria-expanded={isExpanded}
+            aria-controls="website-demand-map-suggestions"
+            onClick={() => setIsExpanded((current) => !current)}
+          >
+            <span className="min-w-0">
+              <span className="block text-base leading-6 font-semibold text-foreground">
                 Suggested buyer groups ({suggestions.length})
-              </h2>
-              <p className="text-[11px]" style={{ color: C.muted }}>
+              </span>
+              <span className="block text-sm leading-5 font-normal text-muted-foreground">
                 Audiences to test, based on your website.
-              </p>
-            </div>
-          </div>
-
-          <ChevronDown
-            className={isExpanded ? "size-4 shrink-0 rotate-180" : "size-4 shrink-0"}
-            style={{ color: C.muted }}
-            aria-hidden="true"
-          />
-        </button>
+              </span>
+            </span>
+            <ChevronDown
+              className={cn("size-4 shrink-0 text-subtle", isExpanded && "rotate-180")}
+              aria-hidden="true"
+            />
+          </button>
+        </h2>
         {isExpanded ? (
-          <div id="website-demand-map-suggestions" className="border-t" style={{ borderColor: C.rule }}>
-            {suggestionCards}
-            {activationNotice}
+          <div id="website-demand-map-suggestions">{suggestionList}</div>
+        ) : outcome ? (
+          <div className="px-4 pb-4 md:px-5">
+            <OutcomeNotice outcome={outcome} />
           </div>
-        ) : activationNotice}
+        ) : null}
       </section>
     );
   }
@@ -160,39 +180,25 @@ export function WebsiteDemandMap({
   return (
     <section
       aria-labelledby="website-demand-map-heading"
-      className="shrink-0 overflow-hidden rounded-lg border"
-      style={{ borderColor: C.blueLight, backgroundColor: C.white }}
+      className="shrink-0 overflow-hidden rounded-lg border border-border bg-card"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: C.rule }}>
-        <div className="flex min-w-0 items-start gap-2.5">
-          <span
-            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md"
-            style={{ backgroundColor: C.blueTint, color: C.blue }}
-          >
-            <Compass className="size-4" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-              Website demand map
-            </p>
-            <h2 id="website-demand-map-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
-              Start with a focused buyer direction
-            </h2>
-            <p className="mt-0.5 max-w-3xl text-[11px] leading-4" style={{ color: C.navySoft }}>
-              These are hypotheses, not leads. Test one against public conversations.
-            </p>
-          </div>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3 md:px-5">
+        <div className="min-w-0">
+          <h2 id="website-demand-map-heading" className="text-base leading-6 font-semibold text-foreground">
+            Start with a focused buyer group
+          </h2>
+          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            These are hypotheses, not leads. Test one against public conversations.
+          </p>
         </div>
         <Link
           href="/dashboard/watchlists"
-          className="rounded-sm text-[11px] font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-          style={{ color: C.blue }}
+          className="inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
         >
           Manage buyer groups
         </Link>
       </div>
-      {suggestionCards}
-      {activationNotice}
+      {suggestionList}
     </section>
   );
 }

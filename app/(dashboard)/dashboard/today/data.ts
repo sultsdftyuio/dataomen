@@ -44,12 +44,12 @@ export async function fetchAssistedProspects(
   );
   if (error) {
     console.error("[AssistedProspects] Delivery lookup failed", { code: error.code });
-    throw new Error("Prospects could not be loaded. Please try again.");
+    throw new Error("Today's prospects couldn't be loaded.");
   }
   const parsed = z.array(deliverySchema).safeParse(data);
   if (!parsed.success) {
     console.error("[AssistedProspects] Delivery projection is invalid");
-    throw new Error("Prospects could not be loaded. Please try again.");
+    throw new Error("Today's prospects couldn't be loaded.");
   }
   return parsed.data;
 }

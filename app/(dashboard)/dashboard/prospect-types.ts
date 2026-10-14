@@ -151,6 +151,17 @@ export type ProspectActionResult = {
 };
 
 /**
+ * Outcome of marking a prospect done (or moving it back). It is shown on the
+ * desk, not on the prospect, because the prospect has already left the view.
+ */
+export type HandledNotice = {
+  leadId: string;
+  title: string;
+  handled: boolean;
+  status: "saved" | "failed";
+};
+
+/**
  * Target discovery starts with an entity that may be a company, independent
  * builder, or public project. A company relationship is useful context, but
  * is never required to show a target in the desk.

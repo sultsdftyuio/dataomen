@@ -4,53 +4,99 @@
 
 /* ── Design System Variables (Strict Light Mode) ─────── */
 :root {
+  /* Brand palette. These are the shipped hex values and the single source of
+     truth: lib/tokens.ts (C) points at these variables, and the semantic
+     shadcn tokens below alias them. Change a colour here, never in C. */
+  --c-navy: #0A1628;
+  --c-navy-mid: #142038;
+  --c-navy-soft: #1E3A5F;
+  --c-blue: #1B6EBF;
+  --c-blue-mid: #2580D4;
+  --c-blue-light: #3B9AE8;
+  --c-blue-pale: #EBF4FD;
+  --c-blue-tint: #F0F7FF;
+  --c-white: #FFFFFF;
+  --c-off-white: #F6FAFE;
+  --c-rule: #DDE8F2;
+  --c-rule-dark: #C8D9E8;
+  --c-muted: #546F8A;
+  /* --c-faint is about 2.3:1 on white: decorative strokes and icons only.
+     --c-subtle is the lightest text colour that keeps 4.5:1 on white,
+     off-white, blue-tint and blue-pale surfaces. */
+  --c-faint: #8BADC4;
+  --c-subtle: #57728B;
+  --c-text: #0A1628;
+  --c-green: #047857;
+  --c-green-pale: #D1FAE5;
+  --c-amber: #B45309;
+  --c-amber-pale: #FEF3C7;
+  --c-red: #B91C1C;
+  --c-red-pale: #FEE2E2;
+
+  /* Status. Each foreground keeps >= 4.5:1 on its pale background, so a
+     status pill can use the pair as text-on-fill. */
+  --success: var(--c-green);
+  --success-pale: var(--c-green-pale);
+  --warning: var(--c-amber);
+  --warning-pale: var(--c-amber-pale);
+  --danger: var(--c-red);
+  --danger-pale: var(--c-red-pale);
+  --info: var(--c-blue);
+  --info-pale: var(--c-blue-pale);
+
   /* Core layout - strictly white/light */
   --background: oklch(0.99 0 0);
-  --foreground: oklch(0.13 0.02 260);
-  
+  --foreground: var(--c-navy);
+
   /* Cards and Popovers */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0.02 260);
+  --card-foreground: var(--c-navy);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0.02 260);
-  
+  --popover-foreground: var(--c-navy);
+
   /* Primary Action Colors */
-  --primary: oklch(0.55 0.18 260); 
-  --primary-foreground: oklch(0.98 0 0);
-  
-  --secondary: oklch(0.96 0.01 260);
-  --secondary-foreground: oklch(0.25 0.02 260);
+  --primary: var(--c-blue);
+  --primary-foreground: var(--c-white);
+
+  --secondary: var(--c-blue-pale);
+  --secondary-foreground: var(--c-navy);
   --muted: oklch(0.96 0.01 260);
-  --muted-foreground: oklch(0.45 0.02 260);
-  --accent: oklch(0.96 0.01 260);
-  --accent-foreground: oklch(0.25 0.02 260);
-  
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.98 0 0);
-  
-  --border: oklch(0.91 0.01 260);
-  --input: oklch(0.91 0.01 260);
-  --ring: oklch(0.55 0.18 260);
-  
-  /* Data Visualization Palette */
-  --chart-1: oklch(0.45 0.18 260);
-  --chart-2: oklch(0.55 0.15 290);
-  --chart-3: oklch(0.5 0.12 230);
-  --chart-4: oklch(0.6 0.18 270);
-  --chart-5: oklch(0.4 0.15 250);
-  
+  --muted-foreground: var(--c-muted);
+  --accent: var(--c-blue-pale);
+  --accent-foreground: var(--c-navy);
+
+  --destructive: var(--danger);
+  --destructive-foreground: var(--c-white);
+
+  --border: var(--c-rule);
+  --input: var(--c-rule-dark);
+  --ring: var(--c-blue);
+
+  /* Data Visualization Palette (brand blues, darkest last for emphasis) */
+  --chart-1: var(--c-blue);
+  --chart-2: var(--c-navy-soft);
+  --chart-3: var(--c-blue-light);
+  --chart-4: var(--c-faint);
+  --chart-5: var(--c-navy);
+
   /* Zoomed-Out Aesthetic: Tighter radii */
   --radius: 0.375rem; /* Reduced from 0.625rem to 6px */
-  
+
   /* Dashboard Sidebar */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.55 0.18 260);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: var(--c-white);
+  --sidebar-foreground: var(--c-navy);
+  --sidebar-primary: var(--c-blue);
+  --sidebar-primary-foreground: var(--c-white);
+  --sidebar-accent: var(--c-blue-pale);
+  --sidebar-accent-foreground: var(--c-blue);
+  --sidebar-border: var(--c-rule);
+  --sidebar-ring: var(--c-blue);
+
+  /* Stacking order for app chrome. Popovers and menus opened from inside the
+     mobile drawer must sit above it, so they use --z-overlay. */
+  --z-drawer-scrim: 60;
+  --z-drawer: 61;
+  --z-overlay: 70;
 }
 
 @theme {
@@ -92,6 +138,35 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Status: bg-success-pale text-success, border-warning, text-danger ... */
+  --color-success: var(--success);
+  --color-success-pale: var(--success-pale);
+  --color-warning: var(--warning);
+  --color-warning-pale: var(--warning-pale);
+  --color-danger: var(--danger);
+  --color-danger-pale: var(--danger-pale);
+  --color-info: var(--info);
+  --color-info-pale: var(--info-pale);
+
+  /* Brand names that have no semantic alias. Prefer the semantic classes
+     (text-foreground, text-muted-foreground, border-border, bg-accent,
+     bg-primary); use these for the navy family and the subtle/faint pair. */
+  --color-navy: var(--c-navy);
+  --color-navy-mid: var(--c-navy-mid);
+  --color-navy-soft: var(--c-navy-soft);
+  --color-subtle: var(--c-subtle);
+  --color-faint: var(--c-faint);
+  --color-off-white: var(--c-off-white);
+  --color-blue-pale: var(--c-blue-pale);
+  --color-blue-tint: var(--c-blue-tint);
+  --color-rule-dark: var(--c-rule-dark);
 }
 
 /* ── Base Layer ──────────────────────────────────────── */
@@ -115,6 +190,39 @@
   }
 }
 
+/* ── Quality floor ───────────────────────────────────── */
+/* iOS zooms into any field under 16px on focus. This is unlayered on
+   purpose: it must win over text-xs/text-sm overrides passed to the
+   Input/Textarea primitives below the md breakpoint. */
+@media (max-width: 47.99rem) {
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"] {
+    font-size: 16px;
+  }
+}
+
+/* Visually hidden until focused: the dashboard skip link. */
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 8px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--c-navy);
+  color: var(--c-white);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* ── Typography & UI Helpers ─────────────────────────── */
 .pfd {
   font-family: var(--font-playfair), Georgia, serif;
@@ -133,7 +241,7 @@
 
 /* ── Buttons (Downscaled for Professional App Aesthetic) */
 .btn-navy {
-  background: #0A1628;
+  background: var(--c-navy);
   color: #fff;
   font-weight: 500;
   font-size: 14px; /* Scaled down */
@@ -152,13 +260,13 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Structural shadow */
 }
 .btn-navy:hover {
-  background: #142038;
+  background: var(--c-navy-mid);
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
 .btn-blue {
-  background: #1B6EBF;
+  background: var(--c-blue);
   color: #fff;
   font-weight: 500;
   font-size: 14px; /* Scaled down */
@@ -177,14 +285,14 @@
   box-shadow: 0 1px 2px rgba(27, 110, 191, 0.2);
 }
 .btn-blue:hover {
-  background: #2580D4;
+  background: var(--c-blue-mid);
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(27, 110, 191, 0.25);
 }
 
 .btn-ghost {
   background: transparent;
-  color: #0A1628;
+  color: var(--c-navy);
   font-weight: 500;
   font-size: 14px; /* Scaled down */
   height: 40px; /* Precise height */
@@ -308,7 +416,7 @@
   align-items: center;
   background: rgba(27, 110, 191, 0.10);
   border-radius: 999px;
-  color: #1B6EBF;
+  color: var(--c-blue);
   display: inline-flex;
   flex: 0 0 28px;
   height: 28px;

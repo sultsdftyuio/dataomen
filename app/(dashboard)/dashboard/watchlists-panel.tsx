@@ -1,807 +1,209 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  BookOpen,
-  Plus,
-  Search,
-  SlidersHorizontal,
-  Users,
-} from "lucide-react";
+import { UsersRound } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { C } from "@/lib/tokens";
 import type {
   ProspectActionResult,
   WatchlistAction,
-  WatchlistCreateInput,
   WatchlistResultsView,
   WatchlistView,
 } from "./prospect-types";
-import { WatchlistDetail, scanLabel } from "./watchlist-detail";
+import { WatchlistDetail, detailHeadingId } from "./watchlist-detail";
+import {
+  activeOutcome,
+  scanOutcome,
+  thrownOutcome,
+  type ActionOutcome,
+} from "./watchlists/action-outcome";
+import { FirstBuyerGroupSetup } from "./watchlists/first-group-setup";
+import { GroupList, groupRowId } from "./watchlists/group-list";
+import { scanState } from "./watchlists/scan-status";
+import { useCreateGroup } from "./watchlists/use-create-group";
+import { useScanRefresh } from "./watchlists/use-scan-refresh";
 import "./watchlists-panel.css";
 
-const SOURCE_OPTIONS = [
-  { value: "hackernews", label: "Hacker News", detail: "Founder and builder discussions" },
-  { value: "bluesky", label: "Bluesky", detail: "Public conversations and requests" },
-  { value: "lemmy", label: "Lemmy", detail: "Independent public communities" },
-  { value: "stackexchange", label: "Stack Exchange", detail: "Specific how-to problems" },
-  { value: "github", label: "GitHub", detail: "Open-source issues and discussions" },
-] as const;
+// Matches the breakpoint in watchlists-panel.css where the detail stacks
+// below the list.
+const STACKED_LAYOUT_QUERY = "(max-width: 1050px)";
 
-const DEFAULT_SOURCES = SOURCE_OPTIONS.map((source) => source.value);
-
-function splitLines(value: string) {
-  const seen = new Set<string>();
-  return value
-    .split(/\r?\n|,/)
-    .map((item) => item.trim().replace(/\s+/g, " "))
-    .filter((item) => {
-      const key = item.toLowerCase();
-      if (!item || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function WatchlistForm({
-  onCreate,
-  pending,
-}: {
-  onCreate: WatchlistAction;
-  pending: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [targetBuyer, setTargetBuyer] = useState("");
-  const [problemToSolve, setProblemToSolve] = useState("");
-  const [includeTerms, setIncludeTerms] = useState("");
-  const [excludeTerms, setExcludeTerms] = useState("");
-  const [suggestedPlaces, setSuggestedPlaces] = useState("");
-  const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES);
-  const [showSignalDetails, setShowSignalDetails] = useState(false);
-  const [showSourcePicker, setShowSourcePicker] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const toggleSource = (source: string) => {
-    setSources((current) =>
-      current.includes(source)
-        ? current.filter((value) => value !== source)
-        : [...current, source],
-    );
-  };
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (sources.length === 0) {
-      setFormError("Choose at least one public source before starting a scan.");
-      return;
-    }
-    setFormError(null);
-    const input: WatchlistCreateInput = {
-      name,
-      targetBuyer,
-      problemToSolve,
-      includeTerms: splitLines(includeTerms),
-      excludeTerms: splitLines(excludeTerms),
-      sourcePreferences: sources,
-      suggestedPlaces: splitLines(suggestedPlaces),
-    };
-    setIsSubmitting(true);
-    try {
-      const result = await onCreate(input);
-      if (result.ok) {
-        setName("");
-        setTargetBuyer("");
-        setProblemToSolve("");
-        setIncludeTerms("");
-        setExcludeTerms("");
-        setSuggestedPlaces("");
-        setSources(DEFAULT_SOURCES);
-      } else {
-        setFormError(result.message);
-      }
-    } catch {
-      setFormError("Could not save this buyer group. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <form
-      onSubmit={submit}
-      className="space-y-4"
-    >
-      <section className="rounded-lg border bg-white p-3" style={{ borderColor: C.rule }}>
-        <p className="pfd text-base leading-none" style={{ color: C.navy }}>
-          1. Define the audience
-        </p>
-      <div className="mt-3 grid gap-2 md:grid-cols-2">
-        <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
-          Group name
-          <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} className="h-8 bg-white px-2.5 text-xs" placeholder="Early-stage SaaS founders" />
-        </label>
-        <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
-          Who do you want to find?
-          <Input value={targetBuyer} onChange={(event) => setTargetBuyer(event.target.value)} required maxLength={500} className="h-8 bg-white px-2.5 text-xs" placeholder="SaaS founders with small sales teams" />
-        </label>
-      </div>
-      <label className="mt-3 block space-y-1 text-xs font-medium" style={{ color: C.navy }}>
-        Their problem or desired outcome
-        <Textarea value={problemToSolve} onChange={(event) => setProblemToSolve(event.target.value)} required maxLength={700} className="min-h-16 bg-white p-2 text-xs" placeholder="They need a dependable way to get more trial users without doing every outreach task by hand." />
-      </label>
-      </section>
-      <section className="rounded-lg border bg-white p-3" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="pfd text-base leading-none" style={{ color: C.navy }}>
-              2. Refine the signal
-            </p>
-            <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
-              Optional: add language and places only when they will improve the scan.
-            </p>
-          </div>
-          <Button type="button" size="xs" variant="outline" aria-expanded={showSignalDetails} onClick={() => setShowSignalDetails((current) => !current)} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-            <SlidersHorizontal className="size-3" />
-            {showSignalDetails ? "Hide detail" : "Add detail"}
-          </Button>
-        </div>
-        {showSignalDetails ? (
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
-              Words people might use
-              <Textarea value={includeTerms} onChange={(event) => setIncludeTerms(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="new trial signups dropped&#10;how are founders finding users" />
-            </label>
-            <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
-              Exclude conversations about
-              <Textarea value={excludeTerms} onChange={(event) => setExcludeTerms(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="job hunting&#10;consumer coupon codes" />
-            </label>
-            <label className="block space-y-1 text-xs font-medium md:col-span-2" style={{ color: C.navy }}>
-              Public communities or places to prioritise
-              <Textarea value={suggestedPlaces} onChange={(event) => setSuggestedPlaces(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="github:owner/repository&#10;stackexchange:stackoverflow&#10;lemmy:saas" />
-              <span className="block text-[10px] font-normal leading-4" style={{ color: C.muted }}>
-                Use a source prefix or public URL to make that source a strict scope. Plain notes remain context and do not hide posts when a source cannot expose community data.
-              </span>
-            </label>
-          </div>
-        ) : null}
-      </section>
-      <section className="rounded-lg border bg-white p-3" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="pfd text-base leading-none" style={{ color: C.navy }}>
-              3. Coverage
-            </p>
-            <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
-              {sources.length} public {sources.length === 1 ? "source" : "sources"} enabled for this watch.
-            </p>
-          </div>
-          <Button type="button" size="xs" variant="outline" aria-expanded={showSourcePicker} onClick={() => setShowSourcePicker((current) => !current)} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-            {showSourcePicker ? "Hide sources" : "Change sources"}
-          </Button>
-        </div>
-        {showSourcePicker ? (
-          <fieldset className="mt-3">
-            <legend className="sr-only">Choose public sources</legend>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {SOURCE_OPTIONS.map((source) => (
-                <label
-                  key={source.value}
-                  className="flex cursor-pointer items-start gap-2 rounded-md border bg-white p-2 text-xs transition-colors"
-                  style={{
-                    borderColor: sources.includes(source.value) ? C.blueLight : C.rule,
-                    color: C.navySoft,
-                  }}
-                >
-                  <Checkbox checked={sources.includes(source.value)} onCheckedChange={() => toggleSource(source.value)} />
-                  <span>
-                    <span className="block font-medium" style={{ color: C.navy }}>{source.label}</span>
-                    <span className="mt-0.5 block text-[10px] leading-4" style={{ color: C.muted }}>{source.detail}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        ) : null}
-      </section>
-      <p className="text-xs leading-5" style={{ color: C.muted }}>
-        New watches use public sources only. You can refine the signal later without changing your product brief.
-      </p>
-      {formError ? (
-        <p role="alert" className="text-xs font-medium" style={{ color: C.red }}>
-          {formError}
-        </p>
-      ) : null}
-      <Button type="submit" disabled={pending || isSubmitting || sources.length === 0} className="h-9 px-3 text-xs" style={{ backgroundColor: C.blue, color: C.white }}>
-        <Search className="size-3.5" />
-        {pending || isSubmitting ? "Saving…" : "Save buyer group & start scan"}
-      </Button>
-    </form>
-  );
-}
-
-function FirstBuyerGroupSetup({
+function NoGroupsYet({
   onCreate,
   hasSuggestedBuyerGroups,
 }: {
-  onCreate: WatchlistAction;
+  onCreate: ReturnType<typeof useCreateGroup>;
   hasSuggestedBuyerGroups: boolean;
 }) {
-  const [hasStarted, setHasStarted] = useState(false);
-  const [step, setStep] = useState(1);
-  const [name, setName] = useState("");
-  const [targetBuyer, setTargetBuyer] = useState("");
-  const [problemToSolve, setProblemToSolve] = useState("");
-  const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const toggleSource = (source: string) => {
-    setSources((current) =>
-      current.includes(source)
-        ? current.filter((value) => value !== source)
-        : [...current, source],
-    );
-  };
-
-  const advance = () => {
-    if (step === 1) {
-      if (!name.trim()) {
-        setError("Give this audience a name so it is easy to recognise later.");
-        return;
-      }
-      if (targetBuyer.trim().length < 3) {
-        setError("Describe the kind of buyer you want to find.");
-        return;
-      }
-    }
-
-    if (step === 2 && problemToSolve.trim().length < 3) {
-      setError("Describe the problem or outcome that should trigger a signal.");
-      return;
-    }
-
-    setError(null);
-    setStep((current) => Math.min(current + 1, 3));
-  };
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (sources.length === 0) {
-      setError("Keep at least one public source enabled for this group.");
-      return;
-    }
-
-    setError(null);
-    setIsSaving(true);
-    try {
-      const result = await onCreate({
-        name,
-        targetBuyer,
-        problemToSolve,
-        includeTerms: [],
-        excludeTerms: [],
-        sourcePreferences: sources,
-        suggestedPlaces: [],
-      });
-      if (!result.ok) setError(result.message);
-    } catch {
-      setError("Could not create this buyer group. Please try again.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  if (!hasStarted) {
-    return (
-      <section
-        aria-labelledby="first-buyer-group-heading"
-        className="rounded-xl border bg-white p-5 sm:p-6"
-        style={{ borderColor: C.blueLight, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
-      >
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-          First buyer group
-        </p>
-        <h2 id="first-buyer-group-heading" className="mt-2 text-xl font-semibold leading-tight" style={{ color: C.navy }}>
-          Start with one audience and one real problem.
-        </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
-          {hasSuggestedBuyerGroups
-            ? "Open the website ideas card above to test a suggested direction, or create a group for a market you already know."
-            : "Create a focused group for the audience and problem you want Arcli to watch."}
-        </p>
-        <Button
-          type="button"
-          className="mt-4"
-          onClick={() => setHasStarted(true)}
-          style={{ backgroundColor: C.blue, color: C.white }}
-        >
-          Create custom buyer group
-          <ArrowRight className="size-4" />
-        </Button>
-      </section>
-    );
+  if (isCreating) {
+    return <FirstBuyerGroupSetup onCreate={onCreate} onCancel={() => setIsCreating(false)} />;
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="overflow-hidden rounded-xl border bg-white"
-      style={{ borderColor: C.blueLight, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
-    >
-      <div className="border-b px-5 py-4 sm:px-6" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-              Create your first buyer group
-            </p>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-              Answer the essentials now. You can refine the signal after the first scan.
-            </p>
-          </div>
-          <span className="rounded-full border px-2.5 py-1 text-[10px] font-bold" style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}>
-            Step {step} of 3
-          </span>
-        </div>
-        <ol className="mt-4 grid grid-cols-3 gap-2" aria-label="Buyer group setup progress">
-          {["Audience", "Problem", "Coverage"].map((label, index) => {
-            const isCurrent = index + 1 === step;
-            const isComplete = index + 1 < step;
-            return (
-              <li
-                key={label}
-                className="flex items-center gap-2 border-t pt-2 text-[10px] font-semibold"
-                style={{ borderColor: isCurrent || isComplete ? C.blue : C.rule, color: isCurrent ? C.blue : isComplete ? C.green : C.muted }}
-              >
-                <span className="flex size-4 shrink-0 items-center justify-center rounded-full text-[9px]" style={{ backgroundColor: isComplete ? C.greenPale : isCurrent ? C.blueTint : C.offWhite }}>
-                  {isComplete ? "OK" : index + 1}
-                </span>
-                <span className="truncate">{label}</span>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-
-      <div className="p-5 sm:p-6">
-        {step === 1 ? (
-          <section aria-labelledby="buyer-group-audience-heading" className="max-w-2xl">
-            <h2 id="buyer-group-audience-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              Start with an audience.
-            </h2>
-            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-              Be specific enough that you would recognise the right conversation when it appears.
-            </p>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 text-xs font-semibold" style={{ color: C.navy }}>
-                Group name
-                <Input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  maxLength={120}
-                  className="h-10 bg-white"
-                  placeholder="Early-stage SaaS founders"
-                  autoFocus
-                />
-              </label>
-              <label className="space-y-1.5 text-xs font-semibold" style={{ color: C.navy }}>
-                Who do you want to find?
-                <Input
-                  value={targetBuyer}
-                  onChange={(event) => setTargetBuyer(event.target.value)}
-                  maxLength={500}
-                  className="h-10 bg-white"
-                  placeholder="Founders with small sales teams"
-                />
-              </label>
-            </div>
-          </section>
-        ) : null}
-
-        {step === 2 ? (
-          <section aria-labelledby="buyer-group-problem-heading" className="max-w-2xl">
-            <h2 id="buyer-group-problem-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              What situation should trigger a signal?
-            </h2>
-            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-              Describe the problem they are experiencing or the outcome they are actively seeking.
-            </p>
-            <label className="mt-5 block space-y-1.5 text-xs font-semibold" style={{ color: C.navy }}>
-              Their problem or desired outcome
-              <Textarea
-                value={problemToSolve}
-                onChange={(event) => setProblemToSolve(event.target.value)}
-                maxLength={700}
-                className="min-h-28 bg-white"
-                placeholder="They need a dependable way to get more trial users without doing every outreach task by hand."
-                autoFocus
-              />
-            </label>
-          </section>
-        ) : null}
-
-        {step === 3 ? (
-          <section aria-labelledby="buyer-group-coverage-heading">
-            <h2 id="buyer-group-coverage-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              Start with the sources that fit this audience.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
-              All public sources are selected to begin with. Keep the ones where this audience is likely to ask for help.
-            </p>
-            <fieldset className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <legend className="sr-only">Choose public sources</legend>
-              {SOURCE_OPTIONS.map((source) => (
-                <label
-                  key={source.value}
-                  className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left text-xs transition-colors"
-                  style={{
-                    borderColor: sources.includes(source.value) ? C.blueLight : C.rule,
-                    backgroundColor: sources.includes(source.value) ? C.blueTint : C.white,
-                  }}
-                >
-                  <Checkbox checked={sources.includes(source.value)} onCheckedChange={() => toggleSource(source.value)} />
-                  <span>
-                    <span className="block font-semibold" style={{ color: C.navy }}>{source.label}</span>
-                    <span className="mt-0.5 block leading-4" style={{ color: C.muted }}>{source.detail}</span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          </section>
-        ) : null}
-
-        {error ? (
-          <p role="alert" className="mt-5 text-xs font-medium" style={{ color: C.red }}>
-            {error}
-          </p>
-        ) : null}
-
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: C.rule }}>
-          <div>
-            {step > 1 ? (
-              <Button type="button" size="sm" variant="outline" onClick={() => { setError(null); setStep((current) => current - 1); }} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-                Back
-              </Button>
-            ) : (
-              <Button type="button" size="sm" variant="ghost" onClick={() => setHasStarted(false)} style={{ color: C.navySoft }}>
-                Not now
-              </Button>
-            )}
-          </div>
-          {step < 3 ? (
-            <Button type="button" size="sm" onClick={advance} style={{ backgroundColor: C.blue, color: C.white }}>
-              Continue
-              <ArrowRight className="size-3.5" />
-            </Button>
-          ) : (
-            <Button type="submit" size="sm" disabled={isSaving || sources.length === 0} style={{ backgroundColor: C.blue, color: C.white }}>
-              <Search className="size-3.5" />
-              {isSaving ? "Creating group..." : "Create group and start scan"}
-            </Button>
-          )}
-        </div>
-      </div>
-    </form>
-  );
-}
-
-function BuyerGroupsGuide() {
-  return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button type="button" size="sm" variant="outline" className="h-8 px-2.5 text-xs" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-          <BookOpen className="size-3.5" />
-          How it works
+    <EmptyState
+      variant="never-used"
+      icon={UsersRound}
+      title="No buyer groups yet"
+      description={
+        hasSuggestedBuyerGroups
+          ? "A buyer group pairs one audience with the problem they describe, and Arcli looks for public conversations that match. Start from a suggestion below, or create one for a market you already know."
+          : "A buyer group pairs one audience with the problem they describe, and Arcli looks for public conversations that match."
+      }
+      action={
+        <Button type="button" onClick={() => setIsCreating(true)}>
+          {hasSuggestedBuyerGroups ? "Create custom buyer group" : "Create a buyer group"}
         </Button>
-      </SheetTrigger>
-      <SheetContent className="gap-0 overflow-y-auto p-0 sm:max-w-md" style={{ backgroundColor: C.white, borderColor: C.rule }}>
-        <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-          <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>
-            Buyer groups, simply
-          </SheetTitle>
-          <SheetDescription style={{ color: C.muted }}>
-            Keep the group specific enough that a useful signal is easy to recognise.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="space-y-4 p-4">
-          {[
-            {
-              title: "Start with a real situation",
-              detail: "Describe the outcome people want and the frustration they would actually use when asking for help.",
-            },
-            {
-              title: "Use the coverage you need",
-              detail: "Public sources are selected by default. Open coverage only when you need to focus or exclude a source.",
-            },
-            {
-              title: "Review the evidence",
-              detail: "Verified matches become ready to review; plausible signals remain clearly separated for your judgement.",
-            },
-          ].map((item, index) => (
-            <section key={item.title} className="rounded-lg border p-3" style={{ borderColor: C.rule }}>
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: C.blue }}>
-                Step {index + 1}
-              </p>
-              <h2 className="pfd mt-1 text-lg leading-none" style={{ color: C.navy }}>
-                {item.title}
-              </h2>
-              <p className="mt-2 text-xs leading-5" style={{ color: C.navySoft }}>
-                {item.detail}
-              </p>
-            </section>
-          ))}
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function NewBuyerGroupSheet({
-  onCreate,
-  pending,
-}: {
-  onCreate: WatchlistAction;
-  pending: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const create = async (input: WatchlistCreateInput) => {
-    const result = await onCreate(input);
-    if (result.ok) setOpen(false);
-    return result;
-  };
-
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button type="button" size="sm" className="h-8 px-2.5 text-xs" style={{ backgroundColor: C.blue, color: C.white }}>
-          <Plus className="size-3.5" />
-          Create buyer group
-        </Button>
-      </SheetTrigger>
-      <SheetContent
-        className="gap-0 overflow-y-auto p-0 sm:max-w-xl"
-        style={{ backgroundColor: C.white, borderColor: C.rule }}
-      >
-        <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-          <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>
-            Create buyer group
-          </SheetTitle>
-          <SheetDescription style={{ color: C.navySoft }}>
-            Start with one audience and one real problem. The optional details can sharpen the scan when needed.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="p-4 sm:p-5">
-          <WatchlistForm onCreate={create} pending={pending} />
-        </div>
-      </SheetContent>
-    </Sheet>
+      }
+    />
   );
 }
 
 export default function WatchlistsPanel({
   watchlists,
   results,
+  resultsUnavailable = false,
+  now,
   createWatchlist,
   runWatchlistDiscovery,
   setWatchlistActive,
   hasSuggestedBuyerGroups,
+  suggestions,
 }: {
   watchlists: WatchlistView[];
   results: WatchlistResultsView[];
+  /** Matches failed to load; the groups themselves are still shown. */
+  resultsUnavailable?: boolean;
+  /** Server render time, so scan freshness reads the same on server and client. */
+  now: number;
   createWatchlist: WatchlistAction;
   runWatchlistDiscovery: (watchlistId: string) => Promise<ProspectActionResult>;
   setWatchlistActive: (watchlistId: string, isActive: boolean) => Promise<ProspectActionResult>;
   hasSuggestedBuyerGroups: boolean;
+  /** Suggested buyer groups, placed after the list (or the first-group setup). */
+  suggestions?: ReactNode;
 }) {
   const router = useRouter();
+  const create = useCreateGroup(createWatchlist);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(
     watchlists[0]?.id ?? null,
   );
-  const [notice, setNotice] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<{ watchlistId: string; outcome: ActionOutcome } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const resultByWatchlist = new Map(results.map((result) => [result.watchlistId, result]));
+  const [reveal, setReveal] = useState<{ watchlistId: string } | null>(null);
+  const [, startTransition] = useTransition();
+
+  // Select a group as soon as it appears (created from the sheet, the setup
+  // or a suggestion), so people land on what they just made.
+  const idsKey = watchlists.map((watchlist) => watchlist.id).join("|");
+  const [seenIdsKey, setSeenIdsKey] = useState(idsKey);
+  if (idsKey !== seenIdsKey) {
+    const seen = new Set(seenIdsKey.split("|"));
+    const added = watchlists.find((watchlist) => !seen.has(watchlist.id));
+    setSeenIdsKey(idsKey);
+    if (added) setSelectedWatchlistId(added.id);
+  }
+
   const selectedWatchlist =
-    watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? null;
+    watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? watchlists[0] ?? null;
+  const resultByWatchlist = new Map(results.map((result) => [result.watchlistId, result]));
+  const anyScanning = watchlists.some((watchlist) => scanState(watchlist, now).isScanning);
+  useScanRefresh(anyScanning);
 
+  // On narrow screens the detail sits below the list, so a tap would show no
+  // visible change. Bring the detail into view and move focus to its heading.
   useEffect(() => {
-    if (!watchlists.some((watchlist) => watchlist.id === selectedWatchlistId)) {
-      setSelectedWatchlistId(watchlists[0]?.id ?? null);
-    }
-  }, [selectedWatchlistId, watchlists]);
+    if (!reveal) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById("buyer-group-detail")?.scrollIntoView({
+      block: "start",
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+    document.getElementById(detailHeadingId(reveal.watchlistId))?.focus({ preventScroll: true });
+  }, [reveal]);
 
-  const create = async (input: WatchlistCreateInput) => {
-    const result = await createWatchlist(input);
-    setNotice(result.message);
-    if (result.ok) {
-      router.refresh();
-    }
-    return result;
+  const select = (watchlistId: string) => {
+    setSelectedWatchlistId(watchlistId);
+    setOutcome(null);
+    if (window.matchMedia(STACKED_LAYOUT_QUERY).matches) setReveal({ watchlistId });
   };
 
-  const run = (watchlistId: string) => {
+  const backToList = () => {
+    if (!selectedWatchlist) return;
+    const row = document.getElementById(groupRowId(selectedWatchlist.id));
+    row?.scrollIntoView({ block: "center" });
+    row?.focus({ preventScroll: true });
+  };
+
+  const runAction = (
+    watchlistId: string,
+    action: () => Promise<ProspectActionResult>,
+    describe: (result: ProspectActionResult) => ActionOutcome,
+    failureTitle: string,
+  ) => {
+    setOutcome(null);
     setPendingId(watchlistId);
     startTransition(async () => {
       try {
-        const result = await runWatchlistDiscovery(watchlistId);
-        setNotice(result.message);
+        const result = await action();
+        setOutcome({ watchlistId, outcome: describe(result) });
+        if (result.ok) router.refresh();
       } catch {
-        setNotice("Could not start this scan. Please try again.");
+        setOutcome({ watchlistId, outcome: thrownOutcome(failureTitle) });
       } finally {
         setPendingId(null);
       }
     });
   };
 
-  const setActive = (watchlistId: string, isActive: boolean) => {
-    setPendingId(watchlistId);
-    startTransition(async () => {
-      try {
-        const result = await setWatchlistActive(watchlistId, isActive);
-        setNotice(result.message);
-      } catch {
-        setNotice("Could not update this buyer group. Please try again.");
-      } finally {
-        setPendingId(null);
-      }
-    });
-  };
+  const run = (watchlistId: string) =>
+    runAction(watchlistId, () => runWatchlistDiscovery(watchlistId), scanOutcome, "Couldn't start the scan");
 
-  if (watchlists.length === 0) {
+  const setActive = (watchlistId: string, isActive: boolean) =>
+    runAction(
+      watchlistId,
+      () => setWatchlistActive(watchlistId, isActive),
+      (result) => activeOutcome(result, isActive),
+      isActive ? "Couldn't resume the buyer group" : "Couldn't pause the buyer group",
+    );
+
+  if (!selectedWatchlist) {
     return (
-      <section id="watchlists" className="space-y-3">
-        <FirstBuyerGroupSetup
-          onCreate={create}
-          hasSuggestedBuyerGroups={hasSuggestedBuyerGroups}
-        />
-        {notice ? (
-          <p role="status" className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: C.rule, backgroundColor: C.white, color: C.navySoft }}>
-            {notice}
-          </p>
-        ) : null}
-      </section>
+      <div id="watchlists" className="space-y-4">
+        <NoGroupsYet onCreate={create} hasSuggestedBuyerGroups={hasSuggestedBuyerGroups} />
+        {suggestions}
+      </div>
     );
   }
 
   return (
-    <section id="watchlists" className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>
-            Your watches
-          </h2>
-          <p className="mt-1 max-w-2xl text-xs leading-5" style={{ color: C.muted }}>
-            Keep each audience tied to one clear situation. Select a watch to see its brief and latest signals.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <BuyerGroupsGuide />
-          <NewBuyerGroupSheet onCreate={create} pending={isPending} />
-        </div>
-      </div>
-      {notice ? <p role="status" className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: C.rule, backgroundColor: C.white, color: C.navySoft }}>{notice}</p> : null}
+    <div id="watchlists" className="space-y-4">
       <div className="arc-buyer-groups__layout">
-        <section
-          aria-labelledby="watch-list-heading"
-          className="arc-buyer-groups__list overflow-hidden rounded-xl border bg-white"
-          style={{ borderColor: C.rule }}
-        >
-          <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-            <h2 id="watch-list-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-              Your buyer groups
-            </h2>
-            <span className="rounded-full px-2 py-1 text-[10px] font-bold" style={{ color: C.blue, backgroundColor: C.bluePale }}>
-              {watchlists.length} {watchlists.length === 1 ? "group" : "groups"}
-            </span>
-          </div>
-
-          {watchlists.length > 0 ? (
-            <div role="list">
-              {watchlists.map((watchlist) => {
-                const result = resultByWatchlist.get(watchlist.id);
-                const readyCount = result?.readyToAct.length ?? 0;
-                const reviewCount = result?.discoveryCandidates.length ?? 0;
-                const selected = watchlist.id === selectedWatchlistId;
-
-                return (
-                  <button
-                    key={watchlist.id}
-                    type="button"
-                    role="listitem"
-                    aria-pressed={selected}
-                    onClick={() => setSelectedWatchlistId(watchlist.id)}
-                    className="arc-buyer-groups__item w-full border-b border-l-[3px] px-4 py-3.5 text-left transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
-                    style={{
-                      borderColor: C.rule,
-                      borderLeftColor: selected ? C.blue : "transparent",
-                      backgroundColor: selected ? C.blueTint : C.white,
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px] font-semibold leading-5" style={{ color: C.navy }}>
-                          {watchlist.name}
-                        </p>
-                        <p className="mt-1 line-clamp-1 text-[11px] leading-4" style={{ color: C.navySoft }}>
-                          {watchlist.targetBuyer}
-                        </p>
-                        <p className="mt-1 line-clamp-2 text-[11px] leading-4" style={{ color: C.muted }}>
-                          {watchlist.problemToSolve}
-                        </p>
-                      </div>
-                      <ArrowRight className="mt-1 size-4 shrink-0" style={{ color: selected ? C.blue : C.faint }} aria-hidden="true" />
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="arc-buyer-groups__status" style={{ color: watchlist.isActive ? C.green : C.muted }}>
-                        {watchlist.isActive ? scanLabel(watchlist.scanStatus) : "Paused"}
-                      </span>
-                      <span style={{ color: C.muted }}>
-                        {readyCount} ready · {reviewCount} review
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center" style={{ backgroundColor: C.blueTint }}>
-              <Users className="size-5" style={{ color: C.blue }} aria-hidden="true" />
-              <h3 className="pfd mt-3 text-xl leading-none" style={{ color: C.navy }}>
-                Begin with one audience
-              </h3>
-              <p className="mt-2 max-w-xs text-xs leading-5" style={{ color: C.navySoft }}>
-                A clear buyer group gives the next scan a useful place to start.
-              </p>
-            </div>
-          )}
-        </section>
-
-        {selectedWatchlist ? (
-          <WatchlistDetail
-            watchlist={selectedWatchlist}
-            result={resultByWatchlist.get(selectedWatchlist.id)}
-            busy={isPending && pendingId === selectedWatchlist.id}
-            onRun={run}
-            onSetActive={setActive}
-          />
-        ) : (
-          <section
-            aria-label="Selected buyer group"
-            className="relative flex min-h-72 items-center justify-center overflow-hidden rounded-xl border px-6 text-center"
-            style={{ borderColor: C.rule, backgroundColor: C.blueTint }}
-          >
-            <div className="absolute -left-10 -top-10 size-40 rounded-full" style={{ backgroundColor: "rgba(59, 154, 232, 0.12)" }} aria-hidden="true" />
-            <div className="relative max-w-sm">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                Buyer groups
-              </p>
-              <h2 className="pfd mt-3 text-2xl leading-tight" style={{ color: C.navy }}>
-                Choose an audience worth watching
-              </h2>
-              <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-                Your group brief and its signals will appear here when you are ready.
-              </p>
-            </div>
-          </section>
-        )}
+        <GroupList
+          watchlists={watchlists}
+          resultByWatchlist={resultByWatchlist}
+          resultsUnavailable={resultsUnavailable}
+          selectedId={selectedWatchlist.id}
+          now={now}
+          onSelect={select}
+        />
+        <WatchlistDetail
+          key={selectedWatchlist.id}
+          watchlist={selectedWatchlist}
+          result={resultByWatchlist.get(selectedWatchlist.id)}
+          resultsUnavailable={resultsUnavailable}
+          now={now}
+          busy={pendingId === selectedWatchlist.id}
+          outcome={outcome?.watchlistId === selectedWatchlist.id ? outcome.outcome : null}
+          onRun={run}
+          onSetActive={setActive}
+          onBack={backToList}
+        />
       </div>
-
-   </section>
+      {suggestions}
+    </div>
   );
 }

@@ -1,15 +1,14 @@
 "use client";
 
-import React from "react";
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 import type { WorkspaceEntitlements } from "@/lib/entitlements";
 
@@ -17,76 +16,81 @@ interface WorkspacePlanBadgeProps {
   entitlements: WorkspaceEntitlements;
 }
 
+function shortDate(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(date);
+}
+
+/** One label per billing state, so a trial or a cancelled plan never reads as plain "Pro". */
+function planStatus(entitlements: WorkspaceEntitlements): { tone: StatusTone; label: string } {
+  const planName = entitlements.planTier.toLowerCase() === "enterprise" ? "Enterprise" : "Pro";
+  if (entitlements.isPastDue) return { tone: "danger", label: "Payment failed" };
+  if (entitlements.isCanceling) {
+    const ends = shortDate(entitlements.currentPeriodEnd);
+    return { tone: "warning", label: ends ? `${planName}, ends ${ends}` : `${planName}, cancelled` };
+  }
+  if (entitlements.isTrialing) {
+    const ends = shortDate(entitlements.trialEndsAt);
+    return { tone: "info", label: ends ? `Pro trial, ends ${ends}` : "Pro trial" };
+  }
+  if (entitlements.isPro) return { tone: "success", label: planName };
+  return { tone: "neutral", label: "Free plan" };
+}
+
 export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
-  const { isPro, billingLabel, billingDescription } = entitlements;
-  const planTier = entitlements.planTier.toLowerCase();
-
-  // Calculate past due status explicitly if not present on type
-  const activePastDue =
-    planTier === "pro" &&
-    entitlements.subscriptionStatus === "past_due";
-  const activeCanceling = entitlements.isCanceling;
-
-  const badgeClassName = isPro
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer transition-colors"
-    : activePastDue
-      ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer transition-colors"
-      : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors";
-
-  const statusText = activeCanceling
-      ? "Pro"
-      : billingLabel;
+  const { isPro, isPastDue, billingDescription } = entitlements;
+  const status = planStatus(entitlements);
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button type="button" className="focus:outline-none">
-          <Badge variant="outline" className={badgeClassName}>
-            {isPro && (
-              <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600" />
-            )}
-            {activePastDue && (
-              <AlertCircle className="mr-1 h-3 w-3 text-rose-600" />
-            )}
-            {!isPro && !activePastDue && (
-              <ShieldAlert className="mr-1 h-3 w-3 text-slate-500" />
-            )}
-            <span>{statusText}</span>
-          </Badge>
+        <button
+          type="button"
+          aria-label={`Plan and billing: ${status.label}`}
+          className="relative inline-flex items-center gap-1 rounded-full text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none pointer-coarse:after:absolute pointer-coarse:after:-inset-2"
+        >
+          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          <ChevronDown className="size-3.5" aria-hidden="true" />
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="start" className="w-80 p-4 shadow-lg">
+      {/* z-[70] = --z-overlay: the badge also lives in the mobile drawer
+          (z-index 61), and the popover must open above it. */}
+      <PopoverContent align="start" className="z-[70] w-80 max-w-[calc(100vw-2rem)] p-4 shadow-lg">
         <div className="flex flex-col gap-3">
           <div className="space-y-1">
-            <h4 className="text-sm font-semibold leading-none text-slate-900">
-              Plan & Billing
-            </h4>
-            <p className="text-xs text-slate-500 leading-relaxed pt-1">
+            <h2 className="text-sm leading-5 font-semibold text-foreground">
+              Plan and billing
+            </h2>
+            <p className="text-sm leading-6 text-muted-foreground">
               {billingDescription}
             </p>
           </div>
 
-          <div className="border-t border-slate-100 pt-3 flex flex-col gap-2">
-            {!isPro && !activePastDue && (
-              <UpgradeButton className="w-full justify-center text-xs py-1.5" />
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
+            {!isPro && !isPastDue && (
+              <UpgradeButton className="w-full justify-center" />
             )}
 
-            {activePastDue && (
+            {isPastDue && (
               <Link
-                href="/settings"
-                className="inline-flex h-8 w-full items-center justify-center rounded-md border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                href="/settings#billing"
+                className="inline-flex h-9 w-full items-center justify-center rounded-md bg-danger px-3 text-sm font-semibold text-white transition-colors hover:bg-danger/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
               >
-                Update Payment Method
+                Update payment method
               </Link>
             )}
 
-            <Link
-              href="/settings"
-              className="text-center text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors py-1"
-            >
-              Manage Settings &rarr;
-            </Link>
+            {!isPastDue && (
+              <Link
+                href="/settings#billing"
+                className="inline-flex h-9 items-center justify-center rounded-md text-sm font-medium text-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                Manage billing
+              </Link>
+            )}
           </div>
         </div>
       </PopoverContent>

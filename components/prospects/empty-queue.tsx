@@ -1,111 +1,171 @@
 "use client";
 
 import Link from "next/link";
-import { CircleCheck, Search } from "lucide-react";
+import { CircleCheck, FileText, Inbox, Radar, Search } from "lucide-react";
 
+import type { LeadQueueFilter } from "@/app/(dashboard)/dashboard/lead-queue-filter";
 import type { BuyerDemandReportView } from "@/app/(dashboard)/dashboard/prospect-types";
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { EmailUpdatesNudge } from "@/components/prospects/email-updates-nudge";
 import { Button } from "@/components/ui/button";
 import { describeEmptyDiscovery } from "@/lib/discovery-outcome";
-import { C } from "@/lib/tokens";
 
 type EmptyQueueProps = {
   hasProfile: boolean;
+  /** Search, match strength or source; sort is not a filter. */
   hasActiveFilters: boolean;
+  query: string;
+  view: LeadQueueFilter;
+  /** Open leads plus open maybes, whatever the current view. */
+  inboxCount: number;
   screenedMatchCount: number;
-  showingScreenedAudit: boolean;
-  showingDone: boolean;
   doneCount: number;
   report: BuyerDemandReportView | null;
   onClearFilters: () => void;
+  onShowInbox: () => void;
   onOpenScreenedAudit: () => void;
   onOpenScanActivity: () => void;
   onOpenDone: () => void;
 };
 
+/**
+ * Each reason the list can be empty gets its own words. Load failures never
+ * reach here: the loaders throw into the dashboard error boundary instead.
+ */
 export function EmptyQueue({
   hasProfile,
   hasActiveFilters,
+  query,
+  view,
+  inboxCount,
   screenedMatchCount,
-  showingScreenedAudit,
-  showingDone,
   doneCount,
   report,
   onClearFilters,
+  onShowInbox,
   onOpenScreenedAudit,
   onOpenScanActivity,
   onOpenDone,
 }: EmptyQueueProps) {
-  // Everything was handled: celebrate it and point at what happens next,
-  // instead of the "nothing found" copy meant for an empty scan.
-  const isCaughtUp = !showingScreenedAudit && !showingDone && !hasActiveFilters && hasProfile && doneCount > 0;
+  const trimmedQuery = query.trim();
+  const showingDone = view === "done";
+  const showingScreenedAudit = view === "screened";
 
-  if (isCaughtUp) {
+  if (hasActiveFilters) {
     return (
-      <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
-        <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.greenPale, color: C.green }}>
-          <CircleCheck className="size-5" aria-hidden="true" />
-        </span>
-        <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>You&apos;re caught up</h2>
-        <p className="mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
-          New leads appear here after the next scan.
-        </p>
-        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onOpenDone}>
-          View {doneCount} done
-        </Button>
+      <EmptyState
+        variant="no-results"
+        icon={Search}
+        title={`No ${showingDone ? "done prospects" : showingScreenedAudit ? "screened-out records" : "prospects"} match these filters`}
+        description={
+          trimmedQuery
+            ? `Nothing matches “${trimmedQuery}” with the current filters.`
+            : "Try another source or a lower match strength."
+        }
+        clearFilters={
+          <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
+            Clear filters
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (showingDone) {
+    return (
+      <EmptyState
+        icon={CircleCheck}
+        title="Nothing marked done yet"
+        description="Prospects you mark done move here, out of your inbox."
+      />
+    );
+  }
+
+  if (showingScreenedAudit) {
+    return (
+      <EmptyState
+        icon={Inbox}
+        title="Nothing has been screened out"
+        description="Conversations that don't pass review are kept here so you can check the decision."
+      />
+    );
+  }
+
+  // One bucket is empty but the inbox isn't: don't claim the person is done.
+  if ((view === "leads" || view === "potential") && inboxCount > 0) {
+    return (
+      <EmptyState
+        icon={Inbox}
+        title={view === "leads" ? "No open leads" : "No open maybes"}
+        description={`${inboxCount} other ${inboxCount === 1 ? "prospect is" : "prospects are"} waiting in your inbox.`}
+        action={
+          <Button type="button" variant="outline" size="sm" onClick={onShowInbox}>
+            Show inbox
+          </Button>
+        }
+      />
+    );
+  }
+
+  // Everything was handled: say so and point at what happens next, instead
+  // of the "nothing found" copy meant for an empty scan.
+  if (hasProfile && doneCount > 0) {
+    return (
+      <div className="flex flex-col gap-4 px-4 py-6">
+        <EmptyState
+          className="p-0"
+          icon={CircleCheck}
+          title="You're caught up"
+          description="New prospects appear here after the next scan."
+          action={
+            <Button type="button" variant="outline" size="sm" onClick={onOpenDone}>
+              View {doneCount} done
+            </Button>
+          }
+        />
         <EmailUpdatesNudge />
       </div>
     );
   }
 
-  const outcome = showingScreenedAudit
-    ? {
-        title: "No screened-out records match these filters",
-        detail: "Clear the filters or return to the inbox.",
-      }
-    : showingDone
-      ? {
-          title: hasActiveFilters ? "No done leads match these filters" : "Nothing marked done yet",
-          detail: "Leads you mark done move here, out of your inbox.",
+  if (!hasProfile) {
+    return (
+      <EmptyState
+        variant="never-used"
+        icon={FileText}
+        title="Your targeting brief needs more detail"
+        description="Add who you sell to, the problem you solve and why you're different. Arcli uses these to find prospects."
+        action={
+          <Button asChild>
+            <Link href="/dashboard/brief">Edit brief</Link>
+          </Button>
         }
-      : hasActiveFilters
-        ? {
-            title: "No signals match these filters",
-            detail: "Clear the filters to see everything in your current queue.",
-          }
-        : !hasProfile
-          ? {
-              title: "Your matching brief needs more detail",
-              detail: "Add the buyer, problem, and value proposition before expecting reviewable conversations.",
-            }
-          : describeEmptyDiscovery(report);
+        className="m-4"
+      />
+    );
+  }
+
+  const outcome = describeEmptyDiscovery(report);
 
   return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
-      <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-        <Search className="size-5" aria-hidden="true" />
-      </span>
-      <h2 className="mt-4 text-base font-semibold" style={{ color: C.navy }}>{outcome.title}</h2>
-      <p className="mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>{outcome.detail}</p>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {hasActiveFilters ? (
-          <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
-            Clear filters
+    <EmptyState
+      variant={report ? "empty-for-now" : "never-used"}
+      icon={report ? Inbox : Radar}
+      title={outcome.title}
+      description={outcome.detail}
+      action={
+        <Button type="button" variant="outline" size="sm" onClick={onOpenScanActivity}>
+          View scan activity
+        </Button>
+      }
+      secondaryAction={
+        screenedMatchCount > 0 ? (
+          <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={onOpenScreenedAudit}>
+            See {screenedMatchCount} screened out
           </Button>
-        ) : null}
-        {!showingScreenedAudit && !showingDone && !hasActiveFilters && screenedMatchCount > 0 ? (
-          <Button type="button" variant="outline" size="sm" onClick={onOpenScreenedAudit}>
-            View {screenedMatchCount} screened-out {screenedMatchCount === 1 ? "record" : "records"}
-          </Button>
-        ) : null}
-        {hasProfile ? (
-          <Button type="button" variant="outline" size="sm" onClick={onOpenScanActivity}>
-            View scan activity
-          </Button>
-        ) : (
-          <Button asChild variant="outline" size="sm"><Link href="/dashboard/brief">Edit targeting</Link></Button>
-        )}
-      </div>
-    </div>
+        ) : null
+      }
+      className={report ? undefined : "m-4"}
+    />
   );
 }

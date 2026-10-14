@@ -36,7 +36,7 @@ export function profileHealthIssue(
     return {
       kind: "crawl_failed",
       title: "We couldn't read your website",
-      detail: "New leads can't be found until the crawl succeeds.",
+      detail: "Arcli can't find new prospects until it can read your website.",
       action: "rebuild_profile",
       technicalDetail: crawlJob?.errorMessage ?? crawlJob?.failureReason ?? undefined,
     };
@@ -52,7 +52,7 @@ export function profileHealthIssue(
       return {
         kind: "profile_details_needed",
         title: "Add a few matching details",
-        detail: "Describe who you help and the problem you solve so Arcli knows what to search for.",
+        detail: "Describe who you sell to and the problem you solve, so Arcli knows what to look for.",
         action: "edit_brief",
       };
     }
@@ -60,7 +60,7 @@ export function profileHealthIssue(
     return {
       kind: "embedding_failed",
       title: "Matching couldn't start",
-      detail: "Your profile is saved, but preparing it for search failed.",
+      detail: "Your brief is saved, but Arcli couldn't prepare it for matching.",
       action: "retry_embedding",
       technicalDetail: serviceProfile.embeddingFailureReason ?? undefined,
     };
@@ -75,7 +75,7 @@ export function profileHealthIssue(
     return {
       kind: "embedding_stalled",
       title: "Matching is taking too long",
-      detail: "Preparation hasn't made progress in over 10 minutes.",
+      detail: "Preparing your brief for matching hasn't moved in over 10 minutes.",
       action: "retry_embedding",
     };
   }

@@ -1,18 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  AlertCircle,
-  Check,
-  Loader2,
-} from "lucide-react";
+import { Clock } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/dashboard/PageHeader";
+import { DiscoveryRecoveryActions } from "@/components/discovery/discovery-recovery-actions";
+import {
+  DISCOVERY_STEPS,
+  deriveDiscoveryStatus,
+  isCrawlActive,
+  isEmbeddingPending,
+  latestUpdate,
+  relativeUpdateLabel,
+  websiteDomain,
+  type DiscoveryStatus,
+} from "@/components/discovery/discovery-status";
+import { DiscoverySteps } from "@/components/discovery/discovery-steps";
 import { LiveDiscoveryFunnel } from "@/components/discovery/live-discovery-funnel";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type { CrawlPageSummary } from "@/lib/onboarding/crawl-pages";
-import { C } from "@/lib/tokens";
+import { cn } from "@/lib/utils";
 import type {
   BuyerDemandReportView,
   CrawlJobView,
@@ -32,236 +42,33 @@ type DiscoveryLoadingPageProps = {
   mode?: "onboarding" | "scan";
 };
 
-type DiscoveryStage = {
-  label: string;
-  detail: string;
-};
+const LIVE_REFRESH_MS = 3500;
+// A heuristic failure (stalled, not confirmed) may still recover, so keep
+// checking, just less often than a live scan.
+const RECOVERABLE_REFRESH_MS = 15000;
+const READY_REDIRECT_MS = 2500;
+const SLOW_AFTER_SECONDS = 90;
+// After this long, a just-requested scan with no job is treated as not started.
+const START_GRACE_SECONDS = 600;
 
-const STAGES: DiscoveryStage[] = [
-  {
-    label: "Understand your website",
-    detail: "Learning what you offer and who it is for.",
-  },
-  {
-    label: "Learn what to look for",
-    detail: "Using your website to understand the problems you solve.",
-  },
-  {
-    label: "Search public conversations",
-    detail: "Checking supported sources for relevant problem statements.",
-  },
-  {
-    label: "Verify candidates",
-    detail: "Assessing evidence before a conversation enters your review queue.",
-  },
-];
-
-const STALLED_CRAWL_MS = 10 * 60 * 1000;
-
-function normalizedStatus(value: string | null | undefined) {
-  return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
+function StatusLabel({ status }: { status: DiscoveryStatus }) {
+  if (status.kind === "error") return <StatusBadge tone="danger">Stopped</StatusBadge>;
+  if (status.kind === "queued") return <StatusBadge tone="info" icon={Clock}>Queued</StatusBadge>;
+  if (status.kind === "ready") {
+    return status.partialCoverage ? (
+      <StatusBadge tone="warning">Partial coverage</StatusBadge>
+    ) : (
+      <StatusBadge tone="success">Finished</StatusBadge>
+    );
+  }
+  return <StatusBadge tone="progress">In progress</StatusBadge>;
 }
 
-function websiteDomain(value: string) {
-  try {
-    return new URL(value).hostname.replace(/^www\./i, "");
-  } catch {
-    return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
-  }
-}
-
-function relativeTime(value: string | null | undefined) {
-  const timestamp = Date.parse(value ?? "");
-  if (!Number.isFinite(timestamp)) return "Waiting for the first update";
-
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 15) return "Updated just now";
-  if (seconds < 60) return "Updated less than a minute ago";
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `Updated ${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  return `Updated ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
-}
-
-function activeStageIndex({
-  crawlJob,
-  serviceProfile,
-  isWarmingUp,
-  buyerDemandReport,
-  awaitingDiscoveryStart = false,
-}: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
-  if (buyerDemandReport?.isTerminal) return STAGES.length;
-  if (awaitingDiscoveryStart) return 2;
-
-  const crawlPhase = normalizedStatus(crawlJob?.phase);
-  const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
-
-  if (!serviceProfile.hasProfile) {
-    return ["crawl_persisted", "extracting_profile", "persisting_profile"].includes(
-      crawlPhase ?? "",
-    )
-      ? 1
-      : 0;
-  }
-
-  if (embeddingStatus && embeddingStatus !== "completed") return 1;
-  return isWarmingUp ? 2 : 3;
-}
-
-function isActiveCrawlStalled(crawlJob: CrawlJobView | null) {
-  const status = normalizedStatus(crawlJob?.status);
-  if (!crawlJob || !["queued", "pending", "processing"].includes(status ?? "")) {
-    return false;
-  }
-
-  const timestamp = Date.parse(
-    crawlJob.lastHeartbeatAt ?? crawlJob.updatedAt ?? "",
-  );
-  return Number.isFinite(timestamp) && Date.now() - timestamp > STALLED_CRAWL_MS;
-}
-
-function statusMessage({
-  crawlJob,
-  serviceProfile,
-  buyerDemandReport,
-  isWarmingUp,
-  awaitingDiscoveryStart = false,
-  scanWasJustRequested = false,
-  mode = "onboarding",
-}: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
-  const crawlStatus = normalizedStatus(crawlJob?.status);
-  const crawlPhase = normalizedStatus(crawlJob?.phase);
-  const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
-
-  if (!crawlJob && !serviceProfile.hasProfile && scanWasJustRequested) {
-    return {
-      kind: "working" as const,
-      title: "Starting your website read.",
-      detail: "Your request is saved. We are waiting for the website worker to start it.",
-    };
-  }
-
-  if (!crawlJob && !serviceProfile.hasProfile) {
-    return {
-      kind: "error" as const,
-      title: mode === "scan" ? "Your scan did not start." : "Your first scan did not start.",
-      detail:
-        "We could not confirm that your website was added to the scan queue. Open the dashboard to retry or check your website settings.",
-    };
-  }
-
-  if (["failed", "dead_lettered"].includes(crawlStatus ?? "")) {
-    return {
-      kind: "error" as const,
-      title: "We couldn't finish reading this website.",
-      detail:
-        crawlJob?.errorMessage ??
-        crawlJob?.failureReason ??
-        "Check the website address and try the crawl again.",
-    };
-  }
-
-  if (!serviceProfile.hasProfile && isActiveCrawlStalled(crawlJob)) {
-    return {
-      kind: "error" as const,
-      title: "Your website scan has stopped updating.",
-      detail:
-        "It has not reported progress for more than 10 minutes. Open the dashboard to retry after checking the website address.",
-    };
-  }
-
-  if (!serviceProfile.hasProfile && crawlStatus === "completed") {
-    return {
-      kind: "error" as const,
-      title: "We could not build your website profile.",
-      detail:
-        "The website scan finished without creating a profile. Open the dashboard to check the website address and try again.",
-    };
-  }
-
-  if (["failed", "error", "dead_lettered"].includes(embeddingStatus ?? "")) {
-    return {
-      kind: "error" as const,
-      title: "Your matching brief needs attention.",
-      detail:
-        serviceProfile.embeddingFailureReason ??
-        "The website was read, but we could not prepare the matching brief.",
-    };
-  }
-
-  if (awaitingDiscoveryStart) {
-    return {
-      kind: "working" as const,
-      title: "Starting your fresh demand scan.",
-      detail: "We are preparing public conversations for your current matching brief.",
-    };
-  }
-
-  if (buyerDemandReport?.isTerminal) {
-    return {
-      kind: "ready" as const,
-      title: buyerDemandReport.status === "failed" || buyerDemandReport.status === "skipped"
-        ? "The public-source search needs attention."
-        : buyerDemandReport.status === "partial" || buyerDemandReport.status === "degraded"
-          ? "The public-source search had partial coverage."
-          : "The public-source search has finished.",
-      detail: buyerDemandReport.summary.verifierPending
-        ? "Candidate checks may continue after source collection. Opening the scan report now."
-        : "Opening the scan report and review queue. A finished search does not guarantee a reviewable match.",
-    };
-  }
-
-  if (!serviceProfile.hasProfile && crawlPhase === "queued") {
-    return {
-      kind: "working" as const,
-      queued: true,
-      title: "Your website scan is queued.",
-      detail:
-        "Arcli is processing one website at a time on the current plan. Your scan will start automatically, and you can safely leave this page.",
-    };
-  }
-
-  if (!serviceProfile.hasProfile) {
-    return {
-      kind: "working" as const,
-      title: "Reading your website.",
-      detail: "We are finding the key pages behind your product and positioning.",
-    };
-  }
-
-  if (embeddingStatus && embeddingStatus !== "completed") {
-    return {
-      kind: "working" as const,
-      title: "Learning what to look for.",
-      detail: "We are using your website to understand the people you want to reach.",
-    };
-  }
-
-  if (isWarmingUp) {
-    return {
-      kind: "working" as const,
-      title: "Looking for people who need this.",
-      detail: "We are checking public conversations and filtering out poor matches.",
-    };
-  }
-
-  if (crawlStatus === "completed") {
-    return {
-      kind: "ready" as const,
-      title: mode === "scan" ? "Your latest scan is ready." : "Your website is ready.",
-      detail: "Opening your dashboard while we finish checking new conversations.",
-    };
-  }
-
-  return {
-    kind: "working" as const,
-    title: mode === "scan" ? "Finishing your latest scan." : "Finishing up your first scan.",
-    detail: "We are doing a final check before showing your results.",
-  };
+function stepSummary(status: DiscoveryStatus) {
+  const total = DISCOVERY_STEPS.length;
+  if (status.failedStep !== undefined) return `Stopped at step ${status.failedStep + 1} of ${total}`;
+  if (status.kind === "ready") return null;
+  return `Step ${Math.min(status.stepIndex + 1, total)} of ${total}`;
 }
 
 export function DiscoveryLoadingPage({
@@ -277,66 +84,54 @@ export function DiscoveryLoadingPage({
 }: DiscoveryLoadingPageProps) {
   const router = useRouter();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const context = {
+  const status = deriveDiscoveryStatus({
+    websiteUrl,
     crawlJob,
     serviceProfile,
     buyerDemandReport,
     isWarmingUp,
     awaitingDiscoveryStart,
-    scanWasJustRequested: scanWasJustRequested && elapsedSeconds < 600,
+    scanWasJustRequested: scanWasJustRequested && elapsedSeconds < START_GRACE_SECONDS,
     mode,
-  };
-  const activeIndex = activeStageIndex(context);
-  const status = statusMessage(context);
-  const domain = useMemo(() => websiteDomain(websiteUrl), [websiteUrl]);
+  });
+  const domain = websiteDomain(websiteUrl);
+  const isWorking = status.kind === "working" || status.kind === "queued";
   const hasError = status.kind === "error";
   const isReady = status.kind === "ready";
-  const hasCoverageWarning = Boolean(
-    buyerDemandReport?.isTerminal &&
-      ["partial", "degraded", "failed", "skipped"].includes(buyerDemandReport.status ?? ""),
+  const refreshMs = isWorking
+    ? LIVE_REFRESH_MS
+    : hasError && status.recoverable
+      ? RECOVERABLE_REFRESH_MS
+      : null;
+  const updateLabel = relativeUpdateLabel(
+    latestUpdate({ crawlJob, serviceProfile, buyerDemandReport, awaitingDiscoveryStart }),
   );
-  const isQueued = status.kind === "working" && status.queued === true;
-  const lastUpdate = relativeTime(
-    crawlJob?.lastHeartbeatAt ??
-      crawlJob?.updatedAt ??
-      serviceProfile.updatedAt ??
-      buyerDemandReport?.updatedAt,
-  );
-  const isTakingLongerThanUsual =
-    !hasError && !isReady && !isQueued && elapsedSeconds >= 90;
-  const isWorkspaceScan = mode === "scan";
-  const liveUpdateLabel = isQueued
-    ? "Queued to read website"
-    : `Live: ${STAGES[Math.min(activeIndex, STAGES.length - 1)]?.label ?? "Updating discovery"}`;
-  const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
-  const canShowLiveFunnel =
+  const isSlow = status.kind === "working" && elapsedSeconds >= SLOW_AFTER_SECONDS;
+  // During a re-read the previous run's counts would describe old work, so the
+  // findings panel waits until the brief is ready and no crawl is running.
+  const canShowFindings =
     Boolean(buyerDemandReport) ||
-    (serviceProfile.hasProfile &&
-      (!embeddingStatus || embeddingStatus === "completed"));
+    (serviceProfile.hasProfile && !isEmbeddingPending(serviceProfile) && !isCrawlActive(crawlJob));
 
   useEffect(() => {
-    if (hasError || isReady) return;
+    if (refreshMs === null) return;
+    const refreshId = window.setInterval(() => router.refresh(), refreshMs);
+    return () => window.clearInterval(refreshId);
+  }, [refreshMs, router]);
 
-    const refreshId = window.setInterval(() => router.refresh(), 3500);
-    const timerId = window.setInterval(
-      () => setElapsedSeconds((seconds) => seconds + 1),
-      1000,
-    );
-
-    return () => {
-      window.clearInterval(refreshId);
-      window.clearInterval(timerId);
-    };
-  }, [hasError, isReady, router]);
+  useEffect(() => {
+    if (!isWorking) return;
+    const timerId = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timerId);
+  }, [isWorking]);
 
   useEffect(() => {
     if (!isReady) return;
-
-    const redirectId = window.setTimeout(() => router.replace("/dashboard"), 900);
+    const redirectId = window.setTimeout(() => router.replace("/dashboard"), READY_REDIRECT_MS);
     return () => window.clearTimeout(redirectId);
   }, [isReady, router]);
 
-  if (mode === "onboarding" && (!serviceProfile.hasProfile || (embeddingStatus && embeddingStatus !== "completed"))) {
+  if (mode === "onboarding" && (!serviceProfile.hasProfile || isEmbeddingPending(serviceProfile))) {
     return (
       <CrawlReadingScreen
         websiteUrl={websiteUrl}
@@ -350,179 +145,110 @@ export function DiscoveryLoadingPage({
         {hasError ? (
           <>
             <Link href="/onboarding/workspace?edit=1">Check website and retry</Link>
-            <Link href="/dashboard">Open dashboard</Link>
+            <Link href="/dashboard">Open Prospects</Link>
           </>
         ) : (
-          <span>{lastUpdate}. You can leave and return while Arcli prepares the brief.</span>
+          <span>{updateLabel}. You can leave and come back while Arcli prepares your brief.</span>
         )}
       </CrawlReadingScreen>
     );
   }
 
-  return (
-    <main
-      className={`relative isolate flex ${isWorkspaceScan ? "min-h-full py-10" : "min-h-screen py-12"} items-center justify-center overflow-hidden px-5 sm:px-8`}
-      style={{
-        backgroundColor: C.offWhite,
-        backgroundImage:
-          "radial-gradient(circle at 50% 18%, rgba(27, 110, 191, 0.10), transparent 28rem)",
-        color: C.text,
-      }}
-    >
-      <div className="relative w-full max-w-3xl text-center">
-        <div
-          className="mx-auto flex size-10 items-center justify-center rounded-full border"
-          style={{
-            borderColor: hasError ? "rgba(220, 38, 38, 0.22)" : hasCoverageWarning ? C.amber : isReady ? "rgba(16, 185, 129, 0.22)" : C.blueLight,
-            backgroundColor: hasError ? "#FEF2F2" : hasCoverageWarning ? C.amberPale : isReady ? C.greenPale : C.bluePale,
-            color: hasError ? C.red : hasCoverageWarning ? C.amber : isReady ? C.green : C.blue,
-          }}
-        >
-          {hasError || hasCoverageWarning ? (
-            <AlertCircle className="size-[18px]" aria-hidden="true" />
-          ) : isReady ? (
-            <Check className="size-[18px]" aria-hidden="true" />
-          ) : (
-            <Loader2 className="size-[18px] animate-spin" aria-hidden="true" />
-          )}
-        </div>
+  const summary = stepSummary(status);
+  const content = (
+    <>
+      <PageHeader
+        title="Live discovery"
+        description={
+          mode === "scan"
+            ? `Progress of the latest scan for ${domain}.`
+            : `Progress of your first scan for ${domain}.`
+        }
+        meta={isWorking || status.recoverable ? updateLabel : undefined}
+        actions={
+          isWorking ? (
+            <Button asChild variant="outline" size="sm">
+              {serviceProfile.hasProfile ? (
+                <Link href="/dashboard/brief">Review targeting brief</Link>
+              ) : (
+                <Link href="/settings">Check website address</Link>
+              )}
+            </Button>
+          ) : undefined
+        }
+      />
 
-        <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: C.blue }}>
-          {isWorkspaceScan ? "Updating your discovery" : "Setting up your discovery"}
-        </p>
-        <h1 className="mx-auto mt-2 max-w-xl text-[28px] font-semibold leading-tight tracking-tight sm:text-[34px]" style={{ color: C.navy }}>
-          {status.title}
-        </h1>
-        <p className="mx-auto mt-3 max-w-lg text-sm leading-6 sm:text-[15px]" style={{ color: C.muted }}>
-          {status.detail}
-        </p>
+      <section
+        aria-labelledby="discovery-status-title"
+        className={cn(
+          "rounded-lg border bg-card",
+          hasError ? "border-danger/25" : "border-border",
+        )}
+      >
+        <div className="px-4 py-4 sm:px-5 sm:py-5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <StatusLabel status={status} />
+            {summary ? <span className="text-xs leading-5 text-subtle">{summary}</span> : null}
+          </div>
+          {/* Announces working -> stopped/finished changes without moving focus. */}
+          <div role="status" aria-live="polite" aria-atomic="true">
+            <h2 id="discovery-status-title" className="mt-3 text-lg leading-7 font-semibold text-foreground">
+              {status.title}
+            </h2>
+            <p className="mt-1 max-w-[65ch] text-sm leading-6 text-muted-foreground">{status.detail}</p>
+          </div>
 
-        <div
-          className="mt-5 inline-flex max-w-full items-center rounded-full border px-3 py-1.5"
-          style={{ borderColor: C.rule, backgroundColor: "rgba(255, 255, 255, 0.62)" }}
-        >
-          <span className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.navySoft }}>
-            Website
-          </span>
-          <span className="mx-2 h-3 w-px" style={{ backgroundColor: C.ruleDark }} />
-          <span className="truncate text-xs font-semibold" style={{ color: C.navy }}>
-            {domain}
-          </span>
-        </div>
-
-        <section className="mt-9" aria-label="Discovery progress">
-          <div className="flex items-center justify-between border-b pb-3 text-left" style={{ borderColor: C.rule }}>
-            <div>
-              <p className="text-xs font-semibold" style={{ color: C.navy }}>
-                Discovery progress
-              </p>
-              {!hasError && !isReady ? (
-                <p className="mt-0.5 text-[11px]" style={{ color: C.muted }}>
-                  Step {Math.min(activeIndex + 1, STAGES.length)} of {STAGES.length}
-                </p>
-              ) : null}
+          {hasError && status.recovery ? (
+            <DiscoveryRecoveryActions
+              recovery={status.recovery}
+              serviceProfileId={serviceProfile.id}
+              failedStep={status.failedStep}
+            />
+          ) : null}
+          {isReady ? (
+            <div className="mt-4">
+              <Button asChild>
+                <Link href="/dashboard">Open Prospects</Link>
+              </Button>
             </div>
-            {!hasError && !isReady ? (
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: C.muted }}>
-                <span className="size-1.5 animate-pulse rounded-full" style={{ backgroundColor: C.blue }} />
-                {liveUpdateLabel}
-              </span>
-            ) : null}
-          </div>
+          ) : null}
+        </div>
 
-          <ol className="grid border-b text-left sm:grid-cols-4" style={{ borderColor: C.rule }}>
-            {STAGES.map((stage, index) => {
-              const isComplete = isReady || index < activeIndex;
-              const isActive = !hasError && !isReady && index === activeIndex;
-              const stageNumber = String(index + 1).padStart(2, "0");
+        <div className="border-t border-border px-4 py-4 sm:px-5">
+          <DiscoverySteps status={status} />
+        </div>
+      </section>
 
-              return (
-                <li
-                  key={stage.label}
-                  aria-current={isActive ? "step" : undefined}
-                  className="min-h-32 border-b px-0 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:px-4 sm:first:pl-0 sm:last:border-r-0 sm:last:pr-0"
-                  style={{ borderColor: C.rule }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span
-                      className="flex size-6 items-center justify-center rounded-full text-[10px] font-bold"
-                      style={{
-                        backgroundColor: isComplete ? C.blue : isActive ? C.bluePale : "transparent",
-                        border: isComplete || isActive ? "none" : `1px solid ${C.ruleDark}`,
-                        color: isComplete ? C.white : isActive ? C.blue : C.muted,
-                      }}
-                    >
-                      {isComplete ? <Check className="size-3.5" aria-hidden="true" /> : stageNumber}
-                    </span>
-                    {isActive ? (
-                      <span className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: C.blue }}>
-                        {isQueued && index === 0 ? "Queued" : "Active"}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-3 text-xs font-semibold leading-5" style={{ color: isComplete || isActive ? C.navy : C.navySoft }}>
-                    {stage.label}
-                  </p>
-                  <p className="mt-1.5 text-[11px] leading-[1.45]" style={{ color: C.muted }}>
-                    {stage.detail}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
+      {canShowFindings ? <LiveDiscoveryFunnel report={buyerDemandReport} /> : null}
 
-        {canShowLiveFunnel ? (
-          <LiveDiscoveryFunnel
-            report={buyerDemandReport}
-            isWarmingUp={isWarmingUp}
-            elapsedSeconds={elapsedSeconds}
-          />
-        ) : null}
+      {isWorking ? (
+        <WorkingNote>
+          {isSlow
+            ? "This is taking longer than usual. Some websites and sources respond slowly. You can leave this page; the scan keeps running."
+            : status.kind === "queued"
+              ? "You can leave this page. The scan starts automatically."
+              : "You can leave this page. The scan keeps running in the background."}
+        </WorkingNote>
+      ) : null}
+    </>
+  );
 
-        {!hasError && !isReady ? (
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-xs leading-5" style={{ color: C.muted }}>
-            <p>
-              <span className="font-semibold" style={{ color: C.navy }}>{lastUpdate}.</span>{" "}
-            {isQueued
-              ? "Your place is saved and the scan starts automatically."
-              : "You can leave this page — we will keep checking in the background."}
-            </p>
-            <Link
-              href={serviceProfile.hasProfile ? "/dashboard/brief" : "/settings"}
-              className="font-semibold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
-              style={{ color: C.blue }}
-            >
-              {serviceProfile.hasProfile ? "Review matching brief" : "Check website settings"}
-            </Link>
-          </div>
-        ) : null}
-
-        {isTakingLongerThanUsual && !canShowLiveFunnel ? (
-          <div className="mx-auto mt-6 max-w-lg border-t pt-4" style={{ borderColor: C.amber }}>
-            <p className="text-xs font-semibold" style={{ color: C.navy }}>
-              Still reading your website?
-            </p>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
-              Some sites take longer when key product pages are hard to reach. You can leave this page while the scan continues.
-            </p>
-            <Link href="/settings" className="mt-2 inline-flex text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
-              Check website settings
-            </Link>
-          </div>
-        ) : null}
-
-        {hasError ? (
-          <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <Button asChild className="h-10" style={{ backgroundColor: C.navy, color: C.white }}>
-              <Link href="/settings">Check website settings</Link>
-            </Button>
-            <Button asChild variant="outline" className="h-10" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-              <Link href="/dashboard">Open dashboard</Link>
-            </Button>
-          </div>
-        ) : null}
+  // In the dashboard the shell already owns <main>; onboarding has no shell.
+  if (mode === "scan") {
+    return (
+      <div className="arc-workspace-page">
+        <div className="flex w-full max-w-4xl min-w-0 flex-col gap-5">{content}</div>
       </div>
+    );
+  }
+
+  return (
+    <main className="min-h-dvh bg-off-white px-4 py-8 sm:px-8 sm:py-12">
+      <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-5">{content}</div>
     </main>
   );
+}
+
+function WorkingNote({ children }: { children: ReactNode }) {
+  return <p className="max-w-[65ch] text-sm leading-6 text-muted-foreground">{children}</p>;
 }

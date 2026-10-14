@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { markLeadAsQualified } from "@/app/actions/leads";
+import { leadTitle } from "@/components/prospects/lead-desk-presentation";
 import { ProspectLeadDesk } from "@/components/prospects/prospect-lead-desk";
 import { trackProductEvent, type ProductEvent } from "@/lib/analytics/product-events";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
@@ -19,12 +20,15 @@ import {
   isScreenedMatch,
   leadCategoryLabel,
   matchesLeadQueueFilter,
+  type LeadQueueConfidence,
   type LeadQueueFilter,
+  type LeadQueueSort,
 } from "./lead-queue-filter";
 import type {
   BuyerDemandReportView,
   BuyerGroupActivationAction,
   CrawlJobView,
+  HandledNotice,
   LeadFeedbackValue,
   ProspectActionResult,
   QualifiedLeadView,
@@ -45,13 +49,18 @@ type ProspectDashboardClientProps = {
   canRunManualScan: boolean;
 };
 
-type FeedbackNotice = {
-  message: string;
-  ok: boolean;
+type QueueSort = LeadQueueSort;
+type QueueConfidenceFilter = LeadQueueConfidence;
+
+const FEEDBACK_FAILED: ProspectActionResult = {
+  ok: false,
+  message: "Couldn't save your feedback. Check your connection and try again.",
 };
 
-type QueueSort = "priority" | "newest" | "confidence";
-type QueueConfidenceFilter = "all" | "high" | "sixty_plus";
+const REBUILD_FAILED: ProspectActionResult = {
+  ok: false,
+  message: "Couldn't start reading your website again. Try again in a few minutes.",
+};
 
 function leadTimestamp(lead: QualifiedLeadView) {
   const timestamp = Date.parse(lead.sourcePost.publishedAt ?? lead.matchedAt ?? "");
@@ -86,10 +95,12 @@ function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
     if (sort === "newest") return leadTimestamp(b) - leadTimestamp(a);
     if (sort === "confidence") return b.verifierScore - a.verifierScore;
 
+    // A lead you already qualified has had its first look, so an equally
+    // strong unworked lead goes ahead of it.
     const priority = (lead: QualifiedLeadView) =>
       (isScreenedMatch(lead) ? -2 : isPotentialBuyer(lead) ? 0 : 4) +
       (lead.intentTier === "high" ? 3 : lead.intentTier === "warm" ? 2 : lead.intentTier === "exploratory" ? 1 : 0) +
-      (lead.urgencyReason ? 2 : 0) +
+      (lead.urgencyReason ? 2 : 0) -
       (lead.matchStatus === "qualified" ? 1 : 0);
     const priorityDifference = priority(b) - priority(a);
 
@@ -116,13 +127,14 @@ export default function ProspectDashboardClient({
 }: ProspectDashboardClientProps) {
   const router = useRouter();
   const [feedbackMessages, setFeedbackMessages] = useState<
-    Record<string, FeedbackNotice>
+    Record<string, ProspectActionResult>
   >({});
   const [pendingFeedbackLeadId, setPendingFeedbackLeadId] = useState<string | null>(null);
   const [isFeedbackPending, startFeedbackTransition] = useTransition();
   const [qualificationMessages, setQualificationMessages] = useState<
-    Record<string, string>
+    Record<string, ProspectActionResult>
   >({});
+  const [handledNotice, setHandledNotice] = useState<HandledNotice | null>(null);
   const [pendingQualificationLeadId, setPendingQualificationLeadId] = useState<
     string | null
   >(null);
@@ -224,15 +236,12 @@ export default function ProspectDashboardClient({
         const result = await submitLeadFeedback(leadId, value);
         setFeedbackMessages((current) => ({
           ...current,
-          [leadId]: result,
+          [leadId]: result.ok ? result : FEEDBACK_FAILED,
         }));
       } catch {
         setFeedbackMessages((current) => ({
           ...current,
-          [leadId]: {
-            ok: false,
-            message: "Could not save feedback. Please try again.",
-          },
+          [leadId]: FEEDBACK_FAILED,
         }));
       } finally {
         setPendingFeedbackLeadId(null);
@@ -247,7 +256,7 @@ export default function ProspectDashboardClient({
         const result = await markLeadAsQualified(leadId);
         setQualificationMessages((current) => ({
           ...current,
-          [leadId]: result.message,
+          [leadId]: { ok: result.ok, message: result.message },
         }));
 
         if (result.ok) {
@@ -257,7 +266,10 @@ export default function ProspectDashboardClient({
       } catch {
         setQualificationMessages((current) => ({
           ...current,
-          [leadId]: "Could not qualify this item. Please try again.",
+          [leadId]: {
+            ok: false,
+            message: "Couldn't mark this prospect qualified. Check your connection and try again.",
+          },
         }));
       } finally {
         setPendingQualificationLeadId(null);
@@ -266,7 +278,19 @@ export default function ProspectDashboardClient({
   };
 
   const handleSetHandled = (leadId: string, handled: boolean) => {
-    const previous = queueItems.find((lead) => lead.id === leadId)?.handledAt ?? null;
+    const lead = queueItems.find((item) => item.id === leadId);
+    const previous = lead?.handledAt ?? null;
+    const title = lead ? leadTitle(lead) : "This prospect";
+
+    // Keep the person's place: move to the prospect that followed this one,
+    // not back to the top of the list.
+    if (leadId === selectedLeadId) {
+      const index = filteredQueueItems.findIndex((item) => item.id === leadId);
+      const neighbour = filteredQueueItems[index + 1] ?? filteredQueueItems[index - 1] ?? null;
+      setSelectedLeadId(neighbour?.id ?? null);
+    }
+
+    setHandledNotice(null);
     setHandledOverrides((current) => ({
       ...current,
       [leadId]: handled ? new Date().toISOString() : null,
@@ -276,14 +300,12 @@ export default function ProspectDashboardClient({
     void setLeadHandled(leadId, handled)
       .then((result) => {
         if (!result.ok) throw new Error(result.message);
+        setHandledNotice({ leadId, title, handled, status: "saved" });
         router.refresh();
       })
       .catch(() => {
         setHandledOverrides((current) => ({ ...current, [leadId]: previous }));
-        setFeedbackMessages((current) => ({
-          ...current,
-          [leadId]: { ok: false, message: "Could not update this lead. Please try again." },
-        }));
+        setHandledNotice({ leadId, title, handled, status: "failed" });
       });
   };
 
@@ -292,13 +314,10 @@ export default function ProspectDashboardClient({
     startProfileRebuildTransition(async () => {
       try {
         const result = await rebuildCurrentWebsiteProfile();
-        setProfileRebuildResult(result);
+        setProfileRebuildResult(result.ok ? result : REBUILD_FAILED);
         if (result.ok) router.refresh();
       } catch {
-        setProfileRebuildResult({
-          ok: false,
-          message: "Could not queue a profile rebuild. Please try again.",
-        });
+        setProfileRebuildResult(REBUILD_FAILED);
       }
     });
   };
@@ -313,7 +332,7 @@ export default function ProspectDashboardClient({
       } catch {
         setManualScanResult({
           ok: false,
-          message: "Could not queue a scan. Please try again.",
+          message: "Couldn't start a scan. Check your connection and try again.",
         });
       }
     });
@@ -343,17 +362,25 @@ export default function ProspectDashboardClient({
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(() =>
     sortQueueItems(inboxItems, "priority")[0]?.id ?? null,
   );
+  const selectedIndexRef = useRef(0);
 
-  // Keep a valid selection; after "Done" this advances to the next lead.
+  // Keep a valid selection. When the selected prospect leaves the list (a
+  // refresh, or done elsewhere), pick whatever now sits at its position
+  // rather than jumping back to the top.
   useEffect(() => {
     if (filteredQueueItems.length === 0) {
       setSelectedLeadId(null);
       return;
     }
 
-    if (!filteredQueueItems.some((lead) => lead.id === selectedLeadId)) {
-      setSelectedLeadId(filteredQueueItems[0].id);
+    const index = filteredQueueItems.findIndex((lead) => lead.id === selectedLeadId);
+    if (index >= 0) {
+      selectedIndexRef.current = index;
+      return;
     }
+
+    const fallbackIndex = Math.min(selectedIndexRef.current, filteredQueueItems.length - 1);
+    setSelectedLeadId(filteredQueueItems[fallbackIndex].id);
   }, [filteredQueueItems, selectedLeadId]);
 
   const selectedLead =
@@ -367,7 +394,7 @@ export default function ProspectDashboardClient({
       potentialBuyers={discoveryCandidates}
       buyerGroupSuggestions={buyerGroupSuggestions}
       activateBuyerGroup={activateBuyerGroup}
-      reviewedConversationCount={queueItems.length}
+      queueItemCount={queueItems.length}
       screenedMatches={screenedMatches}
       buyerDemandReport={buyerDemandReport}
       filteredQueueItems={filteredQueueItems}
@@ -386,7 +413,9 @@ export default function ProspectDashboardClient({
       feedbackNotice={selectedLead ? feedbackMessages[selectedLead.id] ?? null : null}
       feedbackPending={isFeedbackPending && pendingFeedbackLeadId === selectedLead?.id}
       qualificationPending={isQualificationPending && pendingQualificationLeadId === selectedLead?.id}
-      qualificationMessage={selectedLead ? qualificationMessages[selectedLead.id] ?? null : null}
+      qualificationNotice={selectedLead ? qualificationMessages[selectedLead.id] ?? null : null}
+      handledNotice={handledNotice}
+      onDismissHandledNotice={() => setHandledNotice(null)}
       manualScan={
         canRunManualScan
           ? { pending: isManualScanPending, result: manualScanResult, onStart: handleManualScan }

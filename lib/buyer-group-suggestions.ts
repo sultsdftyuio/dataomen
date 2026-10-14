@@ -115,18 +115,125 @@ function suggestionId(targetBuyer: string, problemToSolve: string, index: number
   return `website-${index + 1}-${slug(targetBuyer)}-${slug(problemToSolve)}`.slice(0, 120);
 }
 
-function conciseTopic(value: string) {
-  const words = value.split(/\s+/).filter(Boolean);
-  return words.slice(0, 7).join(" ") || value;
+const NAME_TARGET_LENGTH = 56;
+const NAME_MAX_WORDS = 9;
+
+// A short name must not end on one of these: "…ship quality by" reads as a
+// sentence cut off mid-thought rather than the name of an audience.
+const TRAILING_FILLER = new Set([
+  "a", "an", "the", "and", "or", "but", "nor", "of", "to", "for", "by",
+  "with", "without", "in", "on", "at", "from", "into", "over", "under",
+  "about", "as", "than", "via", "per", "who", "that", "which", "whose",
+  "where", "when", "while", "so", "because", "using", "their", "its", "our",
+  "your", "is", "are", "be", "can", "&", "+", "-", "\u2013", "\u2014",
+]);
+
+// Words that open a qualifying clause. Cutting just before one keeps the
+// head noun phrase ("Design + engineering orgs" from "… orgs that need …").
+const CLAUSE_OPENERS = new Set([
+  "who", "that", "which", "whose", "where", "when", "while", "because", "by",
+  "using", "via", "with", "without",
+]);
+
+// Common nouns that end in "-ing" and so must not be read as the start of a
+// participle phrase ("Design + engineering orgs", "Marketing teams").
+const ING_NOUNS = new Set([
+  "engineering", "marketing", "accounting", "manufacturing", "consulting",
+  "hosting", "banking", "pricing", "training", "publishing", "staffing",
+  "recruiting", "onboarding", "billing", "learning", "computing", "gaming",
+  "shipping", "operating", "funding", "housing", "nursing", "lending",
+]);
+const CONNECTORS = new Set(["+", "&", "and", "or", "of", "for"]);
+const CONJUNCTIONS = new Set(["and", "or", "but"]);
+
+function words(value: string) {
+  return value.split(" ").filter(Boolean);
 }
 
-function displayName(targetBuyer: string, problemToSolve: string, providedName?: string) {
-  const preferred = compactText(providedName, MAX_NAME_LENGTH);
-  if (preferred) return preferred;
-  return `${conciseTopic(targetBuyer)} · ${conciseTopic(problemToSolve)}`.slice(
-    0,
-    MAX_NAME_LENGTH,
+function fitsName(value: string) {
+  return value.length <= NAME_TARGET_LENGTH && words(value).length <= NAME_MAX_WORDS;
+}
+
+function tidyName(value: string) {
+  const parts = words(value.replace(/[\s,;:.!?\u2013\u2014-]+$/, ""));
+  while (parts.length > 1 && TRAILING_FILLER.has(parts[parts.length - 1].toLocaleLowerCase())) {
+    parts.pop();
+  }
+  const name = parts.join(" ").replace(/[\s,;:.!?\u2013\u2014-]+$/, "");
+  return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+}
+
+/**
+ * Shortens an audience or problem sentence into a complete, readable name.
+ * It prefers natural boundaries (clause punctuation, then a relative clause
+ * or "-ing" phrase) over a word count, and never ends on a filler word.
+ */
+export function shortGroupName(value: string) {
+  let text = value
+    .replace(/\s*\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;:!?]+$/, "");
+  if (!text) return "";
+  if (fitsName(text)) return tidyName(text);
+
+  const beforePunctuation = text.split(/\s*(?:[,;:\u2013\u2014]|\s-\s)\s*/)[0] ?? text;
+  if (words(beforePunctuation).length >= 2) text = beforePunctuation;
+  if (fitsName(text)) return tidyName(text);
+
+  const parts = words(text);
+  const clauseStart = parts.findIndex((word, index) => {
+    if (index < 2) return false;
+    const lower = word.toLocaleLowerCase();
+    if (CLAUSE_OPENERS.has(lower)) return true;
+    return /^[a-z]{3,}ing$/.test(lower)
+      && !ING_NOUNS.has(lower)
+      && !CONNECTORS.has(parts[index - 1].toLocaleLowerCase());
+  });
+  if (clauseStart >= 2) text = parts.slice(0, clauseStart).join(" ");
+  if (fitsName(text)) return tidyName(text);
+
+  const kept: string[] = [];
+  for (const word of words(text)) {
+    const next = [...kept, word].join(" ");
+    if (kept.length >= NAME_MAX_WORDS || next.length > NAME_TARGET_LENGTH) break;
+    kept.push(word);
+  }
+  // End before a trailing "and/or" branch rather than halfway through it.
+  const lastConjunction = kept.findLastIndex(
+    (word, index) => index >= 3 && CONJUNCTIONS.has(word.toLocaleLowerCase()),
   );
+  if (lastConjunction >= 3) kept.splice(lastConjunction);
+  return tidyName(kept.join(" ") || text.slice(0, NAME_TARGET_LENGTH));
+}
+
+/**
+ * Names each suggestion after its audience. When several suggestions share
+ * an audience (one audience, several problems), they are named after their
+ * problems instead so the cards stay distinguishable.
+ */
+function distinctNames(seeds: GroupSeed[]) {
+  const audienceNames = seeds.map((seed) => shortGroupName(seed.targetBuyer));
+  const counts = new Map<string, number>();
+  for (const name of audienceNames) {
+    const key = name.toLocaleLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const used = new Set<string>();
+  return seeds.map((seed, index) => {
+    const provided = compactText(seed.name, MAX_NAME_LENGTH);
+    let name = provided || audienceNames[index];
+    if (!provided && (counts.get(name.toLocaleLowerCase()) ?? 0) > 1) {
+      name = shortGroupName(seed.problemToSolve) || name;
+    }
+    let candidate = name.slice(0, MAX_NAME_LENGTH);
+    for (let suffix = 2; used.has(candidate.toLocaleLowerCase()); suffix += 1) {
+      candidate = `${name} (${suffix})`.slice(0, MAX_NAME_LENGTH);
+    }
+    used.add(candidate.toLocaleLowerCase());
+    return candidate;
+  });
 }
 
 function seedFromRecord(value: unknown): GroupSeed | null {
@@ -234,7 +341,10 @@ export function deriveBuyerGroupSuggestions(
     6,
   );
 
-  return uniqueSeeds(profile).map((seed, index) => {
+  const seeds = uniqueSeeds(profile);
+  const names = distinctNames(seeds);
+
+  return seeds.map((seed, index) => {
     const communityPlan = deriveCommunitySourcePlan({
       valueProposition: profile.uniqueValueProp,
       targetAudience: [seed.targetBuyer],
@@ -257,7 +367,7 @@ export function deriveBuyerGroupSuggestions(
 
     return {
       id: suggestionId(seed.targetBuyer, seed.problemToSolve, index),
-      name: displayName(seed.targetBuyer, seed.problemToSolve, seed.name),
+      name: names[index],
       targetBuyer: seed.targetBuyer,
       problemToSolve: seed.problemToSolve,
       includeTerms: textList(
