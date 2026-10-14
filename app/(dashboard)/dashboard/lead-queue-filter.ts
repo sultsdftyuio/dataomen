@@ -6,6 +6,8 @@ import type { QualifiedLeadView } from "./prospect-types";
  * prospect signals by the default view.
  */
 export type LeadQueueFilter = "all" | "leads" | "potential" | "screened" | "done";
+export type LeadQueueSort = "priority" | "newest" | "confidence";
+export type LeadQueueConfidence = "all" | "high" | "sixty_plus";
 
 export function isPotentialBuyer(lead: QualifiedLeadView): boolean {
   return lead.matchStatus === "discovery_candidate";

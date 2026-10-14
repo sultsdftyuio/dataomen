@@ -354,7 +354,9 @@ export async function fetchTenantWebsiteUrl(
       tenant_id: tenantId,
       error,
     });
-    return null;
+    // null means "no website yet" and sends people to onboarding, so a failed
+    // read must not look like it.
+    throw new Error("The workspace website couldn't be loaded.", { cause: error });
   }
 
   return data?.website_url ?? null;
@@ -391,7 +393,7 @@ export async function fetchServiceProfile(
       tenant_id: tenantId,
       error: result.error,
     });
-    return emptyProfile(websiteUrl);
+    throw new Error("The targeting brief couldn't be loaded.", { cause: result.error });
   }
 
   const row = asRecord(result.data);
@@ -513,7 +515,9 @@ export async function fetchLatestCrawlJob(
       website_url: websiteUrl,
       error: result.error,
     });
-    return null;
+    // Kept empty only while the additive crawl-job columns are not migrated.
+    if (isOptionalAdditiveSchemaUnavailable(result.error)) return null;
+    throw new Error("The website scan status couldn't be loaded.", { cause: result.error });
   }
 
   const row = asRecord(result.data);
@@ -670,6 +674,8 @@ export async function fetchSourceFeedbackInsights(
       .eq("service_profile_id", serviceProfileId)
       .limit(240);
   }
+  // Kept empty: source feedback only tunes suggestions, so the page is
+  // still correct without it.
   if (matchesResult.error) {
     console.info("[ProspectDashboard] source feedback match lookup unavailable", {
       tenant_id: tenantId,
@@ -805,7 +811,7 @@ export async function fetchQualifiedLeads(
       tenant_id: tenantId,
       error: result.error,
     });
-    return [];
+    throw new Error("Prospects couldn't be loaded.", { cause: result.error });
   }
 
   return ((result.data ?? []) as unknown[])
@@ -898,7 +904,7 @@ async function fetchReviewOnlyMatches(
       match_status: matchStatus,
       error: result.error,
     });
-    return [];
+    throw new Error("Prospects to review couldn't be loaded.", { cause: result.error });
   }
 
   return ((result.data ?? []) as unknown[]).map((row, index) =>
@@ -986,13 +992,13 @@ export async function fetchWatchlists(
     .order("updated_at", { ascending: false })
     .limit(24);
   if (result.error) {
-    if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
-      console.error("[ProspectDashboard] Watchlist lookup failed", {
-        tenant_id: tenantId,
-        error: result.error,
-      });
-    }
-    return [];
+    // Kept empty only while the additive watchlists table is not migrated.
+    if (isOptionalAdditiveSchemaUnavailable(result.error)) return [];
+    console.error("[ProspectDashboard] Watchlist lookup failed", {
+      tenant_id: tenantId,
+      error: result.error,
+    });
+    throw new Error("Buyer groups couldn't be loaded.", { cause: result.error });
   }
   return ((result.data ?? []) as unknown[])
     .map((row) => watchlistView(asRecord(row) ?? {}))
@@ -1024,7 +1030,9 @@ export async function fetchWatchlistResults(
         tenant_id: tenantId,
         error: result.error,
       });
+      throw new Error("Buyer group matches couldn't be loaded.", { cause: result.error });
     }
+    // Kept empty only while the additive watchlist_matches table is not migrated.
     return watchlists.map((watchlist) => ({
       watchlistId: watchlist.id,
       readyToAct: [],
@@ -1155,6 +1163,7 @@ async function fetchDiscoveryRunEvents(
       .order("occurred_at", { ascending: true })
       .limit(120);
 
+    // Kept empty: per-source progress is optional telemetry on top of the run.
     if (result.error) {
       if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
         console.info("[ProspectDashboard] source progress lookup unavailable", {
@@ -1262,6 +1271,8 @@ export async function fetchBuyerDemandReport(
           error: result.error,
         });
       }
+      // Kept empty: the report only explains the queue, and the comment
+      // above keeps page availability independent of this optional table.
       return null;
     }
 
@@ -1369,6 +1380,8 @@ export async function fetchBuyerLanguageResearch(
       .order("created_at", { ascending: false })
       .limit(12);
 
+    // Kept as "unavailable": the page already designs for research that
+    // isn't there, and this optional evidence never blocks the queue.
     if (result.error) {
       if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
         console.warn("[ProspectDashboard] buyer-language research unavailable", {

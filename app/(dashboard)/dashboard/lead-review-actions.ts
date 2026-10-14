@@ -27,7 +27,7 @@ export async function setLeadHandled(
   try {
     await requireProEntitlement(supabase, tenantId);
   } catch {
-    return { ok: false, message: "Marking leads done is part of Pro." };
+    return { ok: false, message: "Marking prospects done is part of Pro." };
   }
 
   // The generated Database type predates lead_match_reviews.
@@ -53,7 +53,7 @@ export async function setLeadHandled(
       handled,
       code: result.error.code ?? null,
     });
-    return { ok: false, message: "Could not update this lead. Please try again." };
+    return { ok: false, message: "Couldn't update this prospect. Check your connection and try again." };
   }
 
   revalidatePath("/dashboard");

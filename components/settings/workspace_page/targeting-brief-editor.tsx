@@ -5,24 +5,21 @@ import {
   Check,
   CircleAlert,
   Link2,
-  Loader2,
   Plus,
   Rocket,
-  Save,
   ShieldCheck,
-  Target,
   UserRound,
-  X,
   type LucideIcon,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useTransition,
-} from "react";
+import { useMemo, useState } from "react";
 
+import {
+  useBriefSaveSection,
+  type BriefSaveOutcome,
+} from "@/app/(dashboard)/dashboard/brief/brief-save";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   TARGETING_BRIEF_LIMITS,
   TARGET_TYPES,
@@ -32,12 +29,8 @@ import {
   type TargetingBriefInput,
   type TargetingBriefView,
 } from "@/lib/targeting-brief";
-import { C } from "@/lib/tokens";
-
-type SaveResult = {
-  ok: boolean;
-  message: string;
-};
+import { cn } from "@/lib/utils";
+import { RemovableTag } from "./targeting-fields";
 
 type ListFieldKey = Exclude<
   keyof TargetingBriefInput,
@@ -61,16 +54,27 @@ const targetTypeOptions: readonly TargetTypeOption[] = [
   {
     value: "builder",
     label: "Builders",
-    description: "Indie hackers, founders, creators, or consultants.",
+    description: "Indie hackers, founders, creators or consultants.",
     icon: UserRound,
   },
   {
     value: "project",
     label: "Projects",
-    description: "Products, repositories, launches, or public sites.",
+    description: "Products, repositories, launches or public sites.",
     icon: Rocket,
   },
 ];
+
+const BRIEF_KEYS: ReadonlyArray<keyof TargetingBriefInput> = [
+  "targetTypes",
+  "idealCustomerTraits",
+  "changeTriggers",
+  "strongEvidenceDefinitions",
+  "exclusions",
+  "seedUrls",
+];
+
+const TARGET_TYPE_ERROR_ID = "targeting-types-error";
 
 function listDraftItems(value: string) {
   return value
@@ -81,6 +85,30 @@ function listDraftItems(value: string) {
 
 function briefFingerprint(value: TargetingBriefInput) {
   return JSON.stringify(normalizeTargetingBriefInput(value));
+}
+
+function FieldHeading({
+  htmlFor,
+  label,
+  optional,
+  count,
+}: {
+  htmlFor: string;
+  label: string;
+  optional?: boolean;
+  count: number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <label htmlFor={htmlFor} className="text-sm font-semibold text-foreground">
+        {label}
+        {optional ? <span className="font-normal text-muted-foreground"> (optional)</span> : null}
+      </label>
+      <span className="shrink-0 text-xs tabular-nums text-subtle">
+        {count}/{TARGETING_BRIEF_LIMITS.maxItemsPerField}
+      </span>
+    </div>
+  );
 }
 
 function ListField({
@@ -102,6 +130,7 @@ function ListField({
 }) {
   const [draft, setDraft] = useState("");
   const isAtLimit = value.length >= TARGETING_BRIEF_LIMITS.maxItemsPerField;
+  const descriptionId = `${id}-description`;
 
   const commitDraft = () => {
     const items = listDraftItems(draft);
@@ -118,58 +147,35 @@ function ListField({
   };
 
   return (
-    <section
-      className="rounded-xl border bg-white p-4"
-      style={{ borderColor: C.rule }}
-      aria-labelledby={`${id}-label`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 id={`${id}-label`} className="text-sm font-semibold" style={{ color: C.navy }}>
-            {label}
-          </h3>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            {description}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-          {value.length}/{TARGETING_BRIEF_LIMITS.maxItemsPerField}
-        </span>
-      </div>
+    <div className="min-w-0">
+      <FieldHeading htmlFor={id} label={label} count={value.length} />
+      <p id={descriptionId} className="mt-0.5 text-sm leading-5 text-muted-foreground">
+        {description}
+      </p>
 
       {value.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <ul className="mt-2.5 flex min-w-0 flex-wrap gap-1.5" aria-label={label}>
           {value.map((item) => (
-            <span
+            <RemovableTag
               key={item.toLocaleLowerCase()}
-              className="inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-xs"
-              style={{ borderColor: C.rule, backgroundColor: C.offWhite, color: C.navySoft }}
-            >
-              <span className="truncate">{item}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${item}`}
-                disabled={disabled}
-                className="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-black/5 disabled:opacity-50"
-                onClick={() => removeItem(item)}
-              >
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </span>
+              label={item}
+              disabled={disabled}
+              onRemove={() => removeItem(item)}
+            />
           ))}
-        </div>
+        </ul>
       ) : null}
 
-      <div className="mt-3 flex min-w-0 gap-2">
-        <input
+      <div className="mt-2.5 flex min-w-0 gap-2">
+        <Input
           id={id}
           type="text"
           value={draft}
           maxLength={TARGETING_BRIEF_LIMITS.maxTextLength * 4}
           placeholder={placeholder}
           disabled={disabled || isAtLimit}
-          className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-          style={{ borderColor: C.rule, color: C.navy }}
+          aria-describedby={descriptionId}
+          className="flex-1 bg-card text-sm"
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== "Enter") return;
@@ -187,22 +193,20 @@ function ListField({
         />
         <Button
           type="button"
-          size="sm"
           variant="outline"
           disabled={disabled || isAtLimit || listDraftItems(draft).length === 0}
-          className="h-9 shrink-0"
           onClick={commitDraft}
         >
-          <Plus className="size-4" aria-hidden="true" />
+          <Plus aria-hidden="true" />
           Add
         </Button>
       </div>
       {isAtLimit ? (
-        <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
-          Keep the brief focused: remove an item before adding another.
+        <p className="mt-2 text-sm leading-5 text-muted-foreground">
+          This list is full. Remove an item to add another.
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -225,7 +229,7 @@ function SeedUrlField({
 
     const urls = rawItems.map(normalizeSeedUrl).filter(Boolean);
     if (urls.length === 0) {
-      setValidationMessage("Add a public website, project, repository, or launch URL.");
+      setValidationMessage("Enter a public web address, like github.com/example/project.");
       return;
     }
 
@@ -234,7 +238,7 @@ function SeedUrlField({
     setValidationMessage(
       urls.length === rawItems.length
         ? null
-        : "Some entries were skipped because they were not public web URLs.",
+        : "Some entries weren't added because they aren't public web addresses.",
     );
   };
 
@@ -243,54 +247,31 @@ function SeedUrlField({
   };
 
   return (
-    <section
-      className="rounded-xl border bg-white p-4"
-      style={{ borderColor: C.rule }}
-      aria-labelledby="targeting-seeds-label"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 id="targeting-seeds-label" className="text-sm font-semibold" style={{ color: C.navy }}>
-            Starting points <span className="font-normal" style={{ color: C.muted }}>(optional)</span>
-          </h3>
-          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-            Add public sites, repositories, launch pages, or profiles that show the kinds of targets you want. These are discovery seeds, not contacts.
-          </p>
-        </div>
-        <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-          {value.length}/{TARGETING_BRIEF_LIMITS.maxItemsPerField}
-        </span>
-      </div>
+    <div className="min-w-0">
+      <FieldHeading htmlFor="targeting-seed-urls" label="Starting points" optional count={value.length} />
+      <p id="targeting-seeds-description" className="mt-0.5 text-sm leading-5 text-muted-foreground">
+        Public sites, repositories, launch pages or profiles that show the kind of target you want. Arcli uses them as examples, not contacts.
+      </p>
 
       {value.length > 0 ? (
-        <ul className="mt-3 space-y-1.5">
+        <ul className="mt-2.5 flex min-w-0 flex-wrap gap-1.5" aria-label="Starting points">
           {value.map((url) => (
-            <li
+            <RemovableTag
               key={url}
-              className="flex min-w-0 items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs"
-              style={{ borderColor: C.rule, backgroundColor: C.offWhite, color: C.navySoft }}
-            >
-              <span className="truncate">{url}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${url}`}
-                disabled={disabled}
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-black/5 disabled:opacity-50"
-                onClick={() => removeItem(url)}
-              >
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </li>
+              label={url}
+              disabled={disabled}
+              onRemove={() => removeItem(url)}
+            />
           ))}
         </ul>
       ) : null}
 
-      <div className="mt-3 flex min-w-0 gap-2">
+      <div className="mt-2.5 flex min-w-0 gap-2">
         <div className="relative min-w-0 flex-1">
-          <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.muted }} aria-hidden="true" />
-          <input
+          <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input
             id="targeting-seed-urls"
-            type="url"
+            type="text"
             inputMode="url"
             autoComplete="url"
             spellCheck={false}
@@ -298,8 +279,13 @@ function SeedUrlField({
             maxLength={TARGETING_BRIEF_LIMITS.maxSeedUrlLength * 2}
             placeholder="github.com/example/project"
             disabled={disabled || isAtLimit}
-            className="h-9 w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-            style={{ borderColor: C.rule, color: C.navy }}
+            aria-invalid={validationMessage ? true : undefined}
+            aria-describedby={
+              validationMessage
+                ? "targeting-seeds-description targeting-seeds-error"
+                : "targeting-seeds-description"
+            }
+            className="bg-card pl-9 text-sm"
             onChange={(event) => {
               setDraft(event.target.value);
               setValidationMessage(null);
@@ -313,32 +299,32 @@ function SeedUrlField({
         </div>
         <Button
           type="button"
-          size="sm"
           variant="outline"
           disabled={disabled || isAtLimit || listDraftItems(draft).length === 0}
-          className="h-9 shrink-0"
           onClick={commitDraft}
         >
-          <Plus className="size-4" aria-hidden="true" />
+          <Plus aria-hidden="true" />
           Add
         </Button>
       </div>
       {validationMessage ? (
-        <p className="mt-2 text-xs leading-5" style={{ color: C.amber }} role="status">
+        <p id="targeting-seeds-error" className="mt-2 text-sm leading-5 text-danger" role="status">
           {validationMessage}
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }
 
 function TargetTypePicker({
   value,
   disabled,
+  showError,
   onChange,
 }: {
   value: readonly TargetType[];
   disabled: boolean;
+  showError: boolean;
   onChange: (value: TargetType[]) => void;
 }) {
   const toggle = (targetType: TargetType) => {
@@ -349,14 +335,18 @@ function TargetTypePicker({
   };
 
   return (
-    <fieldset>
-      <legend className="text-sm font-semibold" style={{ color: C.navy }}>
-        Target types
-      </legend>
-      <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-        Choose what Arcli may consider first. A target does not need to be a registered company.
+    <fieldset aria-describedby={showError ? TARGET_TYPE_ERROR_ID : "targeting-types-description"}>
+      <legend className="text-sm font-semibold text-foreground">Target types</legend>
+      <p id="targeting-types-description" className="mt-0.5 text-sm leading-5 text-muted-foreground">
+        {"What Arcli may research first. A target doesn't need to be a registered company."}
       </p>
-      <div className="mt-3 grid gap-2 md:grid-cols-3">
+      {showError ? (
+        <p id={TARGET_TYPE_ERROR_ID} className="mt-1.5 flex items-start gap-2 text-sm leading-5 text-danger">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          Choose at least one target type.
+        </p>
+      ) : null}
+      <div className="mt-2.5 grid grid-cols-[minmax(0,1fr)] gap-2 md:grid-cols-3">
         {targetTypeOptions.map((option) => {
           const selected = value.includes(option.value);
           const Icon = option.icon;
@@ -367,30 +357,36 @@ function TargetTypePicker({
               type="button"
               role="checkbox"
               aria-checked={selected}
+              aria-invalid={showError || undefined}
               disabled={disabled}
-              className="relative flex min-h-28 flex-col rounded-lg border p-3 text-left transition-colors hover:bg-[#F8FBFD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-              style={{
-                borderColor: selected ? C.blue : C.rule,
-                backgroundColor: selected ? C.bluePale : C.white,
-              }}
+              data-target-type={option.value}
+              className={cn(
+                "flex min-w-0 items-start gap-3 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
+                selected
+                  ? "border-primary bg-blue-tint"
+                  : showError
+                    ? "border-danger/50 bg-card hover:bg-off-white"
+                    : "border-input bg-card hover:bg-off-white",
+              )}
               onClick={() => toggle(option.value)}
             >
-              <span className="flex w-full items-start justify-between gap-2">
-                <span
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md"
-                  style={{ color: selected ? C.blue : C.muted, backgroundColor: selected ? C.white : C.offWhite }}
-                >
-                  <Icon className="size-4" aria-hidden="true" />
+              <span
+                className={cn(
+                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                  selected ? "border-primary bg-primary text-primary-foreground" : "border-rule-dark bg-card",
+                )}
+                aria-hidden="true"
+              >
+                {selected ? <Check className="size-3" strokeWidth={3} /> : null}
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+                  {option.label}
                 </span>
-                {selected ? (
-                  <Check className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-                ) : null}
-              </span>
-              <span className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>
-                {option.label}
-              </span>
-              <span className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                {option.description}
+                <span className="mt-0.5 block text-sm leading-5 text-muted-foreground">
+                  {option.description}
+                </span>
               </span>
             </button>
           );
@@ -405,7 +401,7 @@ export function TargetingBriefEditor({
   onSave,
 }: {
   initialBrief: TargetingBriefView;
-  onSave: (input: TargetingBriefInput) => Promise<SaveResult>;
+  onSave: (input: TargetingBriefInput) => Promise<BriefSaveOutcome>;
 }) {
   const initialInput = useMemo(
     () => normalizeTargetingBriefInput(initialBrief),
@@ -413,202 +409,146 @@ export function TargetingBriefEditor({
   );
   const initialFingerprint = briefFingerprint(initialInput);
   const [draft, setDraft] = useState<TargetingBriefInput>(initialInput);
-  const [savedDraft, setSavedDraft] = useState<TargetingBriefInput>(initialInput);
-  const [result, setResult] = useState<SaveResult | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [syncedFingerprint, setSyncedFingerprint] = useState(initialFingerprint);
+  const [lastSentFingerprint, setLastSentFingerprint] = useState<string | null>(null);
+  const [showTypeError, setShowTypeError] = useState(false);
 
-  useEffect(() => {
-    setDraft(initialInput);
-    setSavedDraft(initialInput);
-    setResult(null);
-  }, [initialFingerprint]);
-
-  const hasChanges = briefFingerprint(draft) !== briefFingerprint(savedDraft);
-  const needsTargetType = draft.targetTypes.length === 0;
-
-  const updateList = (key: ListFieldKey, value: string[]) => {
-    setDraft((current) => normalizeTargetingBriefInput({ ...current, [key]: value }));
-  };
-
-  const updateSeedUrls = (seedUrls: string[]) => {
-    setDraft((current) => normalizeTargetingBriefInput({ ...current, seedUrls }));
-  };
-
-  const updateTargetTypes = (targetTypes: TargetType[]) => {
-    setDraft((current) => normalizeTargetingBriefInput({ ...current, targetTypes }));
-  };
-
-  const save = () => {
-    const input = normalizeTargetingBriefInput(draft);
-    if (input.targetTypes.length === 0) {
-      setResult({
-        ok: false,
-        message: "Choose at least one target type before saving this targeting brief.",
-      });
-      return;
+  // Saving any part of the page refreshes these props. Keep unsaved edits;
+  // adopt the server copy only when the draft is clean or was just sent.
+  if (syncedFingerprint !== initialFingerprint) {
+    setSyncedFingerprint(initialFingerprint);
+    const draftFingerprint = briefFingerprint(draft);
+    if (draftFingerprint === syncedFingerprint || draftFingerprint === lastSentFingerprint) {
+      setDraft(initialInput);
     }
+  }
 
-    startTransition(async () => {
-      try {
-        const saveResult = await onSave(input);
-        setResult(saveResult);
-        if (saveResult.ok) setSavedDraft(input);
-      } catch {
-        setResult({
-          ok: false,
-          message: "Could not save the targeting brief. Check your connection and try again.",
-        });
-      }
-    });
+  const normalizedDraft = normalizeTargetingBriefInput(draft);
+  const changeCount = BRIEF_KEYS.filter(
+    (key) => JSON.stringify(normalizedDraft[key]) !== JSON.stringify(initialInput[key]),
+  ).length;
+
+  const validate = (): BriefSaveOutcome | null => {
+    if (normalizeTargetingBriefInput(draft).targetTypes.length > 0) return null;
+    setShowTypeError(true);
+    document
+      .querySelector<HTMLElement>(`[data-target-type="${TARGET_TYPES[0]}"]`)
+      ?.focus();
+    return { ok: false, message: "Nothing was saved: choose at least one target type." };
   };
+
+  const save = async (): Promise<BriefSaveOutcome> => {
+    const input = normalizeTargetingBriefInput(draft);
+    try {
+      const result = await onSave(input);
+      if (result.ok) setLastSentFingerprint(briefFingerprint(input));
+      return result;
+    } catch {
+      return {
+        ok: false,
+        message: "Couldn't reach Arcli to save the target universe. Check your connection and try again.",
+      };
+    }
+  };
+
+  const { isSaving } = useBriefSaveSection("universe", {
+    changeCount,
+    saveLabel: "Save target universe",
+    save,
+    validate,
+  });
+
+  const updateDraft = (patch: Partial<TargetingBriefInput>) => {
+    setDraft((current) => normalizeTargetingBriefInput({ ...current, ...patch }));
+  };
+
+  const updateList = (key: ListFieldKey, value: string[]) => updateDraft({ [key]: value });
 
   return (
     <section
-      className="overflow-hidden rounded-xl border bg-white shadow-sm"
-      style={{ borderColor: C.rule }}
+      id="target-universe"
+      className="scroll-mt-4 rounded-lg border border-border bg-card"
       aria-labelledby="targeting-brief-title"
     >
-      <div className="border-b px-4 py-4 sm:px-5" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-lg"
-              style={{ backgroundColor: C.bluePale, color: C.blue }}
-            >
-              <Target className="size-5" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: C.blue }}>
-                Account-first discovery
-              </p>
-              <h2 id="targeting-brief-title" className="mt-1 text-xl font-semibold" style={{ color: C.navy }}>
-                Target universe
-              </h2>
-            </div>
-          </div>
-          <span
-            className="rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{
-              color: initialBrief.hasBrief ? C.green : C.muted,
-              backgroundColor: initialBrief.hasBrief ? C.greenPale : C.offWhite,
-            }}
-          >
-            {initialBrief.hasBrief ? "Saved brief" : "Not configured"}
-          </span>
+      <div className="px-4 pt-4 sm:px-5 sm:pt-5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h2 id="targeting-brief-title" className="text-lg font-semibold text-foreground">
+            Target universe
+          </h2>
+          {initialBrief.hasBrief ? (
+            <StatusBadge tone="success" size="compact">Saved</StatusBadge>
+          ) : (
+            <StatusBadge tone="neutral" size="compact">Not set up</StatusBadge>
+          )}
         </div>
-        <p className="mt-3 max-w-3xl text-sm leading-6" style={{ color: C.navySoft }}>
-          Find high-fit accounts, independent builders, and projects before they make an explicit public request. Comments and threads are a second-stage evidence check, not the discovery gate.
+        <p className="mt-0.5 max-w-[70ch] text-sm leading-5 text-muted-foreground">
+          Accounts, builders and projects worth researching before they post about the problem.
+        </p>
+        <p className="mt-3 flex max-w-[75ch] gap-2 text-sm leading-5 text-muted-foreground">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+          <span>
+            Fit and evidence are separate: a high-fit target is not automatically a lead. Arcli only calls something a strong buyer signal when recent, cited public evidence supports it.
+          </span>
         </p>
       </div>
 
-      <div className="space-y-5 p-4 sm:p-5">
+      <div className="space-y-6 px-4 py-5 sm:px-5">
         <TargetTypePicker
           value={draft.targetTypes}
-          disabled={isPending}
-          onChange={updateTargetTypes}
+          disabled={isSaving}
+          showError={showTypeError && draft.targetTypes.length === 0}
+          onChange={(targetTypes) => {
+            setShowTypeError(false);
+            updateDraft({ targetTypes });
+          }}
         />
 
-        <div
-          className="rounded-lg border px-3 py-3"
-          style={{ borderColor: C.blueLight, backgroundColor: C.bluePale }}
-        >
-          <div className="flex gap-2.5">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-            <p className="text-xs leading-5" style={{ color: C.navySoft }}>
-              <span className="font-semibold" style={{ color: C.navy }}>Evidence rule: </span>
-              a high-fit target is not automatically a lead. Arcli should only call something a strong buyer signal when recent, cited public evidence supports that claim.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-x-8 gap-y-6 border-t border-border pt-5 lg:grid-cols-2">
           <ListField
             id="targeting-ideal-traits"
             label="Ideal customer traits"
-            description="Observable qualities of the account, builder, or project that make it a good fit."
+            description="Visible qualities of an account, builder or project that make it a good fit."
             placeholder="Bootstrapped B2B SaaS selling to sales teams"
             value={draft.idealCustomerTraits}
-            disabled={isPending}
+            disabled={isSaving}
             onChange={(value) => updateList("idealCustomerTraits", value)}
           />
           <ListField
             id="targeting-change-triggers"
             label="Relevant change triggers"
-            description="Public events that justify deeper research, even without a stated need."
+            description="Public events worth a closer look, even before anyone asks for help."
             placeholder="Launched a paid plan or hired the first sales lead"
             value={draft.changeTriggers}
-            disabled={isPending}
+            disabled={isSaving}
             onChange={(value) => updateList("changeTriggers", value)}
           />
           <ListField
             id="targeting-strong-evidence"
             label="What counts as strong buyer evidence?"
-            description="Define the proof needed to promote a target from high-fit to a strong buyer signal."
+            description="The proof needed to move a target from good fit to strong buyer signal."
             placeholder="A founder compares prospecting tools or describes a failed workflow"
             value={draft.strongEvidenceDefinitions}
-            disabled={isPending}
+            disabled={isSaving}
             onChange={(value) => updateList("strongEvidenceDefinitions", value)}
           />
           <ListField
             id="targeting-exclusions"
             label="Outside the target universe"
-            description="Exclude poor-fit audiences, projects, or contexts before they consume research budget."
+            description="Audiences, projects or contexts Arcli shouldn't spend research on."
             placeholder="Student projects, agencies, direct competitors"
             value={draft.exclusions}
-            disabled={isPending}
+            disabled={isSaving}
             onChange={(value) => updateList("exclusions", value)}
           />
         </div>
 
-        <SeedUrlField
-          value={draft.seedUrls}
-          disabled={isPending}
-          onChange={updateSeedUrls}
-        />
-      </div>
-
-      <div
-        className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
-        style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
-      >
-        <div className="min-w-0" aria-live="polite">
-          {result ? (
-            <p
-              className="flex items-start gap-2 text-xs leading-5"
-              style={{ color: result.ok ? C.green : C.red }}
-            >
-              {result.ok ? (
-                <Check className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-              ) : (
-                <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-              )}
-              {result.message}
-            </p>
-          ) : needsTargetType ? (
-            <p className="flex items-start gap-2 text-xs leading-5" style={{ color: C.amber }}>
-              <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-              Choose whether Arcli should research accounts, builders, projects, or a combination.
-            </p>
-          ) : (
-            <p className="text-xs leading-5" style={{ color: C.muted }}>
-              Save this brief to guide target discovery. It does not create outreach or mark anyone as a lead.
-            </p>
-          )}
+        <div className="border-t border-border pt-5">
+          <SeedUrlField
+            value={draft.seedUrls}
+            disabled={isSaving}
+            onChange={(seedUrls) => updateDraft({ seedUrls })}
+          />
         </div>
-        <Button
-          type="button"
-          disabled={isPending || needsTargetType || !hasChanges}
-          className="h-9 shrink-0"
-          style={{ backgroundColor: C.navy, color: C.white }}
-          onClick={save}
-        >
-          {isPending ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Save className="size-4" aria-hidden="true" />
-          )}
-          {isPending ? "Saving..." : "Save targeting brief"}
-        </Button>
       </div>
     </section>
   );

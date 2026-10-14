@@ -2,114 +2,139 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { Bell, LoaderCircle, Mail } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 
+import { SettingsSection } from "@/components/settings/settings-section";
 import { toast } from "@/components/ui/use-toast";
 import { updateResultEmailPreference } from "@/lib/result-email-client";
-import { C } from "@/lib/tokens";
+import { cn } from "@/lib/utils";
 
 type CrawlNotificationPreferencesProps = {
   initialEnabled: boolean;
+  /** Owner or admin of the workspace. */
   eligible: boolean;
   accountEmail: string | null;
+  /** The membership lookup failed, so eligibility isn't known. */
+  roleUnknown?: boolean;
+  /** The stored choice failed to load, so the switch can't show the truth. */
+  preferenceUnavailable?: boolean;
 };
+
+const SAVE_FAILED = "Couldn't save your choice, so nothing changed. Check your connection and try again.";
 
 export default function CrawlNotificationPreferences({
   initialEnabled,
   eligible,
   accountEmail,
+  roleUnknown = false,
+  preferenceUnavailable = false,
 }: CrawlNotificationPreferencesProps) {
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const blockedReason = roleUnknown
+    ? "Your workspace role couldn't be checked, so this can't be changed right now. Reload the page to try again."
+    : preferenceUnavailable
+      ? "Your email choice couldn't be loaded, so it can't be changed right now. Reload the page to try again."
+      : !eligible
+        ? "Only workspace owners and admins can receive these emails."
+        : !accountEmail
+          ? "Your account has no email address, so these emails can't be sent."
+          : null;
+  const canToggle = blockedReason === null;
 
   const updateEnabled = () => {
     const nextEnabled = !enabled;
+    setSaveError(null);
     startTransition(async () => {
       try {
         await updateResultEmailPreference(nextEnabled);
         setEnabled(nextEnabled);
-        toast({
-          title: nextEnabled ? "Result email preference saved" : "Result emails turned off",
-          description: nextEnabled
-            ? "We'll send occasional updates to your account email when delivery is active."
-            : "No new result emails will be queued for your account.",
-        });
       } catch (error) {
-        toast({
-          title: "Result email setting not updated",
-          description:
-            error instanceof Error
-              ? error.message
-              : "Could not update result email settings.",
-          variant: "destructive",
-        });
+        console.error("[Settings] Result email preference save failed", error);
+        setSaveError(SAVE_FAILED);
+        toast({ variant: "destructive", title: "Couldn't save your email choice", description: "Check your connection and try again." });
       }
     });
   };
 
+  const stateText = enabled
+    ? "On. Arcli doesn't email you for every scan, and delivery can be paused."
+    : "Off. No result emails will be sent to you.";
+
   return (
-    <section
+    <SettingsSection
       id="result-emails"
-      className="scroll-mt-6 overflow-hidden rounded-xl border bg-white"
-      style={{ borderColor: C.rule, boxShadow: "0 1px 3px rgba(10, 22, 40, 0.04)" }}
+      title="Result emails"
+      description="Emails about your targeting brief, Pro scan checkpoints and problems reading your website."
     >
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: C.bluePale, color: C.blue }}
-          >
-            <Bell className="size-4" aria-hidden="true" />
-          </div>
-          <span className="rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ backgroundColor: enabled ? C.greenPale : C.offWhite, color: enabled ? C.green : C.navySoft }}>
-            {enabled ? "On for you" : "Off"}
+      <div className="px-4 py-3.5 md:px-5">
+        <label
+          htmlFor="result-emails-switch"
+          className={cn("flex items-center justify-between gap-4", canToggle && !isPending ? "cursor-pointer" : "cursor-not-allowed")}
+        >
+          <span className="min-w-0">
+            <span id="result-emails-choice" className="block text-sm leading-6 font-medium text-foreground">
+              Email me result updates
+            </span>
+            <span className="block text-xs leading-5 break-all text-subtle">
+              {accountEmail ? `Sent to ${accountEmail}` : "No account email"}
+            </span>
           </span>
-        </div>
-        <h2 className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>Result emails</h2>
-        <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-          Choose whether Arcli emails you about your website brief, Pro scan checkpoints, and website read failures.
-        </p>
+          {preferenceUnavailable ? null : (
+            <button
+              id="result-emails-switch"
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              aria-labelledby="result-emails-choice"
+              aria-describedby="result-emails-detail"
+              disabled={isPending || !canToggle}
+              onClick={updateEnabled}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+                enabled ? "bg-primary" : "bg-subtle",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block size-5 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none",
+                  enabled ? "translate-x-[22px]" : "translate-x-0.5",
+                )}
+              />
+              {isPending ? (
+                <LoaderCircle
+                  className={cn("absolute left-[14px] size-3 motion-safe:animate-spin", enabled ? "text-white" : "text-navy-soft")}
+                  aria-hidden="true"
+                />
+              ) : null}
+            </button>
+          )}
+        </label>
 
-        <div className="mt-4 flex items-start gap-2.5 rounded-lg border px-3 py-2.5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
-          <Mail className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold" style={{ color: C.navy }}>Your account email</p>
-            <p className="mt-0.5 break-all text-xs" style={{ color: C.navySoft }}>{accountEmail ?? "No email available"}</p>
-          </div>
+        <div id="result-emails-detail" className="mt-2 space-y-1 text-sm leading-6">
+          {blockedReason ? (
+            <p className="text-muted-foreground">{blockedReason}</p>
+          ) : (
+            <p className="text-muted-foreground">{stateText}</p>
+          )}
+          {saveError ? <p role="alert" className="font-medium text-danger">{saveError}</p> : null}
         </div>
-
-        <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4" style={{ borderColor: C.rule }}>
-          <div>
-            <p id="result-emails-choice" className="text-xs font-semibold" style={{ color: C.navy }}>Email me result updates</p>
-            <p className="mt-0.5 text-xs" style={{ color: C.muted }}>Optional. Change this anytime.</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            aria-labelledby="result-emails-choice"
-            aria-describedby="result-emails-detail"
-            disabled={isPending || !eligible || !accountEmail}
-            onClick={updateEnabled}
-            className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ backgroundColor: enabled ? C.blue : C.rule }}
-          >
-            <span className="inline-block size-5 rounded-full bg-white shadow-sm transition-transform" style={{ transform: enabled ? "translateX(21px)" : "translateX(2px)" }} />
-            {isPending ? <LoaderCircle className="absolute left-[14px] size-3 animate-spin" style={{ color: enabled ? C.white : C.navySoft }} aria-hidden="true" /> : null}
-          </button>
-        </div>
-        <p id="result-emails-detail" className="mt-3 text-xs leading-5" style={{ color: C.muted }}>
-          {!eligible
-            ? "Only workspace owners and admins can receive these emails."
-            : enabled
-              ? "Your choice is saved. Email delivery may be paused, and we do not send one for every scan."
-              : "No result emails will be queued for you until you turn this on."}
-          {" "}Messages contain aggregate results, not public post text, contact details, or promotions. This choice affects only your account.
+      </div>
+      <div className="px-4 py-3.5 text-sm leading-6 text-muted-foreground md:px-5">
+        <p>
+          These emails contain totals only: no public post text, contact details or promotions. Your choice affects only
+          your account.
         </p>
-        <Link href="/privacy" className="mt-3 inline-block text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
+        <Link
+          href="/privacy"
+          className="mt-1 inline-block rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+        >
           How Arcli uses your email
         </Link>
       </div>
-    </section>
+    </SettingsSection>
   );
 }

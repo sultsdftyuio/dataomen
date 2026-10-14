@@ -10,7 +10,7 @@ import { fetchTenantSettingsRow } from "@/lib/settings/server";
 import { resultEmailsEnabled } from "@/lib/result-email-preference";
 import { workspaceDisplayName } from "@/lib/workspace/display-name";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
-import SettingsClient from "./settings-client";
+import SettingsClient, { type WorkspaceRole } from "./settings-client";
 import {
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
@@ -20,8 +20,8 @@ import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-ty
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const metadata: Metadata = {
-  title: "Workspace Settings | Arcli",
-  description: "Manage your Arcli workspace, billing, and account preferences.",
+  title: "Settings | Arcli",
+  description: "Your Arcli account, plan, prospecting setup and email preferences.",
 };
 
 type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;
@@ -30,6 +30,7 @@ type SettingsPageProps = {
   searchParams: Promise<{
     billing?: string | string[];
     upgrade?: string | string[];
+    recovery?: string | string[];
   }>;
 };
 
@@ -41,6 +42,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const resolvedSearchParams = await searchParams;
   const billingReturnState = firstSearchParam(resolvedSearchParams.billing);
   const shouldAutoStartProCheckout = firstSearchParam(resolvedSearchParams.upgrade) === "pro";
+  const passwordRecovery = firstSearchParam(resolvedSearchParams.recovery) === "1";
   const supabase = await createClient();
   const {
     data: { user },
@@ -56,15 +58,13 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   let serviceProfile: ServiceProfileView | null = null;
   let crawlNotificationEmailsEnabled = false;
   let canReceiveResultEmails = false;
-  let billingPlanData: WorkspaceBillingCardProps["planData"] = {
-    planName: "Free Access",
-    planStatus: "free",
-    description: "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.",
-    priceText: "$35/month",
-    isProTier: false,
-    amountDueCents: 3500,
-    currency: "USD",
-  };
+  let workspaceRole: WorkspaceRole = "unknown";
+  let emailPreferenceUnavailable = false;
+  // Stays undefined when the workspace can't be resolved, so the page shows a
+  // load error instead of presenting a paying workspace as Free with Upgrade.
+  let billingPlanData: WorkspaceBillingCardProps["planData"];
+  let checkoutReturn: "confirming" | "confirmed" | null =
+    billingReturnState === "confirmed" ? "confirmed" : null;
 
   if (!("response" in tenantResult)) {
     const { supabase: tenantSupabase, tenantId } = tenantResult.context;
@@ -88,11 +88,15 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       }
 
       // redirect() works by throwing, so it must stay outside the try block or
-      // the catch above would swallow it. Dropping the query string also stops
-      // a refresh from repeating the Dodo lookup.
+      // the catch above would swallow it. Swapping the query string also stops
+      // a refresh from repeating the Dodo lookup, and ?billing=confirmed lets
+      // the page say the upgrade worked.
       if (billingSynced) {
-        redirect("/settings");
+        redirect("/settings?billing=confirmed");
       }
+      // Not confirmed yet (webhook lag or a failed lookup): say so, and hide
+      // Upgrade so the same plan can't be bought twice while it catches up.
+      checkoutReturn = "confirming";
     }
 
     const [
@@ -128,8 +132,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       });
     } else {
       canReceiveResultEmails = ["owner", "admin"].includes(
-        notificationMembership.data?.role?.toLowerCase() ?? "",
+        notificationMembership.data?.role?.trim().toLowerCase() ?? "",
       );
+      workspaceRole = canReceiveResultEmails ? "admin" : "member";
     }
 
     if (settingsResult.error) {
@@ -145,6 +150,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         user_id: user.id,
         error: notificationPreference.error,
       });
+      emailPreferenceUnavailable = true;
     } else {
       crawlNotificationEmailsEnabled = canReceiveResultEmails && resultEmailsEnabled(notificationPreference.data, user.email);
     }
@@ -185,18 +191,18 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       autoStartCheckout: shouldAutoStartProCheckout && !hasSubscriptionOnFile,
       features: [
         {
-          label: "Verified prospect queue",
-          description: "Review prospects aligned with your service profile.",
+          label: "Prospect queue",
+          description: "Review prospects that match your targeting brief.",
           unlocked: entitlements.canViewCustomerLists,
         },
         {
-          label: "Lead qualification signals",
-          description: "Inspect why each lead matched your audience and pain criteria.",
+          label: "Fit signals",
+          description: "See why each prospect matched your buyers and their problem.",
           unlocked: entitlements.canSendEmails,
         },
         {
-          label: "Reusable matching criteria",
-          description: "Create reusable profile rules for discovery workflows.",
+          label: "Reusable targeting",
+          description: "Save targeting rules and reuse them across scans.",
           unlocked: entitlements.canCreateTemplates,
         },
       ],
@@ -211,6 +217,11 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       canReceiveResultEmails={canReceiveResultEmails}
       serviceProfile={serviceProfile}
       planData={billingPlanData}
+      workspaceUnavailable={"response" in tenantResult}
+      workspaceRole={workspaceRole}
+      emailPreferenceUnavailable={emailPreferenceUnavailable}
+      checkoutReturn={checkoutReturn}
+      passwordRecovery={passwordRecovery}
     />
   );
 }

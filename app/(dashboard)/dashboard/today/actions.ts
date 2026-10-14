@@ -23,14 +23,14 @@ export async function submitAssistedProspectVerdict(
     deliveryId: formData.get("deliveryId"),
     verdict: formData.get("verdict"),
   });
-  if (!parsed.success) return { ok: false, message: "Choose a valid prospect response." };
+  if (!parsed.success) return { ok: false, message: "Choose a verdict for this prospect, then try again." };
 
   const tenantResult = await resolveTenantContext();
-  if ("response" in tenantResult) return { ok: false, message: "Workspace access could not be verified." };
+  if ("response" in tenantResult) return { ok: false, message: "Your workspace couldn't be checked, so the verdict wasn't saved. Reload the page and try again." };
   const { supabase, tenantId } = tenantResult.context;
   const enrolled = await assistedProspectPilotEnrolled(supabase, tenantId);
   if (!enrolled) {
-    return { ok: false, message: "This pilot is not available for your workspace." };
+    return { ok: false, message: "Today's prospects isn't turned on for this workspace, so the verdict wasn't saved." };
   }
 
   const { error } = await supabase.rpc(
@@ -42,8 +42,8 @@ export async function submitAssistedProspectVerdict(
   );
   if (error) {
     console.error("[AssistedProspects] Feedback failed", { code: error.code });
-    return { ok: false, message: "Your response could not be saved. Please try again." };
+    return { ok: false, message: "Your verdict wasn't saved. Check your connection and try again." };
   }
   revalidatePath("/dashboard/today");
-  return { ok: true, message: "Response saved." };
+  return { ok: true, message: "Verdict saved." };
 }

@@ -161,6 +161,24 @@ function logOptionalTargetingFailure(operation: string, error: unknown) {
   console.warn(`[TargetDesk] ${operation} unavailable`, { error });
 }
 
+/** Marks a core Targets read that failed for a reason other than rollout. */
+class TargetingLoadError extends Error {}
+
+/**
+ * The targeting brief and the target list are the page itself, so a real
+ * query failure must reach the dashboard error boundary instead of rendering
+ * as "no brief" or "no targets". Only a not-yet-migrated schema stays empty.
+ */
+function throwUnlessOptionalSchema(operation: string, error: unknown, message: string) {
+  if (error instanceof TargetingLoadError) throw error;
+  if (optionalSchemaUnavailable(error)) return;
+  console.error(`[TargetDesk] ${operation} failed`, { error });
+  throw new TargetingLoadError(message, { cause: error });
+}
+
+const BRIEF_LOAD_FAILED = "The targeting brief couldn't be loaded.";
+const TARGETS_LOAD_FAILED = "Targets couldn't be loaded.";
+
 export async function fetchTargetingBrief(
   supabase: SupabaseClient<Database>,
   tenantId: string,
@@ -182,7 +200,7 @@ export async function fetchTargetingBrief(
       .maybeSingle<DbRecord>();
 
     if (result.error) {
-      logOptionalTargetingFailure("targeting brief lookup", result.error);
+      throwUnlessOptionalSchema("targeting brief lookup", result.error, BRIEF_LOAD_FAILED);
       return emptyTargetingBriefView();
     }
 
@@ -213,7 +231,7 @@ export async function fetchTargetingBrief(
       ...fields,
     };
   } catch (error) {
-    logOptionalTargetingFailure("targeting brief lookup", error);
+    throwUnlessOptionalSchema("targeting brief lookup", error, BRIEF_LOAD_FAILED);
     return emptyTargetingBriefView();
   }
 }
@@ -616,7 +634,7 @@ export async function fetchProspectTargets(
     };
 
     if (assessmentResult.error) {
-      logOptionalTargetingFailure("target assessment lookup", assessmentResult.error);
+      throwUnlessOptionalSchema("target assessment lookup", assessmentResult.error, TARGETS_LOAD_FAILED);
       return [];
     }
 
@@ -647,7 +665,7 @@ export async function fetchProspectTargets(
     }>);
 
     if (entityResult.error) {
-      logOptionalTargetingFailure("target entity lookup", entityResult.error);
+      throwUnlessOptionalSchema("target entity lookup", entityResult.error, TARGETS_LOAD_FAILED);
       return [];
     }
 
@@ -719,7 +737,7 @@ export async function fetchProspectTargets(
       } satisfies ProspectTargetView];
     });
   } catch (error) {
-    logOptionalTargetingFailure("target desk lookup", error);
+    throwUnlessOptionalSchema("target desk lookup", error, TARGETS_LOAD_FAILED);
     return [];
   }
 }

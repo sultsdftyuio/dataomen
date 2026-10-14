@@ -27,7 +27,7 @@ test("keeps the custom buyer-group path available without duplicating the websit
   const panel = source("app/(dashboard)/dashboard/watchlists-panel.tsx");
 
   assert.match(panel, /hasSuggestedBuyerGroups/);
-  assert.match(panel, /Open the website ideas card above/);
+  assert.match(panel, /Start from a suggestion below/);
   assert.match(panel, /Create custom buyer group/);
   assert.match(panel, /from "\.\/watchlist-detail"/);
 });

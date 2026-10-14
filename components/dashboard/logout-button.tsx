@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut } from "lucide-react";
+import { LoaderCircle, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/logout/actions";
 import { createClient as createBrowserClient } from "@/utils/supabase/client";
 
-export default function LogoutButton() {
+type LogoutButtonProps = {
+  /** Icon-only, for the sidebar footer. The label stays as the accessible name. */
+  iconOnly?: boolean;
+};
+
+export default function LogoutButton({ iconOnly = false }: LogoutButtonProps) {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleLogout = async () => {
@@ -30,17 +35,22 @@ export default function LogoutButton() {
     }
   };
 
+  const label = isSigningOut ? "Signing out…" : "Sign out";
+  const Icon = isSigningOut ? LoaderCircle : LogOut;
+
   return (
     <Button
       type="button"
       variant="ghost"
-      size="sm"
+      size={iconOnly ? "icon-sm" : "sm"}
       onClick={handleLogout}
       disabled={isSigningOut}
-      className="text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+      aria-label={iconOnly ? label : undefined}
+      title={iconOnly ? label : undefined}
+      className="text-muted-foreground hover:bg-accent hover:text-foreground"
     >
-      <LogOut className="h-4 w-4" />
-      {isSigningOut ? "Signing out..." : "Sign out"}
+      <Icon className={isSigningOut ? "size-4 motion-safe:animate-spin" : "size-4"} aria-hidden="true" />
+      {iconOnly ? null : label}
     </Button>
   );
 }

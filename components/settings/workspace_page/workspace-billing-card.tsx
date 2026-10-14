@@ -1,9 +1,8 @@
-// components/settings/workspace_page/workspace-billing-card.tsx
 "use client";
 
-import React, { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { CalendarDays, CheckCircle2, CreditCard, LockKeyhole, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, LoaderCircle } from "lucide-react";
+
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -13,726 +12,219 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { toast } from "@/components/ui/use-toast";
-import {
-  upgradeToProPlan,
-  manageBillingPortal,
-  cancelProPlan,
-  resumeSubscription,
-} from "@/app/actions/billing";
-import { WorkspacePlanBadge } from "@/components/dashboard/WorkspacePlanBadge";
-import { Spinner } from "@/components/ui/spinner";
-import type { WorkspaceEntitlements } from "@/lib/entitlements";
-import { C } from "@/lib/tokens";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { SettingsSection } from "@/components/settings/settings-section";
+import { PRO_PRICE_NOTE } from "@/lib/entitlements";
+
+import { useBillingActions } from "./billing-actions";
+import { describeBillingPlan, type BillingPlanData, type BillingPlanView } from "./billing-plan";
 
 export interface WorkspaceBillingCardProps {
-  planData?: {
-    planName?: string;
-    planStatus?: "free" | "active" | "past_due" | "canceled" | "cancelled" | "canceling";
-    description?: string;
-    daysRemaining?: number | null;
-    priceText?: string;
-    isProTier?: boolean;
-    isCanceling?: boolean;
-    isTrialing?: boolean;
-    currentPeriodEnd?: string | null;
-    trialEndsAt?: string | null;
-    workspaceName?: string;
-    entitlements?: WorkspaceEntitlements;
-    amountDueCents?: number;
-    currency?: string;
-    features?: Array<{
-      label: string;
-      description: string;
-      unlocked: boolean;
-    }>;
-    autoStartCheckout?: boolean;
-  };
+  planData?: BillingPlanData;
+  /**
+   * Owners and admins only. Every billing server action refuses anyone else,
+   * so members see the plan without controls they can't use.
+   */
+  canManageBilling?: boolean;
+  /** Back from checkout but the payment isn't confirmed yet: hide Upgrade so it can't be bought twice. */
+  checkoutConfirming?: boolean;
 }
 
-type PendingBillingAction = "manage" | "upgrade" | "cancel" | "resume" | null;
-
-function formatBillingDate(value: string | null | undefined): string | null {
-  if (!value || !Number.isFinite(Date.parse(value))) return null;
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatAmountDue(
-  amountDueCents: number,
-  currency: string,
-  nextBillingDate: string | null | undefined
-): string | null {
-  const formattedDate = formatBillingDate(nextBillingDate);
-  if (!formattedDate) return null;
-
-  const amount = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    currencyDisplay: "narrowSymbol",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amountDueCents / 100);
-
-  return `${amount} due on ${formattedDate}`;
-}
+const FREE_PLAN: BillingPlanData = { planName: "Free", planStatus: "free", isProTier: false };
 
 const DEFAULT_PRO_FEATURES = [
-  {
-    label: "Verified prospect queue",
-    description: "Review the prospects most aligned with your service profile.",
-    unlocked: false,
-  },
-  {
-    label: "Lead qualification signals",
-    description: "Inspect why each lead matched your audience and pain criteria.",
-    unlocked: false,
-  },
-  {
-    label: "Reusable matching criteria",
-    description: "Create and reuse profile rules for discovery workflows.",
-    unlocked: false,
-  },
+  { label: "Prospect queue", description: "Review prospects that match your targeting brief.", unlocked: false },
+  { label: "Fit signals", description: "See why each prospect matched your buyers and their problem.", unlocked: false },
+  { label: "Reusable targeting", description: "Save targeting rules and reuse them across scans.", unlocked: false },
 ];
 
 export default function WorkspaceBillingCard({
-  planData = {
-    planName: "Free Access",
-    planStatus: "free",
-    description: "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.",
-    priceText: "$35/month",
-    isProTier: false,
-  },
+  planData = FREE_PLAN,
+  canManageBilling = true,
+  checkoutConfirming = false,
 }: WorkspaceBillingCardProps) {
-  const router = useRouter();
-  const [isBillingPending, startBillingTransition] = useTransition();
-  const [pendingAction, setPendingAction] = useState<PendingBillingAction>(null);
+  const plan = describeBillingPlan(planData);
+  const billing = useBillingActions();
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const planStatus = planData.planStatus ?? "free";
-  const planName = planData.planName ?? "Free Access";
-  const priceText = planData.priceText ?? "$35/month";
-  const isCanceling = planData.isCanceling ?? planStatus === "canceling";
-  const formattedPeriodEnd = formatBillingDate(planData.currentPeriodEnd);
-  const formattedTrialEnd = formatBillingDate(planData.trialEndsAt);
-  const activeUntilText = `Active until ${formattedPeriodEnd ?? "the end of the current billing period"}`;
-  const nextChargeText = formatAmountDue(
-    planData.amountDueCents ?? 3500,
-    planData.currency ?? "USD",
-    planData.currentPeriodEnd
-  );
-  const canOpenPortal =
-    planData.isProTier === true &&
-    ["active", "past_due", "canceling"].includes(planStatus);
-  const canCancelPlan =
-    planData.isProTier === true &&
-    ["active", "past_due"].includes(planStatus) &&
-    !isCanceling;
-  const hasOpenProAccess =
-    planStatus === "active" || isCanceling;
-  const planDescription =
-    isCanceling
-      ? activeUntilText
-      : planData.description ??
-        (planStatus === "active"
-            ? "Pro billing active at $35/month."
-            : "Free prepares one website brief. Upgrade to Pro to search public conversations and review matches.");
   const autoCheckoutAttempted = useRef(false);
+  const { openCheckout } = billing;
 
+  // ?upgrade=pro from a pricing link starts checkout once, for workspaces
+  // without a subscription. The server already drops it for paying ones.
   useEffect(() => {
-    if (
-      !planData.autoStartCheckout ||
-      canOpenPortal ||
-      autoCheckoutAttempted.current
-    ) {
+    if (!planData.autoStartCheckout || plan.canOpenPortal || !canManageBilling || autoCheckoutAttempted.current) {
       return;
     }
-
     autoCheckoutAttempted.current = true;
-    setPendingAction("upgrade");
-    startBillingTransition(async () => {
-      try {
-        const result = await upgradeToProPlan();
-        if (result.url) {
-          window.location.assign(result.url);
-          return;
-        }
-        if (result.status === "already_active") {
-          router.replace("/settings");
-          router.refresh();
-        }
-      } catch (error: any) {
-        toast({
-          title: "Billing Error",
-          description: error?.message || "Unable to start checkout session. Please try again.",
-          variant: "destructive",
-        });
-      } finally {
-        setPendingAction(null);
-      }
-    });
-  }, [canOpenPortal, planData.autoStartCheckout, router, startBillingTransition]);
-  const proFeatures =
-    planData.features ??
-    DEFAULT_PRO_FEATURES.map((feature) => ({
-      ...feature,
-      unlocked: hasOpenProAccess,
-    }));
-  const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
-  const actionLabel =
-    planStatus === "past_due"
-      ? "Update Payment Method"
-      : canOpenPortal
-        ? "Manage Billing"
-        : "Upgrade";
-  const surfaceBorder = `1px solid ${C.rule}`;
-  const surfaceShadow =
-    "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+    openCheckout();
+  }, [canManageBilling, openCheckout, plan.canOpenPortal, planData.autoStartCheckout]);
 
-  // Enforces Rule 2 (Async Enrichment Boundary)
-  const handleManageBilling = () => {
-    setPendingAction(canOpenPortal ? "manage" : "upgrade");
-    startBillingTransition(async () => {
-      try {
-        // Route Dodo-linked Pro workspaces to the portal, others to checkout.
-        const result = canOpenPortal
-          ? await manageBillingPortal()
-          : await upgradeToProPlan();
-
-        if (result.url) {
-          window.location.assign(result.url);
-          return;
-        }
-
-        if (result.status === "already_active") {
-          toast({
-            title: "Subscription Active",
-            description: "Your workspace is already upgraded to Pro.",
-          });
-          router.refresh();
-          return;
-        }
-      } catch (error: any) {
-        const message = error?.message || "Could not initiate billing session.";
-
-        // Graceful handling if the backend catches a duplicate checkout attempt
-        if (message.includes("already has an active subscription")) {
-          toast({
-            title: "Subscription Active",
-            description: "Your workspace is already upgraded to Pro.",
-          });
-          return;
-        }
-
-        toast({
-          title: "Billing Error",
-          description: message,
-          variant: "destructive",
-        });
-      } finally {
-        setPendingAction(null);
-      }
-    });
-  };
-
-  const confirmCancelPlan = () => {
-    setPendingAction("cancel");
-    startBillingTransition(async () => {
-      try {
-        const result = await cancelProPlan();
-        const accessEnd = formatBillingDate(result.currentPeriodEnd);
-
-        toast({
-          title: result.status === "already_canceled" ? "Cancellation Already Scheduled" : "Plan Cancellation Scheduled",
-          description: accessEnd
-            ? `Your Pro access remains available through ${accessEnd}.`
-            : "Your Pro access remains open until the current billing period ends.",
-        });
-
-        setIsCancelDialogOpen(false);
-        router.refresh();
-      } catch (error: any) {
-        toast({
-          title: "Cancellation Failed",
-          description: error?.message || "Could not cancel your plan. Please try again.",
-          variant: "destructive",
-        });
-      } finally {
-        setPendingAction(null);
-      }
-    });
-  };
-
-  const handleResumeSubscription = () => {
-    setPendingAction("resume");
-    startBillingTransition(async () => {
-      try {
-        const result = await resumeSubscription();
-
-        toast({
-          title: result.status === "already_resumed" ? "Subscription Active" : "Subscription Resumed",
-          description: "Your Pro subscription will continue without interruption.",
-        });
-        router.refresh();
-      } catch (error: any) {
-        toast({
-          title: "Could Not Resume Subscription",
-          description: error?.message || "Please try again.",
-          variant: "destructive",
-        });
-      } finally {
-        setPendingAction(null);
-      }
-    });
-  };
+  const showsUpgrade = plan.state === "free" || plan.state === "ended";
+  const features = planData.features ?? DEFAULT_PRO_FEATURES;
+  const pageError = billing.error && billing.error.action !== "cancel" ? billing.error : null;
+  const cancelError = billing.error?.action === "cancel" ? billing.error : null;
 
   return (
-    <section
-      style={{
-        background: C.white,
-        borderRadius: 12,
-        border: surfaceBorder,
-        boxShadow: surfaceShadow,
-        overflow: "hidden",
-        padding: 0,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: `1px solid ${C.rule}`,
-          padding: 16,
-          backgroundColor: C.offWhite,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <CreditCard size={16} color={C.blue} />
-          <div style={{ minWidth: 0 }}>
-            <h2
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                color: C.navySoft,
-                margin: 0,
-              }}
-            >
-              Plan & Billing
-            </h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-              <span
-                style={{
-                  color: C.navy,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {planData.workspaceName ?? "Workspace"}
-              </span>
-              {planData.entitlements ? (
-                <WorkspacePlanBadge entitlements={planData.entitlements} />
-              ) : null}
-            </div>
+    <SettingsSection id="billing" title="Plan and billing" description="This workspace's plan and payments.">
+      <div className="flex flex-col gap-4 px-4 py-4 md:flex-row md:items-start md:justify-between md:px-5">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-lg leading-7 font-semibold text-foreground">{plan.name}</p>
+            {plan.badge ? <StatusBadge tone={plan.badge.tone}>{plan.badge.label}</StatusBadge> : null}
           </div>
+          <p className="mt-1 max-w-[56ch] text-sm leading-6 text-muted-foreground">{plan.summary}</p>
+          {canManageBilling ? null : (
+            <p className="mt-1 text-sm leading-6 text-subtle">Only workspace owners and admins can change billing.</p>
+          )}
         </div>
+
+        {canManageBilling ? (
+          <BillingControls
+            plan={plan}
+            billing={billing}
+            showsUpgrade={showsUpgrade}
+            checkoutConfirming={checkoutConfirming}
+            onEndSubscription={() => {
+              billing.clearError();
+              setIsCancelDialogOpen(true);
+            }}
+          />
+        ) : null}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 16,
-          flexWrap: "wrap",
-          padding: 16,
-          backgroundColor: C.blueTint,
+      {pageError ? (
+        <p role="alert" className="px-4 py-3 text-sm leading-6 text-danger md:px-5">
+          {pageError.message}
+        </p>
+      ) : null}
+
+      {showsUpgrade ? (
+        <div className="px-4 py-4 md:px-5">
+          <h3 className="text-sm leading-6 font-semibold text-foreground">What Pro adds</h3>
+          <ul className="mt-2 grid gap-2.5">
+            {features.map((feature) => (
+              <li key={feature.label} className="flex items-start gap-2.5">
+                <Check className="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
+                <p className="text-sm leading-6 text-muted-foreground">
+                  <span className="font-medium text-foreground">{feature.label}.</span> {feature.description}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <AlertDialog
+        open={isCancelDialogOpen}
+        onOpenChange={(open) => {
+          // Keep the dialog up while the request runs so its outcome stays in view.
+          if (!billing.isPending) setIsCancelDialogOpen(open);
         }}
       >
-        <div style={{ minWidth: 220, flex: "1 1 260px" }}>
-          <div
-            style={{
-              fontSize: 10,
-              color: C.blue,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              marginBottom: 4,
-            }}
-          >
-            Your plan
-          </div>
-          <div className="pfd" style={{ fontSize: 22, lineHeight: 1, color: C.navy }}>
-            {planName}
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-            {planDescription}
-          </div>
-          <div style={{ fontSize: 13, color: C.blue, marginTop: 8, fontWeight: 700 }}>
-            {priceText}
-          </div>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            onClick={handleManageBilling}
-            disabled={isBillingPending}
-            style={{
-              height: 34,
-              padding: "0 14px",
-              background: canOpenPortal ? C.white : C.blue,
-              color: canOpenPortal ? C.navy : C.white,
-              border: `1px solid ${canOpenPortal ? C.ruleDark : C.blue}`,
-              borderRadius: 7,
-              fontSize: 12,
-              fontWeight: 700,
-              boxShadow: canOpenPortal ? "none" : "0 4px 10px rgba(27,110,191,0.2)",
-              cursor: isBillingPending ? "not-allowed" : "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {isBillingPending && pendingAction === (canOpenPortal ? "manage" : "upgrade") ? (
-              <>
-                <Spinner className="size-3" /> {canOpenPortal ? "Opening..." : "Upgrading..."}
-              </>
-            ) : (
-              actionLabel
-            )}
-          </button>
-
-          {canCancelPlan && (
-            <button
-              type="button"
-              onClick={() => setIsCancelDialogOpen(true)}
-              disabled={isBillingPending}
-              style={{
-                height: 28,
-                padding: "0 12px",
-                background: "#FFF7ED",
-                color: "#B45309",
-                border: "1px solid #FED7AA",
-                borderRadius: 6,
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: isBillingPending ? "not-allowed" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {isBillingPending && pendingAction === "cancel" ? (
-                <>
-                  <Spinner className="size-3" /> Canceling...
-                </>
-              ) : (
-                <>
-                  <XCircle size={12} /> End subscription
-                </>
-              )}
-            </button>
-          )}
-
-          {isCanceling && (
-            <button
-              type="button"
-              onClick={handleResumeSubscription}
-              disabled={isBillingPending}
-              style={{
-                height: 28,
-                display: "inline-flex",
-                alignItems: "center",
-                color: C.white,
-                background: C.blue,
-                border: `1px solid ${C.blue}`,
-                borderRadius: 6,
-                padding: "0 12px",
-                fontSize: 11,
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-                cursor: isBillingPending ? "not-allowed" : "pointer",
-                gap: 6,
-              }}
-            >
-              {isBillingPending && pendingAction === "resume" ? (
-                <>
-                  <Spinner className="size-3" /> Resuming...
-                </>
-              ) : (
-                "Resume Subscription"
-              )}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {(formattedPeriodEnd || formattedTrialEnd) && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 1,
-            borderTop: `1px solid ${C.rule}`,
-            borderBottom: `1px solid ${C.rule}`,
-            background: C.rule,
-          }}
-        >
-          {formattedPeriodEnd && (
-            <div style={{ background: C.white, padding: "13px 16px" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  color: C.navySoft,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                }}
-              >
-                <CalendarDays size={13} />
-                {isCanceling
-                  ? "Pro access ends"
-                  : planStatus === "past_due"
-                    ? "Payment was due"
-                    : planData.isTrialing
-                      ? "Free trial ends"
-                      : "Next billing date"}
-              </div>
-              <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
-                {formattedPeriodEnd}
-              </div>
-              <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>
-                {isCanceling
-                  ? "No further payments are scheduled."
-                  : planStatus === "past_due"
-                    ? "Update your payment method to restore Pro."
-                    : nextChargeText ?? "Your subscription renews on this date."}
-              </div>
-            </div>
-          )}
-          {formattedTrialEnd && !formattedPeriodEnd && (
-            <div style={{ background: C.white, padding: "13px 16px" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  color: C.navySoft,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                }}
-              >
-                <CalendarDays size={13} /> Trial ends
-              </div>
-              <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
-                {formattedTrialEnd}
-              </div>
-              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
-                Upgrade before this date to continue with Pro.
-              </div>
-            </div>
-          )}
-          {planData.isProTier && (
-            <div style={{ background: C.white, padding: "13px 16px" }}>
-              <div
-                style={{
-                  color: C.navySoft,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Billing cycle
-              </div>
-              <div style={{ color: C.navy, fontSize: 14, fontWeight: 700, marginTop: 5 }}>
-                Monthly
-              </div>
-              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
-                {priceText} • billed in USD
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {isCanceling && (
-        <div
-          style={{
-            margin: "14px 16px 0",
-            padding: "12px 13px",
-            background: "#FFF7ED",
-            border: "1px solid #FED7AA",
-            borderRadius: 8,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 9,
-          }}
-        >
-          <XCircle size={16} color="#B45309" style={{ flex: "0 0 auto", marginTop: 1 }} />
-          <div>
-            <div style={{ color: "#92400E", fontSize: 12, fontWeight: 700 }}>
-              Cancellation scheduled
-            </div>
-            <div style={{ color: "#9A5B16", fontSize: 11, lineHeight: 1.45, marginTop: 2 }}>
-              {formattedPeriodEnd
-                ? `Your Pro features remain available through ${formattedPeriodEnd}.`
-                : "Your Pro features remain available until the end of the current billing period."}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div
-          style={{
-            borderTop: `1px solid ${C.rule}`,
-            padding: "14px 16px 16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.navy }}>
-              Pro feature access
-            </div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-              {unlockedFeatureCount} of {proFeatures.length} workspace features unlocked
-            </div>
-          </div>
-          <span
-            style={{
-              alignSelf: "flex-start",
-              fontSize: 11,
-              fontWeight: 700,
-              color: hasOpenProAccess ? C.green : C.navySoft,
-              background: hasOpenProAccess ? C.greenPale : C.offWhite,
-              border: `1px solid ${hasOpenProAccess ? "rgba(16,185,129,0.2)" : C.rule}`,
-              padding: "2px 8px",
-              borderRadius: 12,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {hasOpenProAccess ? "Unlocked" : "Locked"}
-          </span>
-        </div>
-
-        <div style={{ display: "grid", gap: 8 }}>
-          {proFeatures.map((feature) => (
-            <div
-              key={feature.label}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "16px minmax(0, 1fr) auto",
-                alignItems: "start",
-                gap: 8,
-                padding: "8px 0",
-              }}
-            >
-              {feature.unlocked ? (
-                <CheckCircle2 size={14} color={C.green} style={{ marginTop: 1 }} />
-              ) : (
-                <LockKeyhole size={14} color={C.faint} style={{ marginTop: 1 }} />
-              )}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: C.navy }}>
-                  {feature.label}
-                </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 1, lineHeight: 1.35 }}>
-                  {feature.description}
-                </div>
-              </div>
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: feature.unlocked ? C.green : C.faint,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                  paddingTop: 1,
-                }}
-              >
-                {feature.unlocked ? "Open" : "Pro"}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <AlertDialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>End your Pro subscription?</AlertDialogTitle>
             <AlertDialogDescription>
-              {formattedPeriodEnd
-                ? `Your subscription will not renew, and Pro features stay available through ${formattedPeriodEnd}.`
-                : "Your subscription will not renew, and Pro features stay available until the end of the current billing period."}
+              {plan.periodEnd
+                ? `It won't renew. Pro stays available until ${plan.periodEnd}, and you can resume it any time before then.`
+                : "It won't renew. Pro stays available until the end of this billing period, and you can resume it any time before then."}{" "}
+              Your prospects and workspace data are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div
-            style={{
-              padding: 12,
-              background: "#FFF7ED",
-              border: "1px solid #FED7AA",
-              borderRadius: 8,
-              color: "#92400E",
-              fontSize: 12,
-              lineHeight: 1.45,
-            }}
-          >
-            You will keep your saved leads and workspace data. You can resume the plan before the end date to avoid losing Pro access.
-          </div>
+          {cancelError ? (
+            <p role="alert" className="rounded-md border border-danger/25 bg-danger-pale px-3 py-2 text-sm leading-6 text-danger">
+              {cancelError.message}
+            </p>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isBillingPending}>Keep Pro</AlertDialogCancel>
-            <button
+            <AlertDialogCancel disabled={billing.isPending}>Keep Pro</AlertDialogCancel>
+            <Button
               type="button"
-              onClick={confirmCancelPlan}
-              disabled={isBillingPending}
-              style={{
-                minHeight: 36,
-                padding: "0 14px",
-                color: C.white,
-                background: "#B45309",
-                border: "1px solid #B45309",
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: isBillingPending ? "not-allowed" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-              }}
+              variant="destructive"
+              disabled={billing.isPending}
+              onClick={() => billing.cancelSubscription(() => setIsCancelDialogOpen(false))}
             >
-              {isBillingPending && pendingAction === "cancel" ? (
+              {billing.pendingAction === "cancel" ? (
                 <>
-                  <Spinner className="size-3" /> Scheduling...
+                  <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" /> Ending subscription…
                 </>
               ) : (
                 "End subscription"
               )}
-            </button>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </SettingsSection>
+  );
+}
+
+type BillingControlsProps = {
+  plan: BillingPlanView;
+  billing: ReturnType<typeof useBillingActions>;
+  showsUpgrade: boolean;
+  checkoutConfirming: boolean;
+  onEndSubscription: () => void;
+};
+
+/** The plan's actions: one primary per state, the rest quieter. */
+function BillingControls({ plan, billing, showsUpgrade, checkoutConfirming, onEndSubscription }: BillingControlsProps) {
+  const { isPending, pendingAction } = billing;
+
+  if (showsUpgrade) {
+    if (checkoutConfirming) {
+      return <StatusBadge tone="progress">Confirming your payment</StatusBadge>;
+    }
+    return (
+      <div className="flex flex-col items-start gap-2 md:max-w-[20rem] md:shrink-0 md:items-end md:text-right">
+        <Button type="button" onClick={billing.openCheckout} disabled={isPending}>
+          {pendingAction === "upgrade" ? <PendingLabel>Opening checkout…</PendingLabel> : "Upgrade to Pro"}
+        </Button>
+        <p className="text-xs leading-5 text-subtle">{PRO_PRICE_NOTE}</p>
+      </div>
+    );
+  }
+
+  const opensPortalAsPrimary = plan.state === "past_due";
+  const portalLabel = opensPortalAsPrimary ? "Update payment method" : "Manage billing";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 md:shrink-0 md:justify-end">
+      {plan.state === "canceling" ? (
+        <Button type="button" onClick={billing.resume} disabled={isPending}>
+          {pendingAction === "resume" ? <PendingLabel>Resuming…</PendingLabel> : "Resume subscription"}
+        </Button>
+      ) : null}
+      {plan.canOpenPortal ? (
+        <Button
+          type="button"
+          variant={opensPortalAsPrimary ? "default" : "outline"}
+          onClick={billing.openPortal}
+          disabled={isPending}
+        >
+          {pendingAction === "manage" ? <PendingLabel>Opening billing…</PendingLabel> : portalLabel}
+        </Button>
+      ) : null}
+      {plan.canCancel ? (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onEndSubscription}
+          disabled={isPending}
+          className="text-muted-foreground hover:text-danger"
+        >
+          End subscription
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function PendingLabel({ children }: { children: string }) {
+  return (
+    <>
+      <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" /> {children}
+    </>
   );
 }

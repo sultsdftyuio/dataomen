@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Crosshair } from "lucide-react";
+import { FileCheck2 } from "lucide-react";
 
-import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
+import { EmptyState } from "@/components/dashboard/EmptyState";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EntityResearchControls } from "@/components/prospects/entity-research-controls";
 import { ManualTargetForm } from "@/components/prospects/manual-target-form";
 import { TargetDesk } from "@/components/prospects/target-desk";
+import { ADD_TARGET_INPUT_ID } from "@/components/prospects/target-presentation";
+import { Button } from "@/components/ui/button";
 import {
   createProspectOpportunity,
   qualifyProspectOpportunity,
@@ -43,6 +47,10 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+const BRIEF_HREF = "/dashboard/brief";
+const PAGE_TITLE = "Targets";
+const PAGE_DESCRIPTION = "Accounts that fit your targeting brief, and the public evidence for each.";
 export const revalidate = 0;
 
 export default async function TargetsPage() {
@@ -112,21 +120,44 @@ export default async function TargetsPage() {
   }));
   const createTarget = createManualProspectTarget.bind(null, serviceProfile.id);
 
+  // Every target is assessed against the saved target universe (the
+  // targeting_profiles row, shown as "Target universe" on the brief page), so
+  // without one the page has a single job: send the person to set it up.
+  if (!targetingBrief.hasBrief) {
+    return (
+      <div className="arc-workspace-page arc-workspace-page--targets">
+        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
+        <EmptyState
+          variant="never-used"
+          icon={FileCheck2}
+          title="Set up your target universe to start adding targets"
+          description="Arcli checks every target against the target universe in your targeting brief: the kinds of accounts worth researching. Save it once, then add accounts here."
+          action={
+            <Button asChild>
+              <Link href={`${BRIEF_HREF}#target-universe`}>Set up target universe</Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="arc-workspace-page arc-workspace-page--targets">
-      <DashboardPageIntro
-        eyebrow="Research"
-        title="Accounts to research."
-        description="Add an account you have in mind and Arcli checks whether it fits your brief."
-        icon={Crosshair}
+      <PageHeader
+        title={PAGE_TITLE}
+        description={PAGE_DESCRIPTION}
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href={BRIEF_HREF}>Edit targeting brief</Link>
+          </Button>
+        }
       />
 
-      {targetingBrief.hasBrief ? (
-        <ManualTargetForm
-          allowedTargetTypes={targetingBrief.targetTypes}
-          onCreate={createTarget}
-        />
-      ) : null}
+      <ManualTargetForm
+        allowedTargetTypes={targetingBrief.targetTypes}
+        onCreate={createTarget}
+      />
 
       {entityResearchEnabled ? (
         <EntityResearchControls
@@ -148,7 +179,8 @@ export default async function TargetsPage() {
 
       <TargetDesk
         targets={targetsWithWorkflowState}
-        targetBriefHref="/dashboard/brief"
+        targetBriefHref={BRIEF_HREF}
+        addTargetInputId={ADD_TARGET_INPUT_ID}
         onReviewEvidence={reviewProspectEvidence}
         onTargetFeedback={submitProspectTargetFeedback}
         onTargetMonitoring={

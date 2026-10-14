@@ -1,70 +1,42 @@
 "use client";
 
 import type { KeyboardEvent, ReactNode } from "react";
-import { Check, Github, Globe2, MessageSquareText, ShieldAlert, type LucideIcon } from "lucide-react";
+import { Github, Globe2, MessageSquareText } from "lucide-react";
 
 import type { QualifiedLeadView } from "@/app/(dashboard)/dashboard/prospect-types";
-import { isPotentialBuyer, isScreenedMatch } from "@/app/(dashboard)/dashboard/lead-queue-filter";
-import { C } from "@/lib/tokens";
+import { isScreenedMatch } from "@/app/(dashboard)/dashboard/lead-queue-filter";
+import { LeadStatusBadge, leadIntent } from "@/components/prospects/lead-status";
 import { cn } from "@/lib/utils";
 
 export type DetailTab = "reply" | "match" | "evidence";
 export const DETAIL_TABS: readonly DetailTab[] = ["reply", "match", "evidence"];
 
-export function sourceDisplayName(source: string) {
-  const names: Record<string, string> = {
-    hn: "Hacker News",
-    hackernews: "Hacker News",
-    hacker_news: "Hacker News",
-    reddit: "Reddit",
-    lemmy: "Lemmy",
-    github: "GitHub",
-    stackexchange: "Stack Exchange",
-    stack_exchange: "Stack Exchange",
-    stackoverflow: "Stack Overflow",
-    stack_overflow: "Stack Overflow",
-    bluesky: "Bluesky",
-    x: "Public conversation",
-  };
-  const normalized = source.trim().toLowerCase();
-  return names[normalized] ?? source.replace(/[_-]+/g, " ");
-}
-
-type SourcePresentation = {
-  label: string;
-  Icon: LucideIcon;
-  background: string;
-  color: string;
+const SOURCE_NAMES: Record<string, string> = {
+  hn: "Hacker News",
+  hackernews: "Hacker News",
+  hacker_news: "Hacker News",
+  reddit: "Reddit",
+  lemmy: "Lemmy",
+  github: "GitHub",
+  stackexchange: "Stack Exchange",
+  stack_exchange: "Stack Exchange",
+  stackoverflow: "Stack Overflow",
+  stack_overflow: "Stack Overflow",
+  bluesky: "Bluesky",
+  x: "Public conversation",
 };
 
-function sourcePresentation(source: string): SourcePresentation {
+export function sourceDisplayName(source: string) {
+  return SOURCE_NAMES[source.trim().toLowerCase()] ?? source.replace(/[_-]+/g, " ");
+}
+
+// Sources are told apart by name and icon shape, not colour: per-source brand
+// hues read like warning and error badges next to the status column.
+function SourceIcon({ source, className }: { source: string; className: string }) {
   const normalized = source.trim().toLowerCase();
-
-  if (normalized === "github") {
-    return { label: "GitHub", Icon: Github, background: "#EEF2F6", color: "#24292F" };
-  }
-
-  if (["hn", "hackernews", "hacker_news"].includes(normalized)) {
-    return { label: "Hacker News", Icon: MessageSquareText, background: "#FFF3E8", color: "#C2410C" };
-  }
-
-  if (normalized === "reddit") {
-    return { label: "Reddit", Icon: MessageSquareText, background: "#FFF1ED", color: "#D94716" };
-  }
-
-  if (["stackexchange", "stack_exchange", "stackoverflow", "stack_overflow"].includes(normalized)) {
-    return { label: sourceDisplayName(source), Icon: MessageSquareText, background: C.bluePale, color: C.blue };
-  }
-
-  if (normalized === "bluesky") {
-    return { label: "Bluesky", Icon: MessageSquareText, background: "#EAF6FF", color: "#0284C7" };
-  }
-
-  if (normalized === "lemmy") {
-    return { label: "Lemmy", Icon: MessageSquareText, background: "#EDF9F1", color: C.green };
-  }
-
-  return { label: sourceDisplayName(source), Icon: Globe2, background: C.offWhite, color: C.navySoft };
+  if (normalized === "github") return <Github className={className} aria-hidden="true" />;
+  if (normalized in SOURCE_NAMES) return <MessageSquareText className={className} aria-hidden="true" />;
+  return <Globe2 className={className} aria-hidden="true" />;
 }
 
 export function SourcePlatformMark({
@@ -74,30 +46,28 @@ export function SourcePlatformMark({
   source: string;
   size?: "row" | "detail";
 }) {
-  const { label, Icon, background, color } = sourcePresentation(source);
-  const dimensions = size === "detail" ? "size-10 rounded-lg" : "size-7 rounded-md";
-  const iconSize = size === "detail" ? "size-5" : "size-3.5";
+  const label = sourceDisplayName(source);
 
   return (
     <span
-      className={cn("flex shrink-0 items-center justify-center", dimensions)}
+      className={cn(
+        "flex shrink-0 items-center justify-center bg-off-white text-navy-soft ring-1 ring-inset ring-border",
+        size === "detail" ? "size-10 rounded-lg" : "size-7 rounded-md",
+      )}
       title={label}
       role="img"
       aria-label={label}
-      style={{ backgroundColor: background, color }}
     >
-      <Icon className={iconSize} aria-hidden="true" />
+      <SourceIcon source={source} className={size === "detail" ? "size-5" : "size-3.5"} />
     </span>
   );
 }
 
 export function SourcePlatformBadge({ source }: { source: string }) {
-  const { label, Icon, background, color } = sourcePresentation(source);
-
   return (
-    <span title={label} className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: background, color }}>
-      <Icon className="size-3" aria-hidden="true" />
-      {label}
+    <span className="inline-flex shrink-0 items-center gap-1 font-medium text-navy-soft">
+      <SourceIcon source={source} className="size-3.5" />
+      {sourceDisplayName(source)}
     </span>
   );
 }
@@ -134,69 +104,16 @@ export function exactDateTime(value: string | null) {
   }).format(new Date(timestamp));
 }
 
-export function leadStatus(lead: QualifiedLeadView) {
-  if (isScreenedMatch(lead)) {
-    return {
-      label: "Screened out",
-      description: "Automated review didn't find a close enough fit.",
-      color: C.muted,
-      background: C.offWhite,
-    };
-  }
-  if (lead.matchStatus === "qualified") {
-    return {
-      label: "Qualified",
-      description: "You marked this opportunity qualified.",
-      color: C.green,
-      background: C.greenPale,
-    };
-  }
-  if (lead.intentTier === "high") {
-    return {
-      label: "High intent",
-      description: "A direct request or active evaluation. Review first.",
-      color: C.green,
-      background: C.greenPale,
-    };
-  }
-  if (lead.intentTier === "warm") {
-    return {
-      label: "Warm",
-      description: "Relevant frustration or workflow pain.",
-      color: C.amber,
-      background: C.amberPale,
-    };
-  }
-  if (lead.intentTier === "exploratory") {
-    return {
-      label: "Exploratory",
-      description: "A related discussion, useful for research or later outreach.",
-      color: C.blue,
-      background: C.bluePale,
-    };
-  }
-  if (isPotentialBuyer(lead)) {
-    return {
-      label: "Maybe",
-      description: "Plausible, but not verified. Check the evidence first.",
-      color: C.amber,
-      background: C.amberPale,
-    };
-  }
-  return {
-    label: "Lead",
-    description: "A clear, verified buyer problem. Not a confirmed customer.",
-    color: C.blue,
-    background: C.bluePale,
-  };
-}
-
 export function signalLabel(lead: QualifiedLeadView) {
-  return lead.painTheme ?? lead.painDetected ?? "Buyer signal";
+  return lead.painTheme ?? lead.painDetected ?? "Buyer problem";
 }
 
 export function evidencePreview(lead: QualifiedLeadView) {
   return lead.evidenceExcerpt ?? lead.sourcePost.text ?? lead.matchReason;
+}
+
+export function leadTitle(lead: QualifiedLeadView) {
+  return lead.sourcePost.title || lead.sourcePost.author || sourceDisplayName(lead.sourcePost.source);
 }
 
 export function metricValue(value: number) {
@@ -209,70 +126,6 @@ export function freshnessLabel(lastUpdatedAt: Date | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(lastUpdatedAt)}`;
-}
-
-export function Metric({
-  label,
-  value,
-  detail,
-  icon,
-  tone = "default",
-  active = false,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  icon: ReactNode;
-  tone?: "default" | "quiet";
-  active?: boolean;
-  onClick: () => void;
-}) {
-  const isQuiet = tone === "quiet";
-
-  return (
-    <button type="button" onClick={onClick} aria-pressed={active} className="flex min-h-14 w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-[#F2F8FD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF] sm:px-4" style={{ backgroundColor: active ? C.blueTint : isQuiet ? C.offWhite : C.white }}>
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: isQuiet ? C.white : C.blueTint, color: isQuiet ? C.muted : C.blue }} aria-hidden="true">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <p className="text-lg font-semibold leading-none tracking-tight" style={{ color: isQuiet ? C.navySoft : C.navy }}>{value}</p>
-          <p className="truncate text-[11px] font-semibold" style={{ color: C.muted }}>{label}</p>
-        </div>
-        {detail ? <p className="mt-0.5 text-[10px]" style={{ color: C.muted }}>{detail}</p> : null}
-      </div>
-    </button>
-  );
-}
-
-export function LeadControlSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <label className="flex h-9 min-w-0 items-center rounded-md border bg-white focus-within:ring-2 focus-within:ring-[#1B6EBF] focus-within:ring-offset-1" style={{ borderColor: C.ruleDark }}>
-      <span className="shrink-0 border-r px-2 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ borderColor: C.rule, color: C.muted }}>
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label={label}
-        className="h-full min-w-0 flex-1 bg-transparent px-2 text-[11px] font-semibold outline-none"
-        style={{ color: C.navy }}
-      >
-        {children}
-      </select>
-    </label>
-  );
 }
 
 export function DetailTabButton({
@@ -298,20 +151,37 @@ export function DetailTabButton({
       tabIndex={active ? 0 : -1}
       onClick={onClick}
       onKeyDown={(event) => onKeyDown(event, tab)}
-      className="-mb-px border-b-2 px-0.5 pb-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
-      style={{ borderColor: active ? C.blue : "transparent", color: active ? C.blue : C.muted }}
+      className={cn(
+        "-mb-px min-h-10 border-b-2 px-0.5 text-sm font-medium transition-colors focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-9",
+        active
+          ? "border-primary text-primary"
+          : "border-transparent text-muted-foreground hover:text-foreground",
+      )}
     >
       {children}
     </button>
   );
 }
 
-export function SignalPoint({ children }: { children: ReactNode }) {
+/** Labelled match facts. Neutral markers: these explain a match, they are not successes. */
+export function MatchDetails({ lead }: { lead: QualifiedLeadView }) {
+  const rows: Array<[string, string]> = [["Topic", signalLabel(lead)]];
+  if (lead.urgencyReason) rows.push(["Timing", lead.urgencyReason]);
+  if (lead.purchaseStage) rows.push(["Buying stage", lead.purchaseStage.replace(/_/g, " ")]);
+  if (lead.competitorMention) rows.push(["Also mentioned", lead.competitorMention]);
+
   return (
-    <li className="flex gap-2">
-      <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: C.green }} aria-hidden="true" />
-      <span>{children}</span>
-    </li>
+    <div className="space-y-3">
+      <p className="text-sm leading-6 text-navy-soft">{lead.matchReason}</p>
+      <dl className="grid gap-x-4 gap-y-1.5 text-sm leading-6 sm:grid-cols-[max-content_minmax(0,1fr)]">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-subtle">{label}</dt>
+            <dd className="mb-1 text-foreground first-letter:uppercase sm:mb-0">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -324,9 +194,9 @@ export function LeadRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const status = leadStatus(lead);
-  const title = lead.sourcePost.title || lead.sourcePost.author || sourceDisplayName(lead.sourcePost.source);
-  const source = sourcePresentation(lead.sourcePost.source);
+  const title = leadTitle(lead);
+  const intent = leadIntent(lead);
+  const postedAt = lead.sourcePost.publishedAt ?? lead.matchedAt;
 
   return (
     <button
@@ -334,62 +204,67 @@ export function LeadRow({
       data-lead-id={lead.id}
       onClick={onSelect}
       aria-pressed={selected}
-      className="w-full border-l-[3px] px-4 py-3 text-left transition hover:bg-[#F6FAFE] focus-visible:outline-none focus-visible:ring-2 sm:px-5"
-      style={{ backgroundColor: selected ? C.blueTint : C.white, borderLeftColor: selected ? C.blue : "transparent", outlineColor: C.blueLight }}
+      className={cn(
+        "block w-full border-l-[3px] px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:px-5",
+        selected ? "border-l-primary bg-blue-tint" : "border-l-transparent bg-card hover:bg-off-white",
+      )}
     >
-      <span className="flex min-w-0 items-start gap-2.5">
+      <span className="flex min-w-0 items-start gap-3">
         <SourcePlatformMark source={lead.sourcePost.source} />
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-semibold">
-            <span title={source.label} style={{ color: source.color }}>{source.label}</span>
-            <span title={exactDateTime(lead.sourcePost.publishedAt ?? lead.matchedAt)} style={{ color: C.muted }}>
-              {relativeTime(lead.sourcePost.publishedAt ?? lead.matchedAt)}
+          <span className="flex min-w-0 items-center gap-2 text-xs text-subtle">
+            <span className="shrink-0 font-medium text-navy-soft">{sourceDisplayName(lead.sourcePost.source)}</span>
+            {lead.sourcePost.community ? <span className="truncate">{lead.sourcePost.community}</span> : null}
+            <span className="shrink-0 tabular-nums" title={exactDateTime(postedAt)}>{relativeTime(postedAt)}</span>
+          </span>
+          <span className="mt-0.5 line-clamp-2 text-sm font-semibold leading-5 text-foreground" title={title}>
+            {title}
+          </span>
+          <span className="mt-1 line-clamp-1 text-[13px] leading-5 text-muted-foreground">
+            {evidencePreview(lead)}
+          </span>
+          <span className="mt-1.5 flex min-w-0 items-center gap-3 text-xs text-subtle">
+            {/* The title already carries the topic on narrow screens. */}
+            <span className="hidden min-w-0 truncate sm:block">{signalLabel(lead)}</span>
+            {intent ? (
+              <span
+                className={cn("shrink-0", intent.strong && "font-medium text-foreground")}
+                title={intent.description}
+              >
+                {intent.label}
+              </span>
+            ) : null}
+            <span className="shrink-0 tabular-nums" title="Match measures relevance to your brief, not purchase likelihood.">
+              Match {formatScore(lead.verifierScore)}
             </span>
           </span>
-          <span className="mt-0.5 block line-clamp-2 text-sm font-semibold leading-5" title={title} style={{ color: C.navy }}>{title}</span>
         </span>
-        <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold" title={status.description} style={{ backgroundColor: status.background, color: status.color }}>{status.label}</span>
-      </span>
-      <span className="mt-1.5 block line-clamp-1 text-xs leading-5" title={evidencePreview(lead)} style={{ color: C.navySoft }}>
-        {evidencePreview(lead)}
-      </span>
-      <span className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: C.muted }}>
-        <span className="max-w-full truncate rounded-full px-2 py-0.5 font-semibold" style={{ backgroundColor: C.bluePale, color: C.blue }}>{signalLabel(lead)}</span>
-        <span title="Match strength measures relevance, not purchase likelihood.">Match {formatScore(lead.verifierScore)}</span>
+        <LeadStatusBadge lead={lead} size="compact" />
       </span>
     </button>
   );
 }
 
 export function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
-  return (
-    <section className="overflow-hidden rounded-xl border" aria-label="Verification review" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite }}>
-      <div className="flex gap-2.5 px-3 py-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.muted }}>
-          <ShieldAlert className="size-4" aria-hidden="true" />
-        </span>
-        <div>
-          <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Screened out</h3>
-          <p className="mt-0.5 text-xs leading-5" style={{ color: C.navySoft }}>Not a close enough fit. Kept for inspection and feedback.</p>
-        </div>
-      </div>
+  if (!isScreenedMatch(lead)) return null;
 
-      <dl className="grid grid-cols-2 divide-x border-t" style={{ borderColor: C.ruleDark }}>
-        <VerificationMetric
-          label="Similarity"
-          value={lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
-        />
-        <VerificationMetric label="Match strength" value={formatScore(lead.verifierScore)} />
+  return (
+    <section aria-label="Screening result" className="rounded-md bg-off-white px-3 py-2.5 ring-1 ring-inset ring-border">
+      <p className="text-sm leading-6 text-navy-soft">
+        Not a close enough fit. Kept here so you can check the decision and give feedback.
+      </p>
+      <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <div className="flex gap-1.5">
+          <dt className="text-subtle">Similarity</dt>
+          <dd className="font-medium tabular-nums text-foreground">
+            {lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
+          </dd>
+        </div>
+        <div className="flex gap-1.5">
+          <dt className="text-subtle">Match</dt>
+          <dd className="font-medium tabular-nums text-foreground">{formatScore(lead.verifierScore)}</dd>
+        </div>
       </dl>
     </section>
-  );
-}
-
-function VerificationMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 px-2.5 py-2.5 first:pl-3 last:pr-3">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{label}</dt>
-      <dd className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>{value}</dd>
-    </div>
   );
 }

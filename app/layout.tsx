@@ -21,11 +21,10 @@ const playfair = localFont({
   display: 'swap',
 });
 
-// Explicitly export Viewport to resolve the Lighthouse tag warning in Next.js 14+
+// No maximumScale/userScalable: people must be able to pinch-zoom (WCAG 1.4.4).
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
 }
 
 export const metadata: Metadata = {

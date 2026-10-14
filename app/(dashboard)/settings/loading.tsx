@@ -1,46 +1,60 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
+import "./settings-client.css";
+
+// Same static blocks as PageSkeleton (no shimmer), arranged like the Settings
+// page: header, section links, then the Profile and Plan and billing panels.
+// PageSkeleton's "form" variant is a single card, which would jump here.
+function Block({ className }: { className?: string }) {
+  return <div className={cn("rounded-md bg-blue-pale", className)} />;
+}
+
+function SectionPlaceholder({ rows, titleWidth }: { rows: number; titleWidth: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card">
+      <div className="space-y-2 px-4 py-4 md:px-5">
+        <Block className={cn("h-5", titleWidth)} />
+        <Block className="h-3.5 w-64 max-w-full" />
+      </div>
+      <div className="divide-y divide-border border-t border-border">
+        {Array.from({ length: rows }).map((_, index) => (
+          <div key={index} className="grid gap-2 px-4 py-4 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-6 md:px-5">
+            <Block className="h-3.5 w-24" />
+            <Block className="h-3.5 w-40 max-w-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsLoading() {
   return (
-    <div className="flex h-full w-full flex-col gap-4 pb-3 animate-in fade-in duration-300">
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-8 w-52" />
-        <Skeleton className="h-4 w-80 max-w-full" />
-      </div>
-
-      <div className="border-t border-slate-200" />
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="rounded-lg border border-slate-200 bg-white">
-          <div className="space-y-2 border-b border-slate-200 p-4">
-            <Skeleton className="h-5 w-36" />
-            <Skeleton className="h-4 w-3/4" />
+    <div role="status" aria-live="polite" className="arc-workspace-page settings-page">
+      <span className="sr-only">Loading settings</span>
+      <div aria-hidden="true" className="contents">
+        <div>
+          <div className="flex h-8 items-center md:h-9">
+            <Block className="h-6 w-32 md:h-7" />
           </div>
-          <div className="p-4">
-            <div className="divide-y rounded-lg border border-slate-200">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="flex gap-3 p-4">
-                  <Skeleton className="size-9 shrink-0 rounded-lg" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-3 w-28" />
-                    <Skeleton className="h-4 w-48 max-w-full" />
-                    <Skeleton className="h-3 w-full" />
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="mt-1 flex h-6 items-center">
+            <Block className="h-3.5 w-full max-w-[26rem]" />
           </div>
-        </section>
+        </div>
 
-        <aside className="space-y-4">
-          <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-8 w-28" />
-            <Skeleton className="h-24 w-full" />
-          </section>
-        </aside>
+        <div className="settings-page__layout">
+          <div className="flex flex-wrap gap-1 md:flex-col md:gap-0.5">
+            {["w-14", "w-24", "w-28", "w-24", "w-16"].map((width, index) => (
+              <div key={index} className="flex h-10 items-center px-3 md:h-9">
+                <Block className={cn("h-3.5", width)} />
+              </div>
+            ))}
+          </div>
+          <div className="settings-page__sections">
+            <SectionPlaceholder rows={4} titleWidth="w-20" />
+            <SectionPlaceholder rows={1} titleWidth="w-32" />
+          </div>
+        </div>
       </div>
     </div>
   );

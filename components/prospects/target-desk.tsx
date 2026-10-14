@@ -1,51 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import {
-  Building2,
-  CircleAlert,
-  CircleCheckBig,
-  ExternalLink,
-  FileSearch,
-  FolderKanban,
-  Link2,
-  MessageSquareText,
-  Sparkles,
-  Target,
-  UserRound,
-  type LucideIcon,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Target } from "lucide-react";
 
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { Button } from "@/components/ui/button";
-import { EvidenceReviewControls } from "@/components/prospects/evidence-review-controls";
-import { TargetFeedbackControls } from "@/components/prospects/target-feedback-controls";
-import { TargetMonitoringControls } from "@/components/prospects/target-monitoring-controls";
-import { TargetOpportunityControls } from "@/components/prospects/target-opportunity-controls";
-import { supportsRetainedPublicTargetMonitoring } from "@/lib/retained-public-monitoring";
-import { normalizeSeedUrl } from "@/lib/targeting-brief";
-import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import type {
-  ProspectTargetEntityKind,
   ProspectTargetView,
   TargetFeedbackSummary,
-  TargetEntityLinkConfidence,
   TargetFeedbackAction,
   TargetEvidenceReviewAction,
-  TargetEvidenceView,
   TargetMonitoringAction,
   TargetOpportunityCreateAction,
   TargetOpportunityQualifyAction,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import { TARGET_DETAIL_HEADING_ID, TargetDetail } from "./target-detail";
+import { TargetList } from "./target-list";
 import {
-  displayedAssessmentReasons,
-  sortTargetEvidence,
   targetAssessmentPresentation,
   targetAssessmentPriority,
-  targetEntityKindLabel,
-  targetEvidencePresentation,
-  targetEvidenceReviewPresentation,
 } from "./target-presentation";
 import "./target-desk.css";
 
@@ -62,287 +37,85 @@ export type TargetDeskProps = {
   onTargetFeedback?: TargetFeedbackAction | null;
   /** Explicit retained-corpus watch control; absent until the worker is deployed. */
   onTargetMonitoring?: TargetMonitoringAction | null;
-  /** Explicit evidence-to-opportunity handoff; absent until its contract is deployed. */
+  /**
+   * Explicit evidence-to-opportunity handoff; absent until its contract is
+   * deployed. TargetDetail renders TargetOpportunityControls only when this
+   * or onQualifyOpportunity is present.
+   */
   onCreateOpportunity?: TargetOpportunityCreateAction | null;
   /** Separate explicit qualification and optional CRM-export handoff. */
   onQualifyOpportunity?: TargetOpportunityQualifyAction | null;
   /** Aggregate workspace outcome counts, never individual reviewer data. */
   feedbackSummary?: readonly TargetFeedbackSummary[];
+  /** Id of the URL field that adds a target, so the empty state can focus it. */
+  addTargetInputId?: string | null;
   className?: string;
 };
 
-type ToneColors = {
-  background: string;
-  color: string;
-  border: string;
-};
-
-const TONE_COLORS: Record<"info" | "warning" | "success" | "muted", ToneColors> = {
-  info: { background: C.bluePale, color: C.blue, border: C.blueLight },
-  warning: { background: C.amberPale, color: C.amber, border: "#F3C96A" },
-  success: { background: C.greenPale, color: C.green, border: "#6EE7B7" },
-  muted: { background: C.offWhite, color: C.muted, border: C.ruleDark },
-};
-
-const ENTITY_KIND_ICON: Record<ProspectTargetEntityKind, LucideIcon> = {
-  account: Building2,
-  builder: UserRound,
-  project: FolderKanban,
-};
-
 const FEEDBACK_SUMMARY_LABEL: Record<TargetFeedbackSummary["feedbackType"], string> = {
-  promote_to_opportunity: "Promoted",
-  target: "Kept targeting",
-  useful_not_now: "Not now",
-  not_relevant: "Not relevant",
-  monitor: "Monitoring",
-  contacted: "Contacted",
-  meeting: "Meetings",
-  won: "Won",
-  lost: "Lost",
+  promote_to_opportunity: "promoted",
+  target: "kept targeting",
+  useful_not_now: "not now",
+  not_relevant: "not relevant",
+  monitor: "monitoring",
+  contacted: "contacted",
+  meeting: "meeting",
+  won: "won",
+  lost: "lost",
 };
 
-function publicHttpUrl(value: string | null): string | null {
-  return value?.trim() ? normalizeSeedUrl(value) || null : null;
-}
-
-function displayDomain(value: string | null): string | null {
-  const safeUrl = publicHttpUrl(value);
-  if (!safeUrl) return null;
-
-  try {
-    return new URL(safeUrl).hostname.replace(/^www\./i, "");
-  } catch {
-    return null;
-  }
-}
-
-function formatObservedAt(value: string | null): string | null {
-  if (!value) return null;
-
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return null;
-
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    // This client component is also rendered during the initial server pass.
-    // A fixed zone avoids a one-day hydration shift near midnight.
-    timeZone: "UTC",
-  }).format(new Date(timestamp));
-}
-
-function linkConfidencePresentation(confidence: TargetEntityLinkConfidence) {
-  switch (confidence) {
-    case "verified":
-      return { label: "Verified link", tone: "success" as const };
-    case "likely":
-      return { label: "Likely link", tone: "warning" as const };
-    case "unverified":
-      return { label: "Unverified link", tone: "muted" as const };
-  }
-}
+// Matches the CSS breakpoint where the list becomes a rail beside the detail.
+const SIDE_BY_SIDE_QUERY = "(min-width: 1180px)";
 
 function targetTimestamp(target: ProspectTargetView): number {
   const timestamp = Date.parse(target.assessedAt ?? "");
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function TargetKindMark({ kind, size = "small" }: { kind: ProspectTargetEntityKind; size?: "small" | "large" }) {
-  const Icon = ENTITY_KIND_ICON[kind];
-  const isLarge = size === "large";
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
+function DeskMetric({ label, value }: { label: string; value: number }) {
   return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-lg",
-        isLarge ? "size-10" : "size-7 rounded-md",
-      )}
-      style={{ backgroundColor: C.blueTint, color: C.blue }}
-      aria-hidden="true"
-    >
-      <Icon className={isLarge ? "size-5" : "size-3.5"} />
-    </span>
+    <div className="min-w-0">
+      <dt className="text-xs text-subtle">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold leading-6 tabular-nums text-foreground">{value}</dd>
+    </div>
   );
 }
 
-function AssessmentBadge({ target }: { target: ProspectTargetView }) {
-  const presentation = targetAssessmentPresentation(target);
-  const colors = TONE_COLORS[presentation.tone];
-
-  return (
-    <span
-      className="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold"
-      title={presentation.description}
-      style={{ backgroundColor: colors.background, borderColor: colors.border, color: colors.color }}
-    >
-      {presentation.requiresEvidenceReview ? (
-        <CircleAlert className="size-3 shrink-0" aria-hidden="true" />
-      ) : presentation.tone === "success" ? (
-        <CircleCheckBig className="size-3 shrink-0" aria-hidden="true" />
-      ) : null}
-      <span className="truncate">{presentation.label}</span>
-    </span>
-  );
-}
-
-function TargetListItem({
-  target,
-  selected,
-  onSelect,
+function TargetDeskEmpty({
+  targetBriefHref,
+  addTargetInputId,
 }: {
-  target: ProspectTargetView;
-  selected: boolean;
-  onSelect: () => void;
+  targetBriefHref: string | null | undefined;
+  addTargetInputId: string | null | undefined;
 }) {
-  const reasonSummary = displayedAssessmentReasons(target.assessmentReasons, 1).reasons[0];
-  const domain = displayDomain(target.canonicalUrl);
-
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? "true" : undefined}
-      className="arc-target-table__row"
-      style={{
-        borderColor: C.rule,
-        backgroundColor: selected ? C.blueTint : C.white,
-        outlineColor: C.blue,
-      }}
-    >
-      <div className="arc-target-table__identity">
-        <TargetKindMark kind={target.entityKind} />
-        <div className="min-w-0">
-          <p className="truncate text-[12px] font-semibold" title={target.displayName} style={{ color: C.navy }}>
-            {target.displayName}
-          </p>
-          <p className="mt-0.5 truncate text-[10px]" style={{ color: C.muted }}>
-            {targetEntityKindLabel(target.entityKind)}
-            {target.subtitle ? ` · ${target.subtitle}` : domain ? ` · ${domain}` : ""}
-          </p>
-        </div>
-      </div>
-      <div className="arc-target-table__status"><AssessmentBadge target={target} /></div>
-      <p className="arc-target-table__reason">{reasonSummary || "Assessment pending"}</p>
-      <p className="arc-target-table__source">{target.evidence.length} {target.evidence.length === 1 ? "source" : "sources"}</p>
-      <p className="arc-target-table__date">{target.assessedAt ? formatObservedAt(target.assessedAt) : "Pending"}</p>
-    </button>
-  );
-}
-
-function EvidenceItem({
-  evidence,
-  onReviewEvidence,
-}: {
-  evidence: TargetEvidenceView;
-  onReviewEvidence: TargetEvidenceReviewAction | null | undefined;
-}) {
-  const presentation = targetEvidencePresentation(evidence.kind);
-  const review = targetEvidenceReviewPresentation(evidence.reviewStatus);
-  const confidence = linkConfidencePresentation(evidence.entityLinkConfidence);
-  const reviewColors = TONE_COLORS[review.tone];
-  const confidenceColors = TONE_COLORS[confidence.tone];
-  const sourceUrl = publicHttpUrl(evidence.sourceUrl);
-  const observedAt = formatObservedAt(evidence.observedAt);
-
-  return (
-    <article className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.blue }}>
-            {presentation.label}
-          </p>
-          <p className="mt-1 text-xs font-medium leading-5" style={{ color: C.navy }}>
-            {evidence.summary}
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <span
-            className="inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-semibold"
-            title={review.description}
-            style={{
-              backgroundColor: reviewColors.background,
-              borderColor: reviewColors.border,
-              color: reviewColors.color,
-            }}
+    <EmptyState
+      variant="never-used"
+      icon={Target}
+      title="No targets yet"
+      description="Add a company, builder or project URL above. Arcli checks it against your targeting brief and lists the public evidence it finds."
+      action={
+        addTargetInputId ? (
+          <Button type="button" onClick={() => document.getElementById(addTargetInputId)?.focus()}>
+            Add your first target
+          </Button>
+        ) : undefined
+      }
+      secondaryAction={
+        targetBriefHref ? (
+          <Link
+            href={targetBriefHref}
+            className="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            {review.label}
-          </span>
-          <span
-            className="inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-semibold"
-            title="How confidently the public source is linked to this target"
-            style={{
-              backgroundColor: confidenceColors.background,
-              borderColor: confidenceColors.border,
-              color: confidenceColors.color,
-            }}
-          >
-            {confidence.label}
-          </span>
-        </div>
-      </div>
-
-      {evidence.excerpt ? (
-        <blockquote className="mt-2 border-l-2 pl-2.5 text-xs leading-5" style={{ borderColor: C.blueLight, color: C.navySoft }}>
-          “{evidence.excerpt}”
-        </blockquote>
-      ) : null}
-
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]" style={{ color: C.muted }}>
-        <span>{evidence.sourceLabel?.trim() || "Public source"}</span>
-        {observedAt ? <span aria-hidden="true">·</span> : null}
-        {observedAt ? <span>{observedAt}</span> : null}
-        {sourceUrl ? (
-          <a
-            href={sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-            style={{ color: C.blue }}
-          >
-            Open source
-            <ExternalLink className="size-3" aria-hidden="true" />
-          </a>
-        ) : (
-          <span title="This observation cannot support a strong buyer-signal claim until a public source is available.">
-            Source link unavailable
-          </span>
-        )}
-      </div>
-      {evidence.reviewStatus === "pending" && onReviewEvidence ? (
-        <EvidenceReviewControls
-          evidenceId={evidence.id}
-          sourceAvailable={Boolean(sourceUrl)}
-          onReview={onReviewEvidence}
-        />
-      ) : null}
-    </article>
-  );
-}
-
-function TargetDeskEmpty({ targetBriefHref }: { targetBriefHref: string | null | undefined }) {
-  return (
-    <section
-      aria-labelledby="target-desk-heading"
-      className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border p-8 text-center"
-      style={{ borderColor: C.ruleDark, backgroundColor: C.white }}
-    >
-      <span className="flex size-11 items-center justify-center rounded-xl" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-        <Target className="size-5" aria-hidden="true" />
-      </span>
-      <h2 id="target-desk-heading" className="mt-4 text-base font-semibold" style={{ color: C.navy }}>
-        No targets ready to review
-      </h2>
-      <p className="mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
-        Targets can be accounts, independent builders, or projects. They can appear before anyone posts a public buying request.
-      </p>
-      {targetBriefHref ? (
-        <Button asChild variant="outline" size="sm" className="mt-4 border-[#C8D9E8]">
-          <Link href={targetBriefHref}>Review targeting</Link>
-        </Button>
-      ) : null}
-    </section>
+            Review your targeting brief
+          </Link>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -361,6 +134,7 @@ export function TargetDesk({
   onCreateOpportunity = null,
   onQualifyOpportunity = null,
   feedbackSummary = [],
+  addTargetInputId = null,
   className,
 }: TargetDeskProps) {
   const sortedTargets = useMemo(
@@ -379,301 +153,129 @@ export function TargetDesk({
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(
     initialSelectedTargetId ?? sortedTargets[0]?.id ?? null,
   );
+  const detailRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const knownTargetIds = useRef<Set<string>>(new Set(targets.map((target) => target.id)));
 
+  // A target added from this page (or by research) arrives on refresh with
+  // no id in the action result. When exactly one new target appears, select
+  // it and bring its row into view so "Target added" points somewhere.
   useEffect(() => {
-    if (sortedTargets.some((target) => target.id === selectedTargetId)) return;
-    setSelectedTargetId(initialSelectedTargetId ?? sortedTargets[0]?.id ?? null);
-  }, [initialSelectedTargetId, selectedTargetId, sortedTargets]);
+    const newIds = sortedTargets
+      .map((target) => target.id)
+      .filter((id) => !knownTargetIds.current.has(id));
+    knownTargetIds.current = new Set(sortedTargets.map((target) => target.id));
+    if (newIds.length !== 1) return;
 
-  const selectedTarget =
-    sortedTargets.find((target) => target.id === selectedTargetId) ?? sortedTargets[0] ?? null;
-  const selectedPresentation = selectedTarget
-    ? targetAssessmentPresentation(selectedTarget)
-    : null;
-  const evidence = selectedTarget ? sortTargetEvidence(selectedTarget.evidence) : [];
-  const displayedReasons = selectedTarget
-    ? displayedAssessmentReasons(selectedTarget.assessmentReasons)
-    : { reasons: [], remainingCount: 0 };
-  const validStrongSignalCount = sortedTargets.filter(
-    (target) => targetAssessmentPresentation(target).tone === "success",
-  ).length;
-  const evidenceReviewCount = sortedTargets.filter(
-    (target) => targetAssessmentPresentation(target).requiresEvidenceReview,
-  ).length;
-  const signalBackedCount = sortedTargets.filter(
-    (target) => target.assessmentState === "signal_backed",
-  ).length;
-  const activeTargetCount = sortedTargets.filter(
-    (target) => target.assessmentState !== "rejected",
-  ).length;
-  const feedbackEventCount = feedbackSummary.reduce(
-    (total, summary) => total + summary.feedbackCount,
-    0,
-  );
-  const feedbackSummaryText = feedbackSummary
-    .slice(0, 3)
-    .map((summary) => `${FEEDBACK_SUMMARY_LABEL[summary.feedbackType]} ${summary.feedbackCount}`)
-    .join(" · ");
-  const targetUrl = selectedTarget ? publicHttpUrl(selectedTarget.canonicalUrl) : null;
+    const [newId] = newIds;
+    setSelectedTargetId(newId);
+    requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector<HTMLElement>(`[data-target-id="${CSS.escape(newId)}"]`)
+        ?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    });
+  }, [sortedTargets]);
+
+  const selectTarget = (targetId: string) => {
+    setSelectedTargetId(targetId);
+    // Stacked layout: the detail sits below the whole list, so move to it.
+    if (window.matchMedia(SIDE_BY_SIDE_QUERY).matches) return;
+    requestAnimationFrame(() => {
+      detailRef.current?.scrollIntoView({
+        block: "start",
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+      document.getElementById(TARGET_DETAIL_HEADING_ID)?.focus({ preventScroll: true });
+    });
+  };
+
+  const backToList = () => {
+    const row = listRef.current?.querySelector<HTMLElement>('[aria-current="true"]');
+    row?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    row?.focus({ preventScroll: true });
+  };
 
   if (sortedTargets.length === 0) {
-    return <TargetDeskEmpty targetBriefHref={targetBriefHref} />;
+    return <TargetDeskEmpty targetBriefHref={targetBriefHref} addTargetInputId={addTargetInputId} />;
   }
+
+  // A selection that left the list (after a refresh) falls back without an
+  // extra render: the route's choice first, then the strongest target.
+  const selectedTarget =
+    sortedTargets.find((target) => target.id === selectedTargetId) ??
+    sortedTargets.find((target) => target.id === initialSelectedTargetId) ??
+    sortedTargets[0];
+  const presentations = sortedTargets.map((target) => targetAssessmentPresentation(target));
+  const activeTargetCount = sortedTargets.filter((target) => target.assessmentState !== "rejected").length;
+  const strongSignalCount = presentations.filter((presentation) => presentation.tone === "success").length;
+  const signalBackedCount = sortedTargets.filter((target) => target.assessmentState === "signal_backed").length;
+  const evidenceReviewCount = presentations.filter((presentation) => presentation.requiresEvidenceReview).length;
+  const feedbackEventCount = feedbackSummary.reduce((total, summary) => total + summary.feedbackCount, 0);
+  const feedbackSummaryText = feedbackSummary
+    .map((summary) => `${summary.feedbackCount} ${FEEDBACK_SUMMARY_LABEL[summary.feedbackType]}`)
+    .join(", ");
 
   return (
     <section
       aria-labelledby="target-desk-heading"
-      className={cn("overflow-hidden rounded-xl border", className)}
-      style={{ borderColor: C.ruleDark, backgroundColor: C.white }}
+      // overflow-clip (not hidden) keeps the rounded corners without
+      // creating a scroll container, so the list rail can stay sticky.
+      className={cn("overflow-clip rounded-lg border border-border bg-card", className)}
     >
-      <header className="border-b px-4 py-4 sm:px-5" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-              <FileSearch className="size-4.5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-                Entity-first discovery
-              </p>
-              <h2 id="target-desk-heading" className="mt-0.5 text-base font-semibold" style={{ color: C.navy }}>
-                Target desk
-              </h2>
-              <p className="mt-1 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>
-                Review accounts, builders, and projects before public conversations exist. High fit is not a buyer signal.
-              </p>
-            </div>
-          </div>
-          {targetBriefHref ? (
-            <Link
-              href={targetBriefHref}
-              className="shrink-0 text-xs font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-              style={{ color: C.blue }}
-            >
-              Review targeting
-            </Link>
-          ) : null}
-        </div>
-
-        <dl className="mt-4 grid overflow-hidden rounded-lg border sm:grid-cols-3" style={{ borderColor: C.rule }}>
-          <DeskMetric label="Active targets" value={activeTargetCount} detail="Fit or evidence worth reviewing" />
-          <DeskMetric label="Signal-backed" value={signalBackedCount} detail="Relevant public evidence found" />
-          <DeskMetric
-            label={evidenceReviewCount > 0 ? "Needs evidence review" : "Strong buyer signals"}
-            value={evidenceReviewCount > 0 ? evidenceReviewCount : validStrongSignalCount}
-            detail={
-              evidenceReviewCount > 0
-                ? "Unsupported strong-signal claims withheld"
-                : "Cited, verified public evidence"
-            }
-          />
-        </dl>
-        {feedbackEventCount > 0 ? (
-          <p className="mt-2 text-[11px] leading-4" style={{ color: C.muted }}>
-            {feedbackEventCount} recorded target outcome{feedbackEventCount === 1 ? "" : "s"}
-            {feedbackSummaryText ? ` · ${feedbackSummaryText}` : ""}. These are feedback inputs, not automatic ranking changes.
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-border px-4 py-4 sm:px-5">
+        <div className="min-w-0 max-w-[62ch]">
+          <h2 id="target-desk-heading" className="text-base font-semibold text-foreground">
+            Review targets
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {sortedTargets.length === 1 ? "1 target" : `${sortedTargets.length} targets`}, strongest
+            signal first.
+            {evidenceReviewCount > 0
+              ? ` ${evidenceReviewCount} ${evidenceReviewCount === 1 ? "needs" : "need"} evidence review.`
+              : ""}
           </p>
-        ) : null}
+        </div>
+        {/* On phones the counts give way to the list; the header line above
+            already carries the one count that asks for action. */}
+        <dl className="hidden grid-cols-4 gap-x-5 sm:grid">
+          <DeskMetric label="Active" value={activeTargetCount} />
+          <DeskMetric label="Strong signal" value={strongSignalCount} />
+          <DeskMetric label="Signal-backed" value={signalBackedCount} />
+          <DeskMetric label="Needs review" value={evidenceReviewCount} />
+        </dl>
       </header>
 
-      <div className="arc-target-table">
-        <section className="min-w-0 border-b" style={{ borderColor: C.rule }} aria-label="Targets">
-          <div className="arc-target-table__heading" aria-hidden="true">
-            <span>ACCOUNT / TARGET</span><span>STATUS</span><span>WHY IT FITS</span><span>SOURCES</span><span>RESEARCHED</span>
-          </div>
-          <div className="arc-target-table__rows">
-            {sortedTargets.map((target) => (
-              <TargetListItem
-                key={target.id}
-                target={target}
-                selected={target.id === selectedTarget?.id}
-                onSelect={() => setSelectedTargetId(target.id)}
-              />
-            ))}
-          </div>
-        </section>
-
-        {selectedTarget && selectedPresentation ? (
-          <aside className="arc-target-table__detail min-w-0 p-4 sm:p-5" aria-label={`${selectedTarget.displayName} assessment`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <TargetKindMark kind={selectedTarget.entityKind} size="large" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: C.muted }}>
-                    {targetEntityKindLabel(selectedTarget.entityKind)}
+      <div className="arc-target-desk__body">
+        <div ref={listRef} className="contents">
+          <TargetList
+            targets={sortedTargets}
+            selectedTargetId={selectedTarget.id}
+            onSelect={selectTarget}
+            footer={
+              <div className="space-y-1 border-t border-border px-4 py-3 text-xs leading-5 text-subtle">
+                <p>Arcli never contacts anyone or exports to your CRM unless you qualify an opportunity.</p>
+                {feedbackEventCount > 0 ? (
+                  <p>
+                    {feedbackEventCount} {feedbackEventCount === 1 ? "outcome" : "outcomes"} recorded:{" "}
+                    {feedbackSummaryText}. They inform future ranking reviews, not automatic ranking changes.
                   </p>
-                  <h3 className="mt-0.5 break-words text-lg font-semibold" style={{ color: C.navy }}>
-                    {selectedTarget.displayName}
-                  </h3>
-                  {selectedTarget.subtitle ? (
-                    <p className="mt-0.5 text-xs" style={{ color: C.navySoft }}>
-                      {selectedTarget.subtitle}
-                    </p>
-                  ) : null}
-                </div>
+                ) : null}
               </div>
-              {targetUrl ? (
-                <Button asChild variant="outline" size="sm" className="shrink-0 border-[#C8D9E8]">
-                  <a href={targetUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="size-3.5" aria-hidden="true" />
-                    Open target
-                  </a>
-                </Button>
-              ) : null}
-            </div>
+            }
+          />
+        </div>
 
-            <div className="mt-4 rounded-lg border p-3" style={{ borderColor: TONE_COLORS[selectedPresentation.tone].border, backgroundColor: TONE_COLORS[selectedPresentation.tone].background }}>
-              <AssessmentBadge target={selectedTarget} />
-              <p className="mt-1.5 text-[11px] font-medium" style={{ color: TONE_COLORS[selectedPresentation.tone].color }}>
-                Research priority {Math.round(selectedTarget.priorityScore)} / 100
-                {selectedTarget.fitScore !== null
-                  ? " · fit " + Math.round(selectedTarget.fitScore * 100) + " / 100"
-                  : ""}
-              </p>
-              <p className="mt-2 text-xs leading-5" style={{ color: TONE_COLORS[selectedPresentation.tone].color }}>
-                {selectedPresentation.description}
-              </p>
-            </div>
-
-            <div className="arc-target-summary" aria-label="Target research summary">
-              <div>
-                <span>WHY IT FITS</span>
-                <p>{displayedReasons.reasons[0] ?? "No display-safe assessment reason is available yet."}</p>
-              </div>
-              <div>
-                <span>SOURCE</span>
-                <p>{evidence[0]?.sourceLabel?.trim() || displayDomain(selectedTarget.canonicalUrl) || "Source pending"}</p>
-                <small>{evidence.length === 1 ? "1 public observation" : `${evidence.length} public observations`}</small>
-              </div>
-              <div>
-                <span>STILL UNKNOWN</span>
-                <p>{selectedPresentation.requiresEvidenceReview
-                  ? "Public evidence still needs review."
-                  : evidence.length === 0
-                    ? "A public buyer signal has not been observed."
-                    : "Whether this target is ready to buy."}</p>
-              </div>
-            </div>
-
-            <section className="mt-5" aria-labelledby="target-assessment-reasons">
-              <h4 id="target-assessment-reasons" className="text-xs font-semibold" style={{ color: C.navy }}>
-                Why it is here
-              </h4>
-              {displayedReasons.reasons.length > 0 ? (
-                <ul className="mt-2 space-y-1.5 text-xs leading-5" style={{ color: C.navySoft }}>
-                  {displayedReasons.reasons.map((reason) => (
-                    <li key={reason} className="flex gap-2">
-                      <Sparkles className="mt-0.5 size-3.5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-                      <span>{reason}</span>
-                    </li>
-                  ))}
-                  {displayedReasons.remainingCount > 0 ? (
-                    <li className="pl-5.5 text-[11px]" style={{ color: C.muted }}>
-                      +{displayedReasons.remainingCount} more server-assessed reason{displayedReasons.remainingCount === 1 ? "" : "s"}
-                    </li>
-                  ) : null}
-                </ul>
-              ) : (
-                <p className="mt-1.5 text-xs leading-5" style={{ color: C.muted }}>
-                  No display-safe assessment reason is available yet.
-                </p>
-              )}
-            </section>
-
-            <section className="mt-5" aria-labelledby="target-evidence-heading">
-              <div className="flex items-baseline justify-between gap-2">
-                <h4 id="target-evidence-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
-                  Public evidence
-                </h4>
-                <span className="text-[10px]" style={{ color: C.muted }}>
-                  {evidence.length === 1 ? "1 observation" : `${evidence.length} observations`}
-                </span>
-              </div>
-              {evidence.length > 0 ? (
-                <div className="mt-2 space-y-2">
-                  {evidence.map((item) => (
-                    <EvidenceItem
-                      key={item.id}
-                      evidence={item}
-                      onReviewEvidence={onReviewEvidence}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-2 rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-                  <div className="flex gap-2.5">
-                    <MessageSquareText className="mt-0.5 size-4 shrink-0" style={{ color: C.muted }} aria-hidden="true" />
-                    <p className="text-xs leading-5" style={{ color: C.navySoft }}>
-                      No public observation is available yet. This can still be a high-fit research target, but it is not a buyer signal.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </section>
-
-            {selectedTarget.assessmentId &&
-            (onCreateOpportunity || onQualifyOpportunity) ? (
-              <TargetOpportunityControls
-                assessmentId={selectedTarget.assessmentId}
-                assessmentState={selectedTarget.assessmentState}
-                evidence={evidence}
-                opportunity={selectedTarget.opportunity}
-                onCreate={onCreateOpportunity}
-                onQualify={onQualifyOpportunity}
-              />
-            ) : null}
-
-            {selectedTarget.assessmentId && onTargetFeedback ? (
-              <TargetFeedbackControls
-                assessmentId={selectedTarget.assessmentId}
-                onFeedback={onTargetFeedback}
-              />
-            ) : null}
-
-            {selectedTarget.assessmentId &&
-            onTargetMonitoring &&
-            supportsRetainedPublicTargetMonitoring(
-              selectedTarget.entityKind,
-              selectedTarget.canonicalUrl,
-            ) ? (
-              <TargetMonitoringControls
-                assessmentId={selectedTarget.assessmentId}
-                monitoring={selectedTarget.monitoring}
-                onChange={onTargetMonitoring}
-              />
-            ) : null}
-
-            <section className="mt-5 rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }} aria-label="Review boundary">
-              <div className="flex gap-2.5">
-                <Link2 className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-                <p className="text-xs leading-5" style={{ color: C.navySoft }}>
-                  {selectedPresentation.tone === "success"
-                    ? "Review the cited source before acting. A strong buyer signal is evidence-backed prioritisation, not a confirmed customer."
-                    : "Keep this in research or monitoring until cited public evidence supports a stronger claim. Do not treat it as a CRM lead automatically."}
-                </p>
-              </div>
-            </section>
-          </aside>
-        ) : null}
+        <TargetDetail
+          ref={detailRef}
+          target={selectedTarget}
+          onBackToList={backToList}
+          onReviewEvidence={onReviewEvidence}
+          onTargetFeedback={onTargetFeedback}
+          onTargetMonitoring={onTargetMonitoring}
+          onCreateOpportunity={onCreateOpportunity}
+          onQualifyOpportunity={onQualifyOpportunity}
+        />
       </div>
     </section>
-  );
-}
-
-function DeskMetric({ label, value, detail }: { label: string; value: number; detail: string }) {
-  return (
-    <div className="min-w-0 border-b px-3 py-2.5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0" style={{ borderColor: C.rule }}>
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: C.muted }}>
-        {label}
-      </dt>
-      <dd className="mt-1 flex items-baseline gap-2">
-        <span className="text-lg font-semibold leading-none" style={{ color: C.navy }}>
-          {value}
-        </span>
-        <span className="truncate text-[10px]" title={detail} style={{ color: C.muted }}>
-          {detail}
-        </span>
-      </dd>
-    </div>
   );
 }

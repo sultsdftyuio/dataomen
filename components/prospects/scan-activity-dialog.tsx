@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, Check, Clock3, Radar, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Radar, RefreshCw } from "lucide-react";
 
 import type {
   BuyerDemandReportView,
@@ -15,12 +15,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { C } from "@/lib/tokens";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { cn } from "@/lib/utils";
 import { sourceDisplayName } from "./lead-desk-presentation";
 
 /** Present only for allowlisted operators; customers never receive it. */
 export type ManualScanControl = {
   pending: boolean;
+  result: ProspectActionResult | null;
+  onStart: () => void;
+};
+
+/** Re-reads the workspace website and rebuilds the targeting brief from it. */
+export type ProfileRebuildControl = {
+  pending: boolean;
+  available: boolean;
   result: ProspectActionResult | null;
   onStart: () => void;
 };
@@ -31,97 +40,128 @@ type ScanActivityDialogProps = {
   report: BuyerDemandReportView | null;
   onRefresh: () => void;
   manualScan?: ManualScanControl | null;
+  profileRebuild?: ProfileRebuildControl | null;
 };
 
-function sourceOutcome(state: BuyerDemandReportView["sourceProgress"][number]["state"]) {
-  switch (state) {
-    case "checking": return "Checking";
-    case "found": return "Candidates found";
-    case "partial": return "Partial coverage";
-    case "unavailable": return "Unavailable";
-    case "no_results": return "No candidates";
-  }
+type SourceState = BuyerDemandReportView["sourceProgress"][number]["state"];
+
+const SOURCE_OUTCOMES: Record<SourceState, { label: string; tone: StatusTone }> = {
+  checking: { label: "Checking", tone: "progress" },
+  found: { label: "Found prospects", tone: "success" },
+  partial: { label: "Partly checked", tone: "warning" },
+  unavailable: { label: "Unavailable", tone: "warning" },
+  no_results: { label: "Nothing found", tone: "neutral" },
+};
+
+function scanStatusLabel(status: string | null | undefined) {
+  if (!status) return "No scan recorded";
+  const text = status.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function ScanActivityDialog({ open, onOpenChange, report, onRefresh, manualScan = null }: ScanActivityDialogProps) {
+function ResultLine({ result, okSuffix }: { result: ProspectActionResult; okSuffix?: string }) {
+  const Icon = result.ok ? CheckCircle2 : AlertCircle;
+  return (
+    <p
+      role={result.ok ? "status" : "alert"}
+      className={cn("flex items-start gap-1.5 text-sm leading-5", result.ok ? "text-success" : "text-danger")}
+    >
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <span>
+        {result.message}
+        {result.ok && okSuffix ? ` ${okSuffix}` : ""}
+      </span>
+    </p>
+  );
+}
+
+export function ScanActivityDialog({
+  open,
+  onOpenChange,
+  report,
+  onRefresh,
+  manualScan = null,
+  profileRebuild = null,
+}: ScanActivityDialogProps) {
   const sources = report?.isTerminal
     ? report.sourceProgress.filter((source) => source.state !== "checking")
     : report?.sourceProgress ?? [];
-  const status = report?.status?.replaceAll("_", " ") ?? "No scan recorded";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Discovery scan activity</DialogTitle>
+          <DialogTitle>Scan activity</DialogTitle>
           <DialogDescription>
-            Source checks collect candidate conversations. Matching and verification decide which appear in the opportunity inbox.
+            Each scan checks public sources for conversations that match your brief. Only the ones that pass review reach your inbox.
           </DialogDescription>
         </DialogHeader>
 
         {report ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <div>
-                <p className="text-xs font-semibold capitalize" style={{ color: C.navy }}>{status}</p>
-                <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                  {report.summary.verifierPending ? "Verification is still running." : "Latest recorded source checks."}
-                </p>
-              </div>
-              <span className="text-xs font-semibold" style={{ color: C.blue }}>
-                {sources.length} {sources.length === 1 ? "source" : "sources"}
-              </span>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Latest scan: {scanStatusLabel(report.status)}</p>
+              <p className="text-xs text-subtle">
+                {report.summary.verifierPending ? "Review is still running." : `${sources.length} ${sources.length === 1 ? "source" : "sources"} checked`}
+              </p>
             </div>
             {sources.length > 0 ? (
-              <ul className="divide-y rounded-lg border" style={{ borderColor: C.rule }}>
+              <ul className="divide-y divide-border rounded-md border border-border">
                 {sources.map((source) => {
-                  const failed = source.state === "unavailable" || source.state === "partial";
-                  const checking = source.state === "checking";
-                  const Icon = failed ? AlertCircle : checking ? Clock3 : Check;
+                  const outcome = SOURCE_OUTCOMES[source.state];
                   return (
-                    <li key={source.source} className="flex items-start justify-between gap-3 px-3 py-2.5">
-                      <div className="flex min-w-0 items-start gap-2">
-                        <Icon className="mt-0.5 size-4 shrink-0" style={{ color: failed ? C.amber : checking ? C.blue : C.green }} aria-hidden="true" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold" style={{ color: C.navy }}>{sourceDisplayName(source.source)}</p>
-                          <p className="text-xs" style={{ color: C.muted }}>{sourceOutcome(source.state)}</p>
-                        </div>
+                    <li key={source.source} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{sourceDisplayName(source.source)}</p>
+                        {source.plausibleCount !== null && source.plausibleCount > 0 ? (
+                          <p className="text-xs tabular-nums text-subtle">
+                            {source.plausibleCount} possible {source.plausibleCount === 1 ? "match" : "matches"}
+                          </p>
+                        ) : null}
                       </div>
-                      {source.plausibleCount !== null && source.plausibleCount > 0 ? (
-                        <span className="shrink-0 text-xs font-semibold" style={{ color: C.navySoft }}>
-                          {source.plausibleCount} candidate{source.plausibleCount === 1 ? "" : "s"}
-                        </span>
-                      ) : null}
+                      <StatusBadge tone={outcome.tone} size="compact">{outcome.label}</StatusBadge>
                     </li>
                   );
                 })}
               </ul>
             ) : (
-              <p className="rounded-lg border border-dashed p-4 text-sm" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-                No source check has reported yet. Refresh to check for new activity.
+              <p className="text-sm text-muted-foreground">
+                No source has reported yet. Refresh in a minute to see progress.
               </p>
             )}
-            {report.summary.caveat ? <p className="text-xs leading-5" style={{ color: C.muted }}>{report.summary.caveat}</p> : null}
+            {report.summary.caveat ? <p className="text-xs leading-5 text-subtle">{report.summary.caveat}</p> : null}
           </div>
         ) : (
-          <p className="rounded-lg border border-dashed p-4 text-sm" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-            No discovery scan has been recorded for this matching brief yet. Check the brief and try a focused buyer group.
+          <p className="text-sm text-muted-foreground">
+            No scan has been recorded for this brief yet. Check the brief, or start a scan for one of the suggested buyer groups.
           </p>
         )}
 
         {manualScan?.result ? (
-          <p className="text-xs leading-5" role="status" style={{ color: manualScan.result.ok ? C.navySoft : C.amber }}>
-            {manualScan.result.message}
-            {manualScan.result.ok ? " Refresh in a few seconds to follow it live." : ""}
-          </p>
+          <ResultLine result={manualScan.result} okSuffix="Refresh in a few seconds to follow it." />
         ) : null}
+        {profileRebuild?.result ? <ResultLine result={profileRebuild.result} /> : null}
 
-        <div className="flex flex-wrap gap-2 border-t pt-4" style={{ borderColor: C.rule }}>
-          <Button type="button" variant="outline" onClick={onRefresh}><RefreshCw className="size-4" aria-hidden="true" /> Refresh</Button>
-          <Button asChild variant="outline"><Link href="/dashboard/brief">Review matching brief</Link></Button>
+        <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+          <Button type="button" variant="outline" onClick={onRefresh}>
+            <RefreshCw aria-hidden="true" /> Refresh
+          </Button>
+          {profileRebuild ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={profileRebuild.pending || !profileRebuild.available}
+              aria-busy={profileRebuild.pending}
+              onClick={profileRebuild.onStart}
+              title="Read your website again and update the brief from it"
+            >
+              {profileRebuild.pending ? "Reading website…" : "Re-read website"}
+            </Button>
+          ) : null}
+          <Button asChild variant="outline"><Link href="/dashboard/brief">Review brief</Link></Button>
           {manualScan ? (
             <Button type="button" disabled={manualScan.pending} aria-busy={manualScan.pending} onClick={manualScan.onStart}>
-              <Radar className="size-4" aria-hidden="true" /> {manualScan.pending ? "Starting..." : "Run scan now"}
+              <Radar aria-hidden="true" /> {manualScan.pending ? "Starting…" : "Run scan now"}
             </Button>
           ) : null}
         </div>

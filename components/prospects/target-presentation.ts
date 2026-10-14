@@ -7,6 +7,13 @@ import type {
   TargetEvidenceView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
 
+/**
+ * The add-target URL field's id. It lives in this server-safe module because
+ * the page (a server component) passes it to the desk, and a constant
+ * exported from a "use client" file would arrive as a client reference.
+ */
+export const ADD_TARGET_INPUT_ID = "target-url";
+
 export type TargetPresentationTone = "info" | "warning" | "success" | "muted";
 
 export type TargetAssessmentPresentation = {
@@ -79,17 +86,19 @@ const ASSESSMENT_PRESENTATION: Record<
   Exclude<TargetAssessmentState, "strong_buyer_signal">,
   Omit<TargetAssessmentPresentation, "requiresEvidenceReview">
 > = {
+  // Amber is reserved for "needs your action", so fit-only and triggered
+  // targets use neutral and blue tones rather than a warning colour.
   high_fit: {
     label: "High-fit target",
     description:
       "This target resembles your ideal customer. No public buyer signal has been observed.",
-    tone: "info",
+    tone: "muted",
   },
   triggered: {
     label: "Triggered target",
     description:
       "This target resembles your ideal customer and has a relevant public change. No direct buyer signal has been observed.",
-    tone: "warning",
+    tone: "info",
   },
   signal_backed: {
     label: "Signal-backed target",
@@ -166,6 +175,18 @@ export function targetAssessmentPresentation(
 
 export function targetEntityKindLabel(kind: ProspectTargetEntityKind): string {
   return ENTITY_KIND_LABELS[kind];
+}
+
+/** A rejected target lists why it was excluded, never why it fits. */
+export function targetReasonHeading(state: TargetAssessmentState): string {
+  return state === "rejected" ? "Why it was excluded" : "Why it fits";
+}
+
+/** True when the server has not produced an assessment for this target yet. */
+export function targetAwaitingAssessment(
+  target: Pick<ProspectTargetView, "assessedAt" | "assessmentReasons">,
+): boolean {
+  return !target.assessedAt && target.assessmentReasons.length === 0;
 }
 
 export function targetEvidencePresentation(

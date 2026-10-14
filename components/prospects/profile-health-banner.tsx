@@ -7,7 +7,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { retryServiceProfileEmbedding } from "@/app/(dashboard)/dashboard/actions";
 import type { ProfileHealthIssue } from "@/app/(dashboard)/dashboard/profile-health";
-import { C } from "@/lib/tokens";
+import type { ProspectActionResult } from "@/app/(dashboard)/dashboard/prospect-types";
 import { cn } from "@/lib/utils";
 
 type ProfileHealthBannerProps = {
@@ -18,6 +18,11 @@ type ProfileHealthBannerProps = {
   onRetried: () => void;
 };
 
+const RETRY_FAILED: ProspectActionResult = {
+  ok: false,
+  message: "Couldn't restart matching. Check your connection and try again.",
+};
+
 /** Blocking-problem banner with the single action that unblocks discovery. */
 export function ProfileHealthBanner({
   issue,
@@ -26,19 +31,19 @@ export function ProfileHealthBanner({
   onRebuildProfile,
   onRetried,
 }: ProfileHealthBannerProps) {
-  const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const [retryResult, setRetryResult] = useState<ProspectActionResult | null>(null);
   const [isRetryPending, startRetryTransition] = useTransition();
   const isPending = isRetryPending || isRebuildPending;
 
   const retryEmbedding = () => {
-    setRetryMessage(null);
+    setRetryResult(null);
     startRetryTransition(async () => {
       try {
         const result = await retryServiceProfileEmbedding(serviceProfileId);
-        setRetryMessage(result.message);
+        setRetryResult(result.ok ? result : RETRY_FAILED);
         if (result.ok) onRetried();
       } catch {
-        setRetryMessage("Could not restart matching. Please try again.");
+        setRetryResult(RETRY_FAILED);
       }
     });
   };
@@ -46,18 +51,19 @@ export function ProfileHealthBanner({
   return (
     <section
       role="alert"
-      className="flex shrink-0 flex-wrap items-center gap-3 rounded-lg border px-3 py-2.5"
-      style={{ borderColor: C.amber, backgroundColor: C.amberPale }}
+      className="flex shrink-0 flex-col gap-3 rounded-lg border border-warning/30 bg-warning-pale px-4 py-3 sm:flex-row sm:items-center"
     >
-      <AlertTriangle className="size-4 shrink-0" style={{ color: C.amber }} aria-hidden="true" />
-      <div className="min-w-0 flex-1" title={issue.technicalDetail}>
-        <p className="text-sm font-semibold" style={{ color: C.navy }}>{issue.title}</p>
-        <p className="text-xs leading-5" style={{ color: C.navySoft }}>
-          {retryMessage ?? issue.detail}
-        </p>
+      <div className="flex min-w-0 flex-1 items-start gap-2.5" title={issue.technicalDetail}>
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{issue.title}</p>
+          <p className={cn("text-sm leading-5", retryResult && !retryResult.ok ? "text-danger" : "text-navy-soft")}>
+            {retryResult?.message ?? issue.detail}
+          </p>
+        </div>
       </div>
       {issue.action === "edit_brief" ? (
-        <Button asChild size="sm" variant="outline" className="bg-white">
+        <Button asChild size="sm" variant="outline" className="w-fit">
           <Link href="/dashboard/brief">Edit brief</Link>
         </Button>
       ) : (
@@ -65,12 +71,16 @@ export function ProfileHealthBanner({
           type="button"
           size="sm"
           variant="outline"
-          className="bg-white"
+          className="w-fit"
           disabled={isPending}
           onClick={issue.action === "rebuild_profile" ? onRebuildProfile : retryEmbedding}
         >
-          <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} aria-hidden="true" />
-          {isPending ? "Retrying..." : issue.action === "rebuild_profile" ? "Retry crawl" : "Retry"}
+          <RefreshCw className={cn("size-3.5", isPending && "motion-safe:animate-spin")} aria-hidden="true" />
+          {isPending
+            ? "Retrying…"
+            : issue.action === "rebuild_profile"
+              ? "Read website again"
+              : "Restart matching"}
         </Button>
       )}
     </section>

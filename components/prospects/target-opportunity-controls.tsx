@@ -1,11 +1,11 @@
 "use client";
 
-import { BriefcaseBusiness, Check, Loader2, Send } from "lucide-react";
+import { BriefcaseBusiness, Loader2, Send } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { C } from "@/lib/tokens";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import type {
   ProspectActionResult,
   TargetAssessmentState,
@@ -14,6 +14,8 @@ import type {
   TargetOpportunityQualifyAction,
   TargetOpportunityStatus,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import { ActionNotice } from "./target-action-notice";
+import { targetEvidencePresentation } from "./target-presentation";
 
 const OPPORTUNITY_EVIDENCE_KINDS = new Set([
   "trigger",
@@ -30,22 +32,24 @@ function eligibleEvidence(evidence: readonly TargetEvidenceView[]): TargetEviden
   );
 }
 
-function opportunityLabel(status: TargetOpportunityStatus["status"]): string {
-  switch (status) {
-    case "ready_for_review":
-      return "Opportunity ready for your qualification";
-    case "qualified":
-      return "Qualified opportunity";
-    case "invalidated":
-      return "Opportunity invalidated";
-  }
-}
+const OPPORTUNITY_STATUS: Record<
+  TargetOpportunityStatus["status"],
+  { label: string; tone: StatusTone }
+> = {
+  ready_for_review: { label: "Ready to qualify", tone: "info" },
+  qualified: { label: "Qualified", tone: "success" },
+  invalidated: { label: "No longer valid", tone: "neutral" },
+};
+
+const SELECT_CLASS_NAME =
+  "mt-1.5 block h-9 w-full min-w-0 rounded-md border border-input bg-card px-3 text-base text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm";
 
 /**
  * An opportunity is deliberately downstream of evidence review. Creating it
  * binds one accepted citation to a human-owned workflow record; qualifying it
  * is a separate click that may send one optional CRM webhook. Neither action
- * looks up people, writes a message, or starts outreach.
+ * looks up people, writes a message, or starts outreach. Render it with
+ * `key={assessmentId}` so a notice never carries over to another target.
  */
 export function TargetOpportunityControls({
   assessmentId,
@@ -88,7 +92,7 @@ export function TargetOpportunityControls({
       } catch {
         setNotice({
           ok: false,
-          message: "Could not create an opportunity. The target and its evidence were not changed.",
+          message: "Couldn't create the opportunity. The target and its evidence are unchanged. Try again.",
         });
       } finally {
         setPendingAction(null);
@@ -108,7 +112,7 @@ export function TargetOpportunityControls({
       } catch {
         setNotice({
           ok: false,
-          message: "Could not qualify this opportunity. No outreach was sent.",
+          message: "Couldn't qualify this opportunity, and nothing was sent. Try again.",
         });
       } finally {
         setPendingAction(null);
@@ -122,61 +126,56 @@ export function TargetOpportunityControls({
     Boolean(onCreate) &&
     availableEvidence.length > 0;
   const canQualify = opportunity?.status === "ready_for_review" && Boolean(onQualify);
+  const status = opportunity ? OPPORTUNITY_STATUS[opportunity.status] : null;
 
   return (
-    <section
-      className="mt-5 rounded-lg border p-3"
-      style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
-      aria-labelledby="target-opportunity-heading"
-    >
-      <div className="flex gap-2.5">
-        <BriefcaseBusiness
-          className="mt-0.5 size-4 shrink-0"
-          style={{ color: C.blue }}
-          aria-hidden="true"
-        />
-        <div className="min-w-0">
-          <h4 id="target-opportunity-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
-            Outreach opportunity
-          </h4>
-          <p className="mt-1 text-[11px] leading-4" style={{ color: C.navySoft }}>
-            This is a human-reviewed handoff, not an automatic lead or message.
-          </p>
-        </div>
+    <section className="mt-5 border-t border-border pt-4" aria-labelledby="target-opportunity-heading">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h4 id="target-opportunity-heading" className="text-sm font-semibold text-foreground">
+          Opportunity
+        </h4>
+        {status ? (
+          <StatusBadge tone={status.tone} size="compact">
+            {status.label}
+          </StatusBadge>
+        ) : null}
       </div>
 
       {!opportunity ? (
         assessmentState === "rejected" ? (
-          <p className="mt-3 text-[11px] leading-4" style={{ color: C.muted }}>
-            This target was rejected, so it cannot be promoted or exported.
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            This target was rejected, so it can&apos;t become an opportunity.
           </p>
         ) : availableEvidence.length > 0 ? (
           <>
-            <label className="mt-3 block text-[11px] font-medium" style={{ color: C.navySoft }}>
-              Accepted cited evidence
-              <select
-                value={selectedEvidenceId}
-                onChange={(event) => setSelectedEvidenceId(event.target.value)}
-                disabled={isPending}
-                className="mt-1.5 block w-full rounded-md border bg-white px-2.5 py-1.5 text-xs"
-                style={{ borderColor: C.ruleDark, color: C.navy }}
-              >
-                {availableEvidence.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.kind}: {item.summary}
-                  </option>
-                ))}
-              </select>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Turn accepted evidence into an opportunity you can qualify. Creating one never sends outreach.
+            </p>
+            <label htmlFor={`opportunity-evidence-${assessmentId}`} className="mt-3 block text-sm font-medium text-foreground">
+              Evidence to cite
             </label>
+            <select
+              id={`opportunity-evidence-${assessmentId}`}
+              value={selectedEvidenceId}
+              onChange={(event) => setSelectedEvidenceId(event.target.value)}
+              disabled={isPending}
+              className={SELECT_CLASS_NAME}
+            >
+              {availableEvidence.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {targetEvidencePresentation(item.kind).label}: {item.summary}
+                </option>
+              ))}
+            </select>
             <Button
               type="button"
-              size="xs"
+              size="sm"
               disabled={isPending || !canCreate}
-              className="mt-3 bg-[#1B6EBF] text-white hover:bg-[#155A9F]"
+              className="mt-3"
               onClick={create}
             >
               {isPending && pendingAction === "create" ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
+                <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
               ) : (
                 <BriefcaseBusiness aria-hidden="true" />
               )}
@@ -184,58 +183,42 @@ export function TargetOpportunityControls({
             </Button>
           </>
         ) : (
-          <p className="mt-3 text-[11px] leading-4" style={{ color: C.muted }}>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Accept a cited trigger, problem, or evaluation observation before creating an opportunity.
           </p>
         )
-      ) : (
+      ) : opportunity.status === "ready_for_review" ? (
         <>
-          <p className="mt-3 text-[11px] font-medium" style={{ color: C.navySoft }}>
-            {opportunityLabel(opportunity.status)}
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Qualifying is a separate decision. It may send this opportunity to your connected CRM, but never sends outreach.
           </p>
-          {opportunity.status === "ready_for_review" ? (
-            <>
-              <p className="mt-1 text-[11px] leading-4" style={{ color: C.muted }}>
-                Qualification is a second explicit decision. It may export the cited opportunity to your configured CRM, but never sends outreach.
-              </p>
-              <Button
-                type="button"
-                size="xs"
-                variant="outline"
-                disabled={isPending || !canQualify}
-                className="mt-3 border-[#6EE7B7] bg-white text-[#047857] hover:bg-[#ECFDF5]"
-                onClick={qualify}
-              >
-                {isPending && pendingAction === "qualify" ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <Send aria-hidden="true" />
-                )}
-                Qualify opportunity
-              </Button>
-            </>
-          ) : opportunity.status === "qualified" ? (
-            <p className="mt-1 flex items-center gap-1.5 text-[11px] leading-4" style={{ color: C.green }}>
-              <Check className="size-3.5" aria-hidden="true" />
-              Already qualified. Arcli will not automatically retry CRM delivery or outreach.
-            </p>
-          ) : (
-            <p className="mt-1 text-[11px] leading-4" style={{ color: C.muted }}>
-              Its accepted evidence or target state is no longer actionable, so it cannot be qualified or exported.
-            </p>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isPending || !canQualify}
+            className="mt-3"
+            onClick={qualify}
+          >
+            {isPending && pendingAction === "qualify" ? (
+              <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+            ) : (
+              <Send aria-hidden="true" />
+            )}
+            Qualify opportunity
+          </Button>
         </>
+      ) : opportunity.status === "qualified" ? (
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          Arcli won&apos;t retry CRM delivery or start outreach on its own.
+        </p>
+      ) : (
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          Its evidence or the target changed, so it can&apos;t be qualified or exported.
+        </p>
       )}
 
-      {notice ? (
-        <p
-          className="mt-2 text-[11px] leading-4"
-          role="status"
-          style={{ color: notice.ok ? C.green : C.amber }}
-        >
-          {notice.message}
-        </p>
-      ) : null}
+      <ActionNotice notice={notice} />
     </section>
   );
 }

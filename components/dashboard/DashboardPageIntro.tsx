@@ -1,50 +1,31 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
-import { C } from "@/lib/tokens";
+import { PageHeader } from "./PageHeader";
 
 type DashboardPageIntroProps = {
+  /** Ignored: the sidebar already shows where the page sits. */
   eyebrow?: string;
   title: string;
   description?: string;
-  icon: LucideIcon;
+  /** Ignored: page headings carry no icon tile. */
+  icon?: LucideIcon;
+  /** Rendered in PageHeader's actions slot. */
   visual?: ReactNode;
 };
 
-export function DashboardPageIntro({
-  eyebrow,
-  title,
-  description,
-  icon: Icon,
-  visual,
-}: DashboardPageIntroProps) {
+/**
+ * @deprecated Use `PageHeader` from "@/components/dashboard/PageHeader".
+ * Kept as a thin wrapper so existing pages keep rendering while they move
+ * over. A trailing full stop on the old marketing-style titles is dropped.
+ */
+export function DashboardPageIntro({ title, description, visual }: DashboardPageIntroProps) {
   return (
-    <section
-      className={visual ? "grid shrink-0 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-end sm:gap-5" : "max-w-3xl shrink-0"}
-      aria-labelledby="dashboard-page-title"
-    >
-      <div className="min-w-0">
-        {eyebrow ? (
-          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-            <Icon className="size-3" aria-hidden="true" />
-            {eyebrow}
-          </p>
-        ) : null}
-        <h1
-          id="dashboard-page-title"
-          className={`pfd text-[27px] font-semibold leading-tight sm:text-[31px] ${eyebrow ? "mt-1" : ""}`}
-          style={{ color: C.navy, fontSize: "clamp(27px, 2.7vw, 31px)" }}
-        >
-          {title}
-        </h1>
-        {description ? (
-          <p className="mt-1 max-w-3xl text-[13px] leading-[1.6]" style={{ color: C.navySoft }}>
-            {description}
-          </p>
-        ) : null}
-      </div>
-
-      {visual ? <aside>{visual}</aside> : null}
-    </section>
+    <PageHeader
+      title={title.replace(/\.\s*$/, "")}
+      description={description}
+      actions={visual}
+      titleId="dashboard-page-title"
+    />
   );
 }

@@ -1,35 +1,69 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { Building2, CircleUserRound, Globe2, Mail, MessageCircleMore, Settings2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
+import { LoadError } from "@/components/dashboard/LoadError";
+import { PageHeader } from "@/components/dashboard/PageHeader";
+import LogoutButton from "@/components/dashboard/logout-button";
+import { SettingsRow, SettingsSection } from "@/components/settings/settings-section";
+import { BillingNotice, type CheckoutReturn } from "@/components/settings/workspace_page/billing-notice";
+import CrawlNotificationPreferences from "@/components/settings/workspace_page/crawl-notification-preferences";
 import WorkspaceBillingCard, {
   type WorkspaceBillingCardProps,
 } from "@/components/settings/workspace_page/workspace-billing-card";
-import CrawlNotificationPreferences from "@/components/settings/workspace_page/crawl-notification-preferences";
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
-import LogoutButton from "@/components/dashboard/logout-button";
-import { C } from "@/lib/tokens";
 import { workspaceDisplayName } from "@/lib/workspace/display-name";
+
+import { PasswordRow } from "./password-form";
+import { SettingsNav, type SettingsNavItem } from "./settings-nav";
 import "./settings-client.css";
+
+/** Owner/admin, member, or unknown when the membership lookup failed. */
+export type WorkspaceRole = "admin" | "member" | "unknown";
 
 type SettingsClientProps = {
   user: User;
-  initialSettings: any;
+  /** buildSettingsSnapshot() output; only workspace.companyName and websiteUrl are read here. */
+  initialSettings: unknown;
   initialCrawlNotificationEmailsEnabled: boolean;
   canReceiveResultEmails: boolean;
   serviceProfile: ServiceProfileView | null;
   planData: WorkspaceBillingCardProps["planData"];
+  /** The workspace couldn't be resolved: workspace sections show a load error instead of defaults. */
+  workspaceUnavailable?: boolean;
+  workspaceRole?: WorkspaceRole;
+  emailPreferenceUnavailable?: boolean;
+  checkoutReturn?: CheckoutReturn;
+  /** Arrived from a password reset link. */
+  passwordRecovery?: boolean;
 };
 
-function websiteDomain(value: string) {
-  try {
-    return new URL(value).hostname.replace(/^www\./i, "");
-  } catch {
-    return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
-  }
+const NAV_ITEMS: SettingsNavItem[] = [
+  { id: "profile", label: "Profile" },
+  { id: "billing", label: "Plan and billing" },
+  { id: "workspace", label: "Prospecting setup" },
+  { id: "result-emails", label: "Result emails" },
+  { id: "support", label: "Support" },
+];
+
+const UNAVAILABLE_NAV_ITEMS: SettingsNavItem[] = [
+  { id: "profile", label: "Profile" },
+  { id: "support", label: "Support" },
+];
+
+function readWorkspaceSettings(value: unknown): { companyName: string; websiteUrl: string } {
+  const workspace = (value as { workspace?: { companyName?: unknown; websiteUrl?: unknown } } | null)?.workspace;
+  return {
+    companyName: typeof workspace?.companyName === "string" ? workspace.companyName : "",
+    websiteUrl: typeof workspace?.websiteUrl === "string" ? workspace.websiteUrl : "",
+  };
 }
+
+const LINK_CLASS =
+  "rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none";
 
 export default function SettingsClient({
   user,
@@ -38,96 +72,94 @@ export default function SettingsClient({
   canReceiveResultEmails,
   serviceProfile,
   planData,
+  workspaceUnavailable = false,
+  workspaceRole,
+  emailPreferenceUnavailable = false,
+  checkoutReturn = null,
+  passwordRecovery = false,
 }: SettingsClientProps) {
-  const workspaceSettings = initialSettings?.workspace ?? {};
+  const router = useRouter();
+  const [isRetrying, startRetry] = useTransition();
+  const workspaceSettings = readWorkspaceSettings(initialSettings);
   const workspaceName = workspaceDisplayName(workspaceSettings.companyName);
-  const websiteUrl = serviceProfile?.websiteUrl ?? workspaceSettings.websiteUrl ?? "";
-  const initialData = { websiteUrl };
-  const displayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
+  const hasWorkspaceName = workspaceName !== "Workspace";
+  const websiteUrl = serviceProfile?.websiteUrl || workspaceSettings.websiteUrl;
+  const displayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "No name set";
+  // Older callers only pass canReceiveResultEmails, which is the same owner/admin check.
+  const role: WorkspaceRole = workspaceRole ?? (canReceiveResultEmails ? "admin" : "member");
+  // An unknown role still shows billing controls: the server enforces the rule
+  // and the card explains a refusal, which beats hiding the fix from an owner.
+  const canManageBilling = role !== "member";
+  const hasPassword = (user.app_metadata?.providers as string[] | undefined)?.includes("email") ?? user.app_metadata?.provider === "email";
 
   return (
-    <div className="arc-workspace-page arc-settings-page">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b pb-5" style={{ borderColor: C.rule }}>
-        <div>
-          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-            <Settings2 className="size-3.5" aria-hidden="true" /> Account & workspace
-          </div>
-          <h1 className="pfd mt-2 text-3xl leading-none" style={{ color: C.navy }}>
-            Settings
-          </h1>
-          <p className="mt-2 text-sm" style={{ color: C.muted }}>
-            Manage your account, prospecting setup, and subscription in one place.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-white px-3 py-2 text-right" style={{ borderColor: C.rule }}>
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Current workspace</p>
-          <p className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>{workspaceName}</p>
-        </div>
-      </header>
+    <div className="arc-workspace-page settings-page">
+      <PageHeader
+        title="Settings"
+        description={
+          hasWorkspaceName && !workspaceUnavailable
+            ? `Your account, plan, prospecting setup and emails for ${workspaceName}.`
+            : "Your account, plan, prospecting setup and emails."
+        }
+      />
 
-      <div className="arc-settings-page__layout">
-        <nav className="arc-settings-page__nav" aria-label="Settings sections">
-          <a href="#profile">Profile</a>
-          <a href="#workspace">Workspace and website</a>
-          <a href="#billing">Plan and billing</a>
-          <a href="#email-updates">Email updates</a>
-          <a href="#support">Support</a>
-        </nav>
-        <div className="arc-settings-page__sections">
-          <section id="profile" className="arc-settings-account" aria-labelledby="settings-account-title">
-            <div className="arc-settings-account__heading">
-              <h2 id="settings-account-title">Profile</h2>
-              <p>The account currently signed in to this workspace.</p>
-            </div>
-            <div className="arc-settings-account__row">
-              <span className="arc-settings-account__icon"><CircleUserRound size={18} aria-hidden="true" /></span>
-              <div><strong>Name</strong><small>Your account display name</small></div>
-              <span className="arc-settings-account__value">{displayName}</span>
-            </div>
-            <div className="arc-settings-account__row">
-              <span className="arc-settings-account__icon"><Mail size={18} aria-hidden="true" /></span>
-              <div><strong>Email address</strong><small>Used for sign-in and account updates</small></div>
-              <span className="arc-settings-account__value">{user.email ?? "No email available"}</span>
-            </div>
-            <div className="arc-settings-account__row">
-              <span className="arc-settings-account__icon"><Building2 size={18} aria-hidden="true" /></span>
-              <div><strong>Workspace</strong><small>Your current workspace</small></div>
-              <span className="arc-settings-account__value">{workspaceName}</span>
-            </div>
-            <div className="arc-settings-account__row">
-              <span className="arc-settings-account__icon"><Globe2 size={18} aria-hidden="true" /></span>
-              <div><strong>Website</strong><small>The source for your brief</small></div>
-              <span className="arc-settings-account__value">{websiteUrl ? websiteDomain(websiteUrl) : "Website not connected"}</span>
-            </div>
-            <div className="arc-settings-account__row">
-              <span className="arc-settings-account__icon"><CircleUserRound size={18} aria-hidden="true" /></span>
-              <div><strong>Session</strong><small>Signed in on this device</small></div>
-              <span className="arc-settings-account__value"><LogoutButton /></span>
-            </div>
-          </section>
+      {workspaceUnavailable ? null : (
+        <BillingNotice planData={planData} checkoutReturn={checkoutReturn} canManageBilling={canManageBilling} />
+      )}
 
-          <div id="workspace"><WorkspaceTab initialData={initialData} serviceProfile={serviceProfile} /></div>
-          <div id="billing"><WorkspaceBillingCard planData={planData} /></div>
-          <div id="email-updates"><CrawlNotificationPreferences
-            initialEnabled={initialCrawlNotificationEmailsEnabled}
-            eligible={canReceiveResultEmails}
-            accountEmail={user.email ?? null}
-          /></div>
+      <div className="settings-page__layout">
+        <SettingsNav items={workspaceUnavailable ? UNAVAILABLE_NAV_ITEMS : NAV_ITEMS} />
 
-          <section id="support" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5" style={{ borderColor: C.rule }}>
-            <MessageCircleMore className="size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
-            <p className="text-xs leading-5" style={{ color: C.muted }}>
-              Need help or have a suggestion?{" "}
-              <a
-                href="mailto:support@arcli.tech?subject=Arcli%20feedback%20or%20support"
-                className="font-semibold underline underline-offset-2"
-                style={{ color: C.blue }}
-              >
-                Email support
+        <div className="settings-page__sections">
+          <SettingsSection id="profile" title="Profile" description="The account signed in to this workspace.">
+            <SettingsRow label="Name">{displayName}</SettingsRow>
+            <SettingsRow label="Email address" hint="For sign-in and account messages">
+              {user.email ?? <span className="text-muted-foreground">No email address</span>}
+            </SettingsRow>
+            {/* Unnamed workspaces get no row: "Workspace" alone says nothing and can't be edited here. */}
+            {workspaceUnavailable || !hasWorkspaceName ? null : (
+              <SettingsRow label="Workspace" hint={role === "admin" ? "You're an owner or admin" : role === "member" ? "You're a member" : undefined}>
+                {workspaceName}
+              </SettingsRow>
+            )}
+            <PasswordRow recovery={passwordRecovery} hasPassword={hasPassword} />
+            <SettingsRow label="Session" hint="Signed in on this device" action={<LogoutButton />} />
+          </SettingsSection>
+
+          {workspaceUnavailable ? (
+            <LoadError
+              thing="Your workspace details"
+              description="Your plan, prospecting setup and email choices are hidden until they load, so nothing here is out of date. Try again, and if it keeps happening, email support@arcli.tech."
+              onRetry={() => startRetry(() => router.refresh())}
+              retrying={isRetrying}
+            />
+          ) : (
+            <>
+              <WorkspaceBillingCard
+                planData={planData}
+                canManageBilling={canManageBilling}
+                checkoutConfirming={checkoutReturn === "confirming"}
+              />
+              <WorkspaceTab initialData={{ websiteUrl }} serviceProfile={serviceProfile} />
+              <CrawlNotificationPreferences
+                initialEnabled={initialCrawlNotificationEmailsEnabled}
+                eligible={canReceiveResultEmails}
+                accountEmail={user.email ?? null}
+                roleUnknown={role === "unknown"}
+                preferenceUnavailable={emailPreferenceUnavailable}
+              />
+            </>
+          )}
+
+          <SettingsSection id="support" title="Support">
+            <p className="px-4 py-3.5 text-sm leading-6 text-muted-foreground md:px-5">
+              Questions, problems or ideas? Email{" "}
+              <a href="mailto:support@arcli.tech?subject=Arcli%20support" className={LINK_CLASS}>
+                support@arcli.tech
               </a>
               .
             </p>
-          </section>
+          </SettingsSection>
         </div>
       </div>
     </div>

@@ -1,7 +1,8 @@
-import { AlertCircle, Check, Loader2, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import type { BuyerDemandReportView } from "@/app/(dashboard)/dashboard/prospect-types";
-import { C } from "@/lib/tokens";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { cn } from "@/lib/utils";
 
 type SourceProgress = BuyerDemandReportView["sourceProgress"][number];
 type SourceProgressState = SourceProgress["state"];
@@ -13,15 +14,14 @@ export type LiveDiscoveryFunnelProps = {
    * optional rather than assuming a scan has already started.
    */
   report: BuyerDemandReportView | null;
-  /** True while background work can still add source or verifier results. */
-  isWarmingUp: boolean;
-  /** Client-side elapsed time, used only to make a slow scan explain itself. */
-  elapsedSeconds?: number;
+  className?: string;
 };
 
 type FunnelMetrics = {
   sourceCount: number;
-  reportingSourceCount: number;
+  /** Sources that answered: found, partial or no results. */
+  finishedSourceCount: number;
+  unavailableSourceCount: number;
   postCount: number | null;
   candidateCount: number | null;
 };
@@ -46,7 +46,15 @@ const SOURCE_NAMES: Record<string, string> = {
   bluesky: "Bluesky",
   lemmy: "Lemmy",
   reddit: "Reddit",
-  x: "Public conversation",
+  x: "X (Twitter)",
+};
+
+const SOURCE_STATUS: Record<SourceProgressState, { tone: StatusTone; label: string }> = {
+  checking: { tone: "info", label: "Searching" },
+  found: { tone: "success", label: "Finished" },
+  partial: { tone: "warning", label: "Partly searched" },
+  no_results: { tone: "neutral", label: "No matches" },
+  unavailable: { tone: "danger", label: "Didn't respond" },
 };
 
 function safeCount(value: unknown) {
@@ -122,299 +130,199 @@ function metricsFor(
   report: BuyerDemandReportView | null,
   sourceProgress: SourceProgress[],
 ): FunnelMetrics {
-  const sourcePostCount = sumKnownCounts(
-    sourceProgress.map((source) => source?.itemCount),
-  );
-  const sourceCandidateCount = sumKnownCounts(
-    sourceProgress.map((source) => source?.plausibleCount),
-  );
-  const sourceCount = sourceProgress.length || summarySourceCount(report);
-  const reportingSourceCount = sourceProgress.filter((source) => {
-    const state = sourceState(source?.state);
-    return (
-      state !== "checking" ||
-      safeCount(source?.itemCount) !== null ||
-      safeCount(source?.plausibleCount) !== null
-    );
-  }).length;
+  const states = sourceProgress.map((source) => sourceState(source?.state));
 
   return {
-    sourceCount,
-    reportingSourceCount,
+    sourceCount: sourceProgress.length || summarySourceCount(report),
+    // Unavailable sources are not coverage, so they are counted separately.
+    finishedSourceCount: states.filter((state) => state !== "checking" && state !== "unavailable").length,
+    unavailableSourceCount: states.filter((state) => state === "unavailable").length,
     // The persisted summary is a run-wide total. Source rows can arrive more
     // recently, so retain the greater safe value during the live handoff.
-    postCount: highestKnownCount(safeCount(report?.summary?.totalHits), sourcePostCount),
+    postCount: highestKnownCount(
+      safeCount(report?.summary?.totalHits),
+      sumKnownCounts(sourceProgress.map((source) => source?.itemCount)),
+    ),
     candidateCount: highestKnownCount(
       safeCount(report?.summary?.plausibleHits),
-      sourceCandidateCount,
+      sumKnownCounts(sourceProgress.map((source) => source?.plausibleCount)),
     ),
   };
 }
 
 function countLabel(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
+  return `${count.toLocaleString("en-US")} ${count === 1 ? singular : plural}`;
 }
 
-function sourceStatusCopy(source: SourceProgress) {
-  const state = sourceState(source?.state);
-  const postCount = safeCount(source?.itemCount);
-
-  if (state === "checking") {
-    return postCount && postCount > 0
-      ? `${countLabel(postCount, "post")} found so far`
-      : "Checking this source";
-  }
-  if (state === "found") return `${countLabel(postCount ?? 0, "post")} collected`;
-  if (state === "partial") {
-    return `${countLabel(postCount ?? 0, "post")} found with partial coverage`;
-  }
-  if (state === "no_results") return "No relevant posts this scan";
-  return "This source is unavailable";
-}
-
-function sourceTone(state: SourceProgressState) {
-  if (state === "found") {
-    return { border: C.greenPale, background: C.greenPale, color: C.green };
-  }
-  if (state === "partial") {
-    return { border: C.amberPale, background: C.amberPale, color: C.amber };
-  }
-  if (state === "unavailable") {
-    return { border: C.redPale, background: C.redPale, color: C.red };
-  }
-  if (state === "checking") {
-    return { border: C.blueLight, background: C.blueTint, color: C.blue };
-  }
-  return { border: C.rule, background: C.offWhite, color: C.muted };
-}
-
-function SourceStateIcon({ state }: { state: SourceProgressState }) {
-  if (state === "checking") {
-    return <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />;
-  }
-  if (state === "found") {
-    return <Check className="size-3.5" aria-hidden="true" />;
-  }
-  if (state === "partial" || state === "unavailable") {
-    return <AlertCircle className="size-3.5" aria-hidden="true" />;
-  }
-  return <Search className="size-3.5" aria-hidden="true" />;
-}
-
-function funnelDescription({
-  report,
-  metrics,
-  sourceProgress,
-}: {
-  report: BuyerDemandReportView | null;
-  metrics: FunnelMetrics;
-  sourceProgress: SourceProgress[];
-}) {
-  const allSourcesReported =
-    metrics.sourceCount > 0 && metrics.reportingSourceCount >= metrics.sourceCount;
-  const hasCollectedPosts = (metrics.postCount ?? 0) > 0;
-  const hasCandidates = (metrics.candidateCount ?? 0) > 0;
+/** Terminal outcomes come first so a finished scan never says "so far". */
+function funnelDescription(report: BuyerDemandReportView | null, metrics: FunnelMetrics) {
+  const posts = metrics.postCount ?? 0;
+  const candidates = metrics.candidateCount ?? 0;
 
   if (!report) {
-    return "Preparing the source checks. Collected posts and candidate conversations will appear here as soon as the scan starts reporting.";
+    return "Counts appear here as soon as the first source reports.";
   }
-  if (hasCandidates) {
-    return `${countLabel(metrics.candidateCount ?? 0, "candidate conversation")} found so far. We are checking the evidence before anything is called a lead.`;
+
+  if (report.isTerminal) {
+    if (metrics.sourceCount > 0 && metrics.unavailableSourceCount === metrics.sourceCount) {
+      return "None of the sources responded during this scan.";
+    }
+    if (candidates > 0) {
+      return `Found ${countLabel(candidates, "candidate conversation")} in ${countLabel(posts, "public post")}.`;
+    }
+    if (posts > 0) {
+      return `None of the ${countLabel(posts, "public post")} looked like a buyer describing your problem. Refining your targeting brief can change what the next scan finds.`;
+    }
+    return "This scan didn't collect any public posts.";
   }
-  if (hasCollectedPosts) {
-    return `${countLabel(metrics.postCount ?? 0, "public post")} collected so far. We are narrowing them to conversations that show a real buyer problem.`;
+
+  if (candidates > 0) {
+    return `${countLabel(candidates, "candidate conversation")} so far. Each one is checked before it reaches Prospects.`;
   }
-  if (report.isTerminal && metrics.sourceCount > 0) {
-    return "The available source coverage did not surface a candidate conversation for this brief. That does not mean there are no buyers; review coverage and refine the brief before the next scan.";
+  if (posts > 0) {
+    return `${countLabel(posts, "public post")} collected so far. Arcli is narrowing them to people describing the problem you solve.`;
   }
-  if (allSourcesReported) {
-    const unavailableCount = sourceProgress.filter(
-      (source) => sourceState(source?.state) === "unavailable",
-    ).length;
-    return unavailableCount > 0
-      ? "The reporting sources have not surfaced a candidate yet, and some coverage was unavailable. We will keep any available evidence visible in the dashboard."
-      : "The reporting sources have not surfaced a candidate conversation yet. We are finishing the remaining matching checks.";
-  }
-  return "We are checking public conversations against your matching brief. Each source will appear here as it starts reporting.";
+  return "Each source appears here as it starts reporting.";
 }
 
 /**
- * A compact, live view of a discovery run. Counts describe collected posts
- * and plausible candidate conversations, never verified leads.
+ * What a discovery run has found. Counts describe collected posts and
+ * candidate conversations, never verified prospects.
  */
-export function LiveDiscoveryFunnel({
-  report,
-  isWarmingUp,
-  elapsedSeconds = 0,
-}: LiveDiscoveryFunnelProps) {
+export function LiveDiscoveryFunnel({ report, className }: LiveDiscoveryFunnelProps) {
   const sourceProgress = usableSourceProgress(report);
   const metrics = metricsFor(report, sourceProgress);
-  const isRunning = isWarmingUp || Boolean(report && !report.isTerminal);
-  const isSlow = isRunning && elapsedSeconds >= 90;
-  const description = funnelDescription({ report, metrics, sourceProgress });
-  const shownSources = sourceProgress.slice(0, 6);
-  const hiddenSourceCount = Math.max(0, sourceProgress.length - shownSources.length);
+  const isFinished = Boolean(report?.isTerminal);
+  // While a run is live, a missing count means "not reported yet" (null);
+  // once it has finished, it means nothing was counted.
+  const emptyValue = isFinished ? "0" : null;
 
   return (
     <section
-      className="mt-6 rounded-xl border text-left"
-      style={{ borderColor: C.blueLight, backgroundColor: "rgba(255, 255, 255, 0.72)" }}
-      aria-label="Live discovery funnel"
+      aria-labelledby="discovery-findings-title"
+      className={cn("rounded-lg border border-border bg-card", className)}
     >
-      <div className="border-b px-4 py-4 sm:px-5" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold" style={{ color: C.navy }}>
-              What the scan is finding
-            </p>
-            <p
-              className="mt-1 max-w-2xl text-[11px] leading-5"
-              role="status"
-              aria-live="polite"
-              style={{ color: C.navySoft }}
-            >
-              {description}
-            </p>
-          </div>
-          {isRunning ? (
-            <span
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold"
-              style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
-            >
-              <span className="size-1.5 animate-pulse rounded-full" style={{ backgroundColor: C.blue }} />
-              Live scan
-            </span>
-          ) : null}
-        </div>
-
-        <dl className="mt-4 grid gap-2 sm:grid-cols-3">
-          <FunnelMetric
-            label="Sources reporting"
-            value={
-              metrics.sourceCount > 0
-                ? `${metrics.reportingSourceCount}/${metrics.sourceCount}`
-                : "—"
-            }
-            detail={
-              metrics.sourceCount > 0
-                ? "Source coverage received"
-                : "Preparing source checks"
-            }
-          />
-          <FunnelMetric
-            label="Public posts found"
-            value={metrics.postCount === null ? "—" : String(metrics.postCount)}
-            detail={
-              metrics.postCount === null
-                ? "Waiting for results"
-                : "Collected before matching"
-            }
-          />
-          <FunnelMetric
-            label="Candidate conversations"
-            value={metrics.candidateCount === null ? "—" : String(metrics.candidateCount)}
-            detail={
-              metrics.candidateCount === null
-                ? "Checking buyer signals"
-                : "Not verified leads"
-            }
-          />
-        </dl>
+      <div className="px-4 pt-4 pb-3 sm:px-5">
+        <h2 id="discovery-findings-title" className="text-base leading-6 font-semibold text-foreground">
+          {isFinished ? "What the scan found" : "What the scan has found so far"}
+        </h2>
+        <p className="mt-0.5 max-w-[65ch] text-sm leading-6 text-muted-foreground">
+          {funnelDescription(report, metrics)}
+        </p>
       </div>
 
-      <div className="px-4 py-4 sm:px-5">
-        {shownSources.length > 0 ? (
-          <ul className="grid gap-2 sm:grid-cols-2" aria-label="Source scan progress">
-            {shownSources.map((source) => {
-              const state = sourceState(source?.state);
-              const tone = sourceTone(state);
-              const candidateCount = safeCount(source?.plausibleCount);
-              const newPostCount = safeCount(source?.newPostCount);
+      <dl className="grid border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
+        <FunnelMetric
+          label="Sources searched"
+          value={metrics.sourceCount > 0 ? `${metrics.finishedSourceCount} of ${metrics.sourceCount}` : emptyValue}
+          note={
+            metrics.unavailableSourceCount > 0
+              ? `${metrics.unavailableSourceCount} didn't respond`
+              : undefined
+          }
+        />
+        <FunnelMetric
+          label="Public posts collected"
+          value={metrics.postCount === null ? emptyValue : metrics.postCount.toLocaleString("en-US")}
+        />
+        <FunnelMetric
+          label="Candidate conversations"
+          value={metrics.candidateCount === null ? emptyValue : metrics.candidateCount.toLocaleString("en-US")}
+          note="Checked before they become prospects"
+        />
+      </dl>
 
-              return (
-                <li
-                  key={sourceKey(source?.source)}
-                  className="rounded-lg border px-3 py-2.5"
-                  style={{ borderColor: tone.border, backgroundColor: tone.background }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-xs font-semibold" style={{ color: C.navy }}>
-                      {sourceName(source?.source)}
-                    </p>
-                    <span className="shrink-0" style={{ color: tone.color }}>
-                      <SourceStateIcon state={state} />
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[11px] font-medium" style={{ color: tone.color }}>
-                    {sourceStatusCopy(source)}
-                  </p>
-                  {candidateCount !== null ? (
-                    <p className="mt-1 text-[10px] leading-4" style={{ color: C.navySoft }}>
-                      {countLabel(candidateCount, "candidate conversation")}
-                      {newPostCount && newPostCount > 0
-                        ? ` · ${countLabel(newPostCount, "new post")}`
-                        : ""}
-                    </p>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <div
-            className="rounded-lg border border-dashed px-3 py-3 text-xs leading-5"
-            style={{ borderColor: C.ruleDark, color: C.navySoft }}
-          >
-            Source-by-source progress will appear here once the public scan begins.
-          </div>
-        )}
-
-        {hiddenSourceCount > 0 ? (
-          <p className="mt-2 text-[10px]" style={{ color: C.muted }}>
-            +{hiddenSourceCount} more {hiddenSourceCount === 1 ? "source" : "sources"} reporting
-          </p>
-        ) : null}
-
-        {isSlow ? (
-          <div
-            className="mt-4 rounded-lg border px-3 py-2.5 text-xs leading-5"
-            style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.navySoft }}
-            role="status"
-          >
-            <p className="font-semibold" style={{ color: C.navy }}>
-              Still scanning, but you do not need to wait here.
-            </p>
-            <p className="mt-0.5">
-              Public sources respond at different speeds. We will keep collecting and checking
-              evidence in the background, including when no candidate has appeared yet.
-            </p>
-          </div>
-        ) : null}
-      </div>
+      {sourceProgress.length > 0 ? (
+        <SourceTable sources={sourceProgress} />
+      ) : (
+        <p className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground sm:px-5">
+          <Search className="size-4 shrink-0 text-subtle" aria-hidden="true" />
+          No source has reported yet.
+        </p>
+      )}
     </section>
   );
 }
 
-function FunnelMetric({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function FunnelMetric({ label, value, note }: { label: string; value: string | null; note?: string }) {
   return (
-    <div className="rounded-lg border px-3 py-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-      <dt className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: C.muted }}>
-        {label}
-      </dt>
-      <dd className="mt-1 text-lg font-semibold leading-none" style={{ color: C.navy }}>
-        {value}
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-b border-border px-4 py-2.5 last:border-b-0 sm:block sm:border-b-0 sm:px-5 sm:py-3">
+      <dt className="text-sm leading-5 text-muted-foreground">{label}</dt>
+      <dd className="col-start-2 row-start-1 text-right sm:mt-0.5 sm:text-left">
+        {value === null ? (
+          <span className="text-sm leading-7 text-subtle">Not reported yet</span>
+        ) : (
+          <span className="text-lg leading-7 font-semibold text-foreground tabular-nums">{value}</span>
+        )}
       </dd>
-      <p className="mt-1 text-[10px] leading-4" style={{ color: C.navySoft }}>
-        {detail}
-      </p>
+      {note ? <dd className="text-xs leading-5 text-subtle">{note}</dd> : null}
     </div>
+  );
+}
+
+function EmptyCount() {
+  return (
+    <>
+      <span className="text-subtle" aria-hidden="true">–</span>
+      <span className="sr-only">None</span>
+    </>
+  );
+}
+
+function SourceTable({ sources }: { sources: SourceProgress[] }) {
+  return (
+    <table className="w-full table-fixed text-sm">
+      <caption className="sr-only">Progress by source</caption>
+      <thead>
+        <tr className="border-b border-border text-left text-xs text-subtle">
+          <th scope="col" className="px-4 py-2 font-medium sm:px-5">Source</th>
+          <th scope="col" className="hidden w-40 py-2 pr-3 font-medium sm:table-cell">Status</th>
+          <th scope="col" className="w-16 py-2 pr-3 text-right font-medium">Posts</th>
+          <th scope="col" className="w-24 py-2 pr-4 text-right font-medium sm:pr-5">Candidates</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-border">
+        {sources.map((source) => {
+          const state = sourceState(source?.state);
+          const status = SOURCE_STATUS[state];
+          const posts = safeCount(source?.itemCount);
+          const candidates = safeCount(source?.plausibleCount);
+          const badge = (
+            <StatusBadge
+              tone={status.tone}
+              size="compact"
+              icon={state === "checking" ? Search : undefined}
+            >
+              {status.label}
+            </StatusBadge>
+          );
+
+          return (
+            <tr key={sourceKey(source?.source)}>
+              <th scope="row" className="px-4 py-2.5 text-left align-top font-medium text-foreground sm:px-5">
+                <span className="block truncate">{sourceName(source?.source)}</span>
+                {/* Below sm the status sits under the name to keep the numbers readable. */}
+                <span className="mt-1 block sm:hidden">{badge}</span>
+              </th>
+              <td className="hidden py-2.5 pr-3 align-top sm:table-cell">{badge}</td>
+              <td className="py-2.5 pr-3 text-right align-top text-foreground tabular-nums">
+                {posts === null || (state === "unavailable" && posts === 0) ? (
+                  <EmptyCount />
+                ) : (
+                  posts.toLocaleString("en-US")
+                )}
+              </td>
+              <td className="py-2.5 pr-4 text-right align-top text-foreground tabular-nums sm:pr-5">
+                {candidates === null ? (
+                  <EmptyCount />
+                ) : (
+                  candidates.toLocaleString("en-US")
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

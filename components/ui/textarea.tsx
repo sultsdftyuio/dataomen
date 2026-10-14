@@ -2,6 +2,8 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
+// text-base (16px) below md stops iOS zooming on focus. globals.css repeats
+// that floor for [data-slot="textarea"] so a caller's text-sm can't undo it.
 function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <textarea
