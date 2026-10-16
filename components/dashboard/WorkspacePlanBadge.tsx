@@ -24,7 +24,7 @@ function shortDate(value: string | null): string | null {
 }
 
 /** One label per billing state, so a trial or a cancelled plan never reads as plain "Pro". */
-function planStatus(entitlements: WorkspaceEntitlements): { tone: StatusTone; label: string } {
+export function planStatus(entitlements: WorkspaceEntitlements): { tone: StatusTone; label: string } {
   const planName = entitlements.planTier.toLowerCase() === "enterprise" ? "Enterprise" : "Pro";
   if (entitlements.isPastDue) return { tone: "danger", label: "Payment failed" };
   if (entitlements.isCanceling) {
@@ -40,7 +40,6 @@ function planStatus(entitlements: WorkspaceEntitlements): { tone: StatusTone; la
 }
 
 export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
-  const { isPro, isPastDue, billingDescription } = entitlements;
   const status = planStatus(entitlements);
 
   return (
@@ -59,41 +58,50 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
       {/* z-[70] = --z-overlay: the badge also lives in the mobile drawer
           (z-index 61), and the popover must open above it. */}
       <PopoverContent align="start" className="z-[70] w-80 max-w-[calc(100vw-2rem)] p-4 shadow-lg">
-        <div className="flex flex-col gap-3">
-          <div className="space-y-1">
-            <h2 className="text-sm leading-5 font-semibold text-foreground">
-              Plan and billing
-            </h2>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {billingDescription}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 border-t border-border pt-3">
-            {!isPro && !isPastDue && (
-              <UpgradeButton className="w-full justify-center" />
-            )}
-
-            {isPastDue && (
-              <Link
-                href="/settings#billing"
-                className="inline-flex h-9 w-full items-center justify-center rounded-md bg-danger px-3 text-sm font-semibold text-white transition-colors hover:bg-danger/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
-              >
-                Update payment method
-              </Link>
-            )}
-
-            {!isPastDue && (
-              <Link
-                href="/settings#billing"
-                className="inline-flex h-9 items-center justify-center rounded-md text-sm font-medium text-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                Manage billing
-              </Link>
-            )}
-          </div>
-        </div>
+        <PlanBillingDetails entitlements={entitlements} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Plan description and billing actions. Shared by the plan badge and the account menu. */
+export function PlanBillingDetails({ entitlements }: WorkspacePlanBadgeProps) {
+  const { isPro, isPastDue, billingDescription } = entitlements;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="space-y-1">
+        <h2 className="text-sm leading-5 font-semibold text-foreground">
+          Plan and billing
+        </h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {billingDescription}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-border pt-3">
+        {!isPro && !isPastDue && (
+          <UpgradeButton className="w-full justify-center" />
+        )}
+
+        {isPastDue && (
+          <Link
+            href="/settings#billing"
+            className="inline-flex h-9 w-full items-center justify-center rounded-md bg-danger px-3 text-sm font-semibold text-white transition-colors hover:bg-danger/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            Update payment method
+          </Link>
+        )}
+
+        {!isPastDue && (
+          <Link
+            href="/settings#billing"
+            className="inline-flex h-9 items-center justify-center rounded-md text-sm font-medium text-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            Manage billing
+          </Link>
+        )}
+      </div>
+    </div>
   );
 }

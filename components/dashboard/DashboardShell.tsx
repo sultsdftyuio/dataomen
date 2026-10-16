@@ -4,15 +4,16 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertCircle, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import { AlertCircle, Menu, X } from "lucide-react";
 
+import { AccountMenu } from "./AccountMenu";
+import { ArcLogoIcon, ArcSearchIcon } from "./arc-icons";
 import { DashboardNavigation } from "./DashboardNavigation";
 import { DashboardSearch } from "./DashboardSearch";
 import { WorkspacePlanBadge } from "./WorkspacePlanBadge";
 import LogoutButton from "./logout-button";
-import Logo from "@/components/ui/logo";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WorkspaceEntitlements } from "@/lib/entitlements";
-import { dashboardPageLabel } from "@/lib/dashboard-navigation";
 import "./dashboard-shell.css";
 
 type DashboardShellProps = {
@@ -30,13 +31,11 @@ const DESKTOP_QUERY = "(min-width: 768px)";
 
 export function DashboardShell({ children, userName, userEmail, entitlements, assistedPilot }: DashboardShellProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const returnFocusToMenuRef = useRef(false);
-  const currentPage = dashboardPageLabel(pathname, assistedPilot);
   const isPastDue = entitlements.isPastDue;
 
   // Focus moves back to the menu button after the close renders: until then
@@ -92,50 +91,66 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
   }, [mobileOpen, closeDrawer]);
 
   return (
-    <div className={`arc-shell${collapsed ? " arc-shell--collapsed" : ""}${mobileOpen ? " arc-shell--drawer-open" : ""}`}>
+    <div className={`arc-shell${mobileOpen ? " arc-shell--drawer-open" : ""}`}>
       <a className="skip-link" href={`#${MAIN_ID}`}>Skip to content</a>
       {mobileOpen ? <div className="arc-shell__scrim" aria-hidden="true" onClick={() => closeDrawer(true)} /> : null}
-      {/* Below 768px this is a drawer. CSS hides it (visibility) while closed,
-          which also takes it out of the tab order and the accessibility tree. */}
+
+      {/* Desktop: an icon rail on the navy-blue surface. Page names live in
+          tooltips and stay as accessible names. Hidden below 768px. */}
+      <aside aria-label="Workspace" className="arc-rail">
+        <RailArcs />
+        <Link href="/dashboard" className="arc-rail__logo" aria-label="Arcli home">
+          <ArcLogoIcon size={28} accent="var(--rail-accent)" />
+        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="arc-rail__button" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page (Ctrl K)">
+              <ArcSearchIcon size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={10}>Go to a page (Ctrl K)</TooltipContent>
+        </Tooltip>
+        <span className="arc-rail__divider" aria-hidden="true" />
+        <DashboardNavigation variant="rail" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
+        <AccountMenu userName={userName} userEmail={userEmail} entitlements={entitlements} />
+      </aside>
+
+      {/* Below 768px the menu is a drawer on the same surface, with labels.
+          CSS hides it (visibility) while closed, which also takes it out of
+          the tab order and the accessibility tree. */}
       <aside
         id={SIDEBAR_ID}
-        aria-label="Workspace"
-        className={`arc-shell__sidebar${mobileOpen ? " arc-shell__sidebar--open" : ""}`}
+        aria-label="Workspace menu"
+        className={`arc-drawer${mobileOpen ? " arc-drawer--open" : ""}`}
       >
-        <div className="arc-shell__brand">
-          <Link href="/dashboard" aria-label="Arcli home"><Logo iconOnly={collapsed} /></Link>
-          <button className="arc-shell__collapse" type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-            {collapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}
-          </button>
-          <button ref={drawerCloseRef} className="arc-shell__drawer-close" type="button" onClick={() => closeDrawer(true)} aria-label="Close menu">
+        <div className="arc-drawer__brand">
+          <Link href="/dashboard" className="arc-drawer__home" aria-label="Arcli home">
+            <ArcLogoIcon size={26} accent="var(--rail-accent)" />
+            <span aria-hidden="true">Arcli</span>
+          </Link>
+          <button ref={drawerCloseRef} className="arc-drawer__close" type="button" onClick={() => closeDrawer(true)} aria-label="Close menu">
             <X size={18} aria-hidden="true" />
           </button>
         </div>
 
-        <DashboardNavigation variant="sidebar" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
+        <DashboardNavigation variant="drawer" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
 
-        <div className="arc-shell__sidebar-bottom">
-          <div className={`arc-shell__plan${isPastDue ? " arc-shell__plan--alert" : ""}`}>
-            <WorkspacePlanBadge entitlements={entitlements} />
-            {isPastDue ? (
-              <p className="arc-shell__plan-note">
-                Your last payment failed. <Link href="/settings#billing">Update payment method</Link>
-              </p>
-            ) : null}
-          </div>
-          <div className="arc-shell__user">
-            <span className="arc-shell__avatar" aria-hidden="true">{userName.slice(0, 1).toUpperCase()}</span>
-            <span className="arc-shell__user-copy"><strong>{userName}</strong><small>{userEmail}</small></span>
+        <div className="arc-drawer__bottom">
+          <WorkspacePlanBadge entitlements={entitlements} />
+          <div className="arc-drawer__user">
+            <span className="arc-rail__avatar" aria-hidden="true">{userName.slice(0, 1).toUpperCase()}</span>
+            <span className="arc-drawer__user-copy"><strong>{userName}</strong><small>{userEmail}</small></span>
             <LogoutButton iconOnly />
           </div>
         </div>
       </aside>
 
       <div className="arc-shell__body" inert={mobileOpen}>
+        {/* Phones only: the rail is hidden, so this bar opens the drawer. */}
         <header className="arc-shell__topbar">
           <button
             ref={menuButtonRef}
-            className="arc-shell__mobile-menu"
+            className="arc-shell__icon-button"
             type="button"
             aria-label="Open menu"
             aria-expanded={mobileOpen}
@@ -144,22 +159,35 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
           >
             <Menu size={19} aria-hidden="true" />
           </button>
-          <div className="arc-shell__page-label">{currentPage}</div>
-          {isPastDue ? (
-            <Link className="arc-shell__billing-alert" href="/settings#billing">
-              <AlertCircle size={14} aria-hidden="true" />
-              <span>Payment failed<span className="arc-shell__billing-alert-action">. Update payment method</span></span>
-            </Link>
-          ) : null}
-          <button className="arc-shell__search" type="button" onClick={() => setSearchOpen(true)}>
-            <Search size={15} aria-hidden="true" /><span>Go to a page</span><kbd aria-hidden="true">Ctrl K</kbd>
+          <Link href="/dashboard" className="arc-shell__topbar-home" aria-label="Arcli home">
+            <ArcLogoIcon size={24} accent="var(--rail-accent)" />
+          </Link>
+          <button className="arc-shell__icon-button arc-shell__topbar-search" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page">
+            <ArcSearchIcon size={18} />
           </button>
         </header>
+        {isPastDue ? (
+          <Link className="arc-shell__billing-alert" href="/settings#billing">
+            <AlertCircle size={15} aria-hidden="true" />
+            <span>Your last payment failed. Update payment method</span>
+          </Link>
+        ) : null}
         <main id={MAIN_ID} tabIndex={-1} className="arc-shell__main">{children}</main>
         <div className="arc-shell__mobile-tabs"><DashboardNavigation compact isPro={entitlements.isPro} assistedPilot={assistedPilot} /></div>
       </div>
 
       <DashboardSearch open={searchOpen} onOpenChange={setSearchOpen} isPro={entitlements.isPro} assistedPilot={assistedPilot} />
     </div>
+  );
+}
+
+/** The logo's arcs, drawn large and faint at the foot of the rail. */
+function RailArcs() {
+  return (
+    <svg className="arc-rail__arcs" viewBox="0 0 16 9" fill="none" aria-hidden="true" focusable="false">
+      <path d="M1 8.5a7 7 0 0 1 14 0" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.14" />
+      <path d="M3 8.5a5 5 0 0 1 10 0" stroke="currentColor" strokeOpacity="0.07" strokeWidth="0.14" />
+      <path d="M5 8.5a3 3 0 0 1 6 0" stroke="var(--rail-accent)" strokeOpacity="0.28" strokeWidth="0.14" />
+    </svg>
   );
 }

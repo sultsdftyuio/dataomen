@@ -3,18 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useState, type CSSProperties } from "react";
-import {
-  BriefcaseBusiness,
-  CheckCircle2,
-  ClipboardList,
-  ClipboardCheck,
-  LockKeyhole,
-  Settings2,
-  Sparkles,
-  Target,
-  UsersRound,
-  type LucideIcon,
-} from "lucide-react";
+import { CheckCircle2, Sparkles } from "lucide-react";
 
 import {
   dashboardNavigationItemsFor,
@@ -24,6 +13,16 @@ import { PRO_PRICE_NOTE } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import UpgradeButton from "@/components/ui/UpgradeButton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  ArcAccountsIcon,
+  ArcBriefIcon,
+  ArcConfirmedIcon,
+  ArcGroupsIcon,
+  ArcLockIcon,
+  ArcProspectsIcon,
+  ArcSettingsIcon,
+} from "./arc-icons";
 import {
   Dialog,
   DialogContent,
@@ -32,25 +31,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const ICONS: Record<string, LucideIcon> = {
-  "/dashboard": ClipboardList,
-  "/dashboard/today": ClipboardCheck,
-  "/dashboard/watchlists": UsersRound,
-  "/dashboard/brief": BriefcaseBusiness,
-  "/dashboard/targets": Target,
-  "/settings": Settings2,
+const ICONS: Record<string, typeof ArcProspectsIcon> = {
+  "/dashboard": ArcProspectsIcon,
+  "/dashboard/today": ArcConfirmedIcon,
+  "/dashboard/watchlists": ArcGroupsIcon,
+  "/dashboard/brief": ArcBriefIcon,
+  "/dashboard/targets": ArcAccountsIcon,
+  "/settings": ArcSettingsIcon,
 };
 
-// Sidebar section headings, shown above the first item of each group.
-const SIDEBAR_GROUPS: Record<string, string> = {
-  "/dashboard": "Review",
-  "/dashboard/brief": "Research",
-  "/settings": "Workspace",
-};
+// Settings sits at the bottom of the rail, apart from the product pages.
+const RAIL_FOOTER_HREF = "/settings";
 
 type DashboardNavigationProps = {
   compact?: boolean;
-  variant?: "sidebar";
+  /**
+   * "rail": desktop icon-only rail on the dark navy-blue surface, labels in
+   * tooltips. "drawer": the same dark surface with labels, for the mobile
+   * menu. Without a variant: the light horizontal or compact tab layout.
+   */
+  variant?: "rail" | "drawer";
   isPro: boolean;
   assistedPilot?: boolean;
 };
@@ -63,83 +63,101 @@ export function DashboardNavigation({
 }: DashboardNavigationProps) {
   const pathname = usePathname();
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+  const onDarkSurface = variant === "rail" || variant === "drawer";
   // The mobile tab bar leaves Settings to the menu drawer so the remaining
   // tabs have room for whole labels.
   const items = dashboardNavigationItemsFor(assistedPilot).filter(
     (item) => !compact || item.href !== "/settings",
   );
 
-  const navigationItemClassName = () =>
-    cn(
+  const navigationItemClassName = (href: string) => {
+    if (variant === "rail") {
+      return cn("arc-rail-nav__item", href === RAIL_FOOTER_HREF && "arc-rail-nav__item--footer");
+    }
+    if (variant === "drawer") return "arc-drawer-nav__item";
+    return cn(
       "flex items-center rounded-md bg-[var(--nav-background)] text-[13px] font-semibold text-[var(--nav-foreground)] transition-colors hover:bg-[var(--nav-hover-background)] hover:text-[var(--nav-hover-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
       compact
         ? "h-12 flex-col justify-center gap-0.5 px-0.5 text-[11px] font-medium"
-        : variant === "sidebar" ? "h-9 w-full gap-2.5 px-3" : "h-9 shrink-0 gap-1.5 px-3",
+        : "h-9 shrink-0 gap-1.5 px-3",
     );
+  };
 
+  // The dark variants are styled in dashboard-shell.css; only the light
+  // layouts set colours here.
   const navigationItemStyle = (isActive: boolean) =>
-    ({
-      "--nav-background": isActive ? C.bluePale : "transparent",
-      "--nav-foreground": isActive ? C.blue : C.muted,
-      "--nav-hover-background": isActive ? C.bluePale : C.blueTint,
-      "--nav-hover-foreground": C.blue,
-    }) as CSSProperties;
+    onDarkSurface
+      ? undefined
+      : ({
+          "--nav-background": isActive ? C.bluePale : "transparent",
+          "--nav-foreground": isActive ? C.blue : C.muted,
+          "--nav-hover-background": isActive ? C.bluePale : C.blueTint,
+          "--nav-hover-foreground": C.blue,
+        }) as CSSProperties;
+
+  const navClassName = compact
+    ? "grid w-full items-center"
+    : variant === "rail"
+      ? "arc-rail-nav"
+      : variant === "drawer"
+        ? "arc-drawer-nav"
+        : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]";
 
   return (
     <>
       <nav
         aria-label="Product navigation"
         style={compact ? { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` } : undefined}
-        className={
-          compact
-            ? "grid w-full items-center"
-            : variant === "sidebar" ? "arc-sidebar-nav flex min-h-0 flex-col items-stretch gap-1 overflow-y-auto px-2" : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
-        }
+        className={navClassName}
       >
         {items.map((item) => {
-          const Icon = ICONS[item.href];
           const isActive = isDashboardNavigationItemActive(pathname, item.href);
           const isLocked = !isPro && item.href === "/dashboard/watchlists";
-          const group = variant === "sidebar" ? SIDEBAR_GROUPS[item.href] ?? null : null;
+          const Icon = isLocked ? ArcLockIcon : ICONS[item.href];
           const label = compact ? item.shortLabel ?? item.label : item.label;
+          // On the dark rail the active page's arc lights up in the brand's
+          // light blue, echoing the logo.
+          const iconAccent = onDarkSurface && isActive ? "var(--rail-accent)" : "currentColor";
+          const iconSize = variant === "rail" ? 20 : 16;
+          // The rail hides labels visually; they stay as accessible names.
+          const labelClassName = variant === "rail"
+            ? "sr-only"
+            : compact ? "max-w-full truncate" : "inline";
 
-          if (isLocked) {
-            return (
-              <Fragment key={item.href}>
-              {group ? <span className="arc-sidebar-nav__group">{group}</span> : null}
-              <button
-                type="button"
-                onClick={() => setIsUpgradeOpen(true)}
-                aria-haspopup="dialog"
-                title={`${item.description} Available on Pro.`}
-                className={navigationItemClassName()}
-                style={navigationItemStyle(false)}
-              >
-                <LockKeyhole className="size-4" aria-hidden="true" />
-                <span className={compact ? "max-w-full truncate" : "inline"}>
-                  {label}
-                </span>
-              </button>
-              </Fragment>
-            );
-          }
-
-          return (
-            <Fragment key={item.href}>
-            {group ? <span className="arc-sidebar-nav__group">{group}</span> : null}
+          const control = isLocked ? (
+            <button
+              type="button"
+              onClick={() => setIsUpgradeOpen(true)}
+              aria-haspopup="dialog"
+              title={variant === "rail" ? undefined : `${item.description} Available on Pro.`}
+              className={navigationItemClassName(item.href)}
+              style={navigationItemStyle(false)}
+            >
+              <Icon size={iconSize} />
+              <span className={labelClassName}>{label}</span>
+            </button>
+          ) : (
             <Link
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              title={item.description}
-              className={navigationItemClassName()}
+              title={variant === "rail" ? undefined : item.description}
+              className={navigationItemClassName(item.href)}
               style={navigationItemStyle(isActive)}
             >
-              <Icon className="size-4" aria-hidden="true" />
-              <span className={compact ? "max-w-full truncate" : "inline"}>
-                {label}
-              </span>
+              <Icon size={iconSize} accent={iconAccent} />
+              <span className={labelClassName}>{label}</span>
             </Link>
-            </Fragment>
+          );
+
+          if (variant !== "rail") return <Fragment key={item.href}>{control}</Fragment>;
+
+          return (
+            <Tooltip key={item.href}>
+              <TooltipTrigger asChild>{control}</TooltipTrigger>
+              <TooltipContent side="right" sideOffset={10}>
+                {isLocked ? `${label} (Pro)` : label}
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </nav>
