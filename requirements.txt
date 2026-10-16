@@ -22,10 +22,13 @@ redis>=5.0.0
 supabase>=2.4.0               
 postgrest>=0.10.0
 psycopg2-binary>=2.9.9        
-# Production DATABASE_URL uses postgresql+psycopg; this requires Psycopg 3.
+# Production connects through Psycopg 3 (SQLAlchemy 2.1 uses it for a bare
+# postgresql:// URL as well as postgresql+psycopg://).
 psycopg[binary]==3.3.6
-asyncpg>=0.29.0               
-sqlalchemy>=2.0.27            
+asyncpg>=0.29.0
+# Pin the minor version: 2.1 changed the default PostgreSQL driver, and a
+# silent minor upgrade in the image broke the pooler-safe connect args.
+sqlalchemy>=2.1,<2.2
 # Pin the schema generator alongside the OpenAI SDK. Structured-output schemas
 # are part of the external API contract and must not drift between CI and deploy.
 pydantic[email]==2.13.2

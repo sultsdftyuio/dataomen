@@ -5,15 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import ArgumentError
+from sqlalchemy.exc import ArgumentError, NoSuchModuleError
 
-_PSYCOPG3_DRIVERS = frozenset({"postgresql+psycopg", "postgresql+psycopg_async"})
+_PSYCOPG3_DRIVERS = frozenset({"psycopg", "psycopg_async"})
 
 
 def _uses_psycopg3(database_url: str) -> bool:
+    # Resolve the dialect rather than reading the URL's driver suffix: a bare
+    # ``postgresql://`` URL means psycopg2 on SQLAlchemy 2.0 but Psycopg 3 on
+    # 2.1+, so the suffix alone cannot say which driver will connect.
     try:
-        return make_url(database_url).drivername in _PSYCOPG3_DRIVERS
-    except ArgumentError:
+        return make_url(database_url).get_dialect().driver in _PSYCOPG3_DRIVERS
+    except (ArgumentError, NoSuchModuleError):
         return False
 
 
