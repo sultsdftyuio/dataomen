@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
+import { ContextCard, ContextLayout } from "@/components/dashboard/ContextLayout";
 import { LoadError } from "@/components/dashboard/LoadError";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import LogoutButton from "@/components/dashboard/logout-button";
@@ -92,23 +93,37 @@ export default function SettingsClient({
   const canManageBilling = role !== "member";
   const hasPassword = (user.app_metadata?.providers as string[] | undefined)?.includes("email") ?? user.app_metadata?.provider === "email";
 
+  const panel = (
+    <>
+      <ContextCard>
+        <span className="flex min-w-0 flex-col leading-snug">
+          <span className="truncate text-[15px] font-semibold text-[var(--rail-foreground)]">{displayName}</span>
+          <span className="truncate text-xs">{user.email ?? "No email address"}</span>
+        </span>
+        {hasWorkspaceName && !workspaceUnavailable ? (
+          <span className="arc-context-note text-xs">Workspace: {workspaceName}</span>
+        ) : null}
+      </ContextCard>
+      <h2 className="arc-context-heading">Sections</h2>
+      <SettingsNav items={workspaceUnavailable ? UNAVAILABLE_NAV_ITEMS : NAV_ITEMS} />
+    </>
+  );
+
   return (
-    <div className="arc-workspace-page settings-page">
-      <PageHeader
-        title="Settings"
-        description={
-          hasWorkspaceName && !workspaceUnavailable
-            ? `Your account, plan, prospecting setup and emails for ${workspaceName}.`
-            : "Your account, plan, prospecting setup and emails."
-        }
-      />
+    <ContextLayout label="Settings overview" panel={panel}>
+      <div className="arc-workspace-page settings-page">
+        <PageHeader
+          title="Settings"
+          description={
+            hasWorkspaceName && !workspaceUnavailable
+              ? `Your account, plan, prospecting setup and emails for ${workspaceName}.`
+              : "Your account, plan, prospecting setup and emails."
+          }
+        />
 
-      {workspaceUnavailable ? null : (
-        <BillingNotice planData={planData} checkoutReturn={checkoutReturn} canManageBilling={canManageBilling} />
-      )}
-
-      <div className="settings-page__layout">
-        <SettingsNav items={workspaceUnavailable ? UNAVAILABLE_NAV_ITEMS : NAV_ITEMS} />
+        {workspaceUnavailable ? null : (
+          <BillingNotice planData={planData} checkoutReturn={checkoutReturn} canManageBilling={canManageBilling} />
+        )}
 
         <div className="settings-page__sections">
           <SettingsSection id="profile" title="Profile" description="The account signed in to this workspace.">
@@ -162,6 +177,6 @@ export default function SettingsClient({
           </SettingsSection>
         </div>
       </div>
-    </div>
+    </ContextLayout>
   );
 }

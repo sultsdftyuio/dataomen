@@ -66,3 +66,13 @@ export function ContextLink({
     </a>
   );
 }
+
+/** A read-only figure in the panel: a label and its count. */
+export function ContextStat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="arc-context-stat">
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}

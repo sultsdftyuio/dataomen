@@ -1,15 +1,6 @@
-/* Settings layout: section links beside one column of sections from md up,
-   links above the sections on phones. The column is capped so labels and
-   values stay close enough to read as pairs on wide screens. */
+/* Settings: one column of sections beside the context panel, which holds the
+   section links. The column is capped so labels and values stay close enough
+   to read as pairs on wide screens. */
 .settings-page { gap: 20px; }
-.settings-page__layout { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.settings-page__sections { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
-
-@media (min-width: 768px) {
-  .settings-page__layout {
-    display: grid;
-    grid-template-columns: 11rem minmax(0, 52rem);
-    align-items: start;
-    gap: 24px;
-  }
-}
+.settings-page__sections { display: flex; width: 100%; max-width: 52rem; min-width: 0; flex-direction: column; gap: 16px; }
+.settings-page__sections > * { scroll-margin-top: 20px; }

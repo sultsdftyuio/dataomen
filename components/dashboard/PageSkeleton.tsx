@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 
+import { ContextLayout } from "./ContextLayout";
+
 export type PageSkeletonVariant = "list-detail" | "form" | "list";
 
 export type PageSkeletonProps = {
@@ -9,6 +11,8 @@ export type PageSkeletonProps = {
   page: string;
   /** Show an actions placeholder at the right of the header. */
   withActions?: boolean;
+  /** The page opens with a context panel (see ContextLayout): hold its place. */
+  withPanel?: boolean;
   className?: string;
 };
 
@@ -49,8 +53,8 @@ function ListRows({ count }: { count: number }) {
  * Route-level loading state for dashboard pages (use it from loading.tsx).
  * It is shaped like the page, so the layout does not jump when data arrives.
  */
-export function PageSkeleton({ variant, page, withActions = false, className }: PageSkeletonProps) {
-  return (
+export function PageSkeleton({ variant, page, withActions = false, withPanel = false, className }: PageSkeletonProps) {
+  const content = (
     <div
       role="status"
       aria-live="polite"
@@ -96,6 +100,26 @@ export function PageSkeleton({ variant, page, withActions = false, className }: 
           </div>
         ) : null}
       </div>
+    </div>
+  );
+
+  if (!withPanel) return content;
+
+  return (
+    <ContextLayout label={`Loading ${page}`} panel={<PanelPlaceholder />}>
+      {content}
+    </ContextLayout>
+  );
+}
+
+/** Static blocks on the panel surface, in the shape of a status card and a short list. */
+function PanelPlaceholder() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-3">
+      <div className="arc-context-placeholder h-28" />
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="arc-context-placeholder h-11 opacity-70" />
+      ))}
     </div>
   );
 }

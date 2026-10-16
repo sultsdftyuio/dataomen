@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { FileCheck2 } from "lucide-react";
 
+import { ContextLayout } from "@/components/dashboard/ContextLayout";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EntityResearchControls } from "@/components/prospects/entity-research-controls";
@@ -32,6 +33,7 @@ import {
   submitProspectTargetFeedback,
 } from "../targeting-actions";
 import { fetchServiceProfile, fetchTenantWebsiteUrl } from "../data";
+import { TargetsPanel } from "./targets-panel";
 import {
   fetchEntityResearchRunStatuses,
   fetchProspectFeedbackSummary,
@@ -125,75 +127,85 @@ export default async function TargetsPage() {
   // without one the page has a single job: send the person to set it up.
   if (!targetingBrief.hasBrief) {
     return (
-      <div className="arc-workspace-page arc-workspace-page--targets">
-        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
-        <EmptyState
-          variant="never-used"
-          icon={FileCheck2}
-          title="Set up your target universe to start adding targets"
-          description="Arcli checks every target against the target universe in your targeting brief: the kinds of accounts worth researching. Save it once, then add accounts here."
-          action={
-            <Button asChild>
-              <Link href={`${BRIEF_HREF}#target-universe`}>Set up target universe</Link>
-            </Button>
-          }
-        />
-      </div>
+      <ContextLayout
+        label="Targets overview"
+        panel={<TargetsPanel targetingBrief={targetingBrief} targets={[]} briefHref={BRIEF_HREF} />}
+      >
+        <div className="arc-workspace-page arc-workspace-page--targets">
+          <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
+          <EmptyState
+            variant="never-used"
+            icon={FileCheck2}
+            title="Set up your target universe to start adding targets"
+            description="Arcli checks every target against the target universe in your targeting brief: the kinds of accounts worth researching. Save it once, then add accounts here."
+            action={
+              <Button asChild>
+                <Link href={`${BRIEF_HREF}#target-universe`}>Set up target universe</Link>
+              </Button>
+            }
+          />
+        </div>
+      </ContextLayout>
     );
   }
 
   return (
-    <div className="arc-workspace-page arc-workspace-page--targets">
-      <PageHeader
-        title={PAGE_TITLE}
-        description={PAGE_DESCRIPTION}
-        actions={
-          <Button asChild variant="outline" size="sm">
-            <Link href={BRIEF_HREF}>Edit targeting brief</Link>
-          </Button>
-        }
-      />
-
-      <ManualTargetForm
-        allowedTargetTypes={targetingBrief.targetTypes}
-        onCreate={createTarget}
-      />
-
-      {entityResearchEnabled ? (
-        <EntityResearchControls
-          candidateGenerationEnabled={candidateGenerationEnabled}
-          evidenceResearchEnabled={evidenceResearchEnabled}
-          hasApprovedBrief={targetingBrief.hasBrief}
-          seedCount={targetingBrief.seedUrls.length}
-          eligibleTargetCount={targets.filter((target) => target.assessmentState !== "rejected").length}
-          candidateGenerationRun={entityResearchRuns.candidate_generation}
-          evidenceCollectionRun={entityResearchRuns.evidence_collection}
-          onGenerateTargets={
-            candidateGenerationEnabled ? requestEntityCandidateGeneration : null
-          }
-          onResearchEvidence={
-            evidenceResearchEnabled ? requestRetainedPublicEvidenceResearch : null
+    <ContextLayout
+      label="Targets overview"
+      panel={<TargetsPanel targetingBrief={targetingBrief} targets={targetsWithWorkflowState} briefHref={BRIEF_HREF} />}
+    >
+      <div className="arc-workspace-page arc-workspace-page--targets">
+        <PageHeader
+          title={PAGE_TITLE}
+          description={PAGE_DESCRIPTION}
+          actions={
+            <Button asChild variant="outline" size="sm">
+              <Link href={BRIEF_HREF}>Edit targeting brief</Link>
+            </Button>
           }
         />
-      ) : null}
 
-      <TargetDesk
-        targets={targetsWithWorkflowState}
-        targetBriefHref={BRIEF_HREF}
-        addTargetInputId={ADD_TARGET_INPUT_ID}
-        onReviewEvidence={reviewProspectEvidence}
-        onTargetFeedback={submitProspectTargetFeedback}
-        onTargetMonitoring={
-          targetMonitoringAvailable ? setProspectTargetMonitoring : null
-        }
-        onCreateOpportunity={
-          targetOpportunitiesAvailable ? createProspectOpportunity : null
-        }
-        onQualifyOpportunity={
-          targetOpportunitiesAvailable ? qualifyProspectOpportunity : null
-        }
-        feedbackSummary={feedbackSummary}
-      />
-    </div>
+        <ManualTargetForm
+          allowedTargetTypes={targetingBrief.targetTypes}
+          onCreate={createTarget}
+        />
+
+        {entityResearchEnabled ? (
+          <EntityResearchControls
+            candidateGenerationEnabled={candidateGenerationEnabled}
+            evidenceResearchEnabled={evidenceResearchEnabled}
+            hasApprovedBrief={targetingBrief.hasBrief}
+            seedCount={targetingBrief.seedUrls.length}
+            eligibleTargetCount={targets.filter((target) => target.assessmentState !== "rejected").length}
+            candidateGenerationRun={entityResearchRuns.candidate_generation}
+            evidenceCollectionRun={entityResearchRuns.evidence_collection}
+            onGenerateTargets={
+              candidateGenerationEnabled ? requestEntityCandidateGeneration : null
+            }
+            onResearchEvidence={
+              evidenceResearchEnabled ? requestRetainedPublicEvidenceResearch : null
+            }
+          />
+        ) : null}
+
+        <TargetDesk
+          targets={targetsWithWorkflowState}
+          targetBriefHref={BRIEF_HREF}
+          addTargetInputId={ADD_TARGET_INPUT_ID}
+          onReviewEvidence={reviewProspectEvidence}
+          onTargetFeedback={submitProspectTargetFeedback}
+          onTargetMonitoring={
+            targetMonitoringAvailable ? setProspectTargetMonitoring : null
+          }
+          onCreateOpportunity={
+            targetOpportunitiesAvailable ? createProspectOpportunity : null
+          }
+          onQualifyOpportunity={
+            targetOpportunitiesAvailable ? qualifyProspectOpportunity : null
+          }
+          feedbackSummary={feedbackSummary}
+        />
+      </div>
+    </ContextLayout>
   );
 }
