@@ -310,7 +310,7 @@ function TargetingStepCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h3 id={headingId} className="text-base font-semibold text-foreground">
+            <h3 id={headingId} className="scroll-mt-5 text-base font-semibold text-foreground">
               {title}
             </h3>
             {isChanged ? (

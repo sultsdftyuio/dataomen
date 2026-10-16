@@ -43,8 +43,13 @@ function signalDraftItems(value: string) {
     .filter(Boolean);
 }
 
-const tagClassName =
-  "inline-flex max-w-full min-w-0 items-center rounded-md bg-blue-tint text-[13px] leading-5 text-navy-soft";
+// Brief items are sentences, not keywords, so they read as one row each
+// rather than a cloud of pills that wrap mid-thought.
+const rowClassName =
+  "flex min-w-0 items-start gap-2 rounded-lg bg-blue-tint px-3 py-2 text-sm leading-6 text-navy-soft";
+
+/** Classes for a list of editable brief items. */
+export const editableListClassName = "mt-2.5 flex min-w-0 flex-col gap-1.5";
 
 /** Read-only list of brief items, shown when a section is not being edited. */
 export function TagList({
@@ -55,17 +60,21 @@ export function TagList({
   className?: string;
 }) {
   return (
-    <ul className={cn("flex min-w-0 flex-wrap gap-1.5", className)}>
+    <ul className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       {items.map((item) => (
-        <li key={item.toLowerCase()} className={cn(tagClassName, "px-2 py-0.5")}>
-          <span className="min-w-0 [overflow-wrap:anywhere]">{item}</span>
+        <li key={item.toLowerCase()} className={rowClassName}>
+          <span className="min-w-0 [overflow-wrap:anywhere] first-letter:uppercase">{item}</span>
         </li>
       ))}
     </ul>
   );
 }
 
-/** One editable item. Long text wraps rather than widening its container. */
+/**
+ * One editable item. Remove stays visible on touch screens; with a mouse it
+ * appears on hover or keyboard focus so a long list doesn't read as a column
+ * of crosses.
+ */
 export function RemovableTag({
   label,
   disabled,
@@ -76,15 +85,15 @@ export function RemovableTag({
   onRemove: () => void;
 }) {
   return (
-    <li className={cn(tagClassName, "gap-0.5 py-0.5 pl-2 pr-0.5")}>
-      <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
+    <li className={cn(rowClassName, "group py-1 pr-1")}>
+      <span className="min-w-0 flex-1 py-1 [overflow-wrap:anywhere] first-letter:uppercase">{label}</span>
       <Button
         type="button"
         variant="ghost"
-        size="icon-xs"
+        size="icon-sm"
         aria-label={`Remove ${label}`}
         disabled={disabled}
-        className="text-muted-foreground hover:bg-blue-pale hover:text-foreground"
+        className="shrink-0 text-muted-foreground hover:bg-blue-pale hover:text-foreground pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
         onClick={onRemove}
       >
         <X aria-hidden="true" />
@@ -145,7 +154,7 @@ export function SignalField({
       </p>
 
       {signals.length > 0 ? (
-        <ul className="mt-2.5 flex min-w-0 flex-wrap gap-1.5" aria-label={label}>
+        <ul className={editableListClassName} aria-label={label}>
           {signals.map((signal) => (
             <RemovableTag
               key={signal.toLowerCase()}

@@ -144,6 +144,45 @@
 .arc-shell__main { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; padding: 20px 22px 24px; }
 .arc-shell__mobile-tabs, .arc-shell__scrim { display: none; }
 
+/* ── Context panel: the rail's surface, continued ─────── */
+/* A page that opens with a context panel takes the full main area, so the
+   panel can sit flush against the rail. */
+.arc-shell__main:has(> .arc-context-layout) { padding: 0; }
+/* flex-shrink 0: the layout must grow with the work, or the sticky panel
+   has no room to stick within once the work is taller than the window. */
+.arc-context-layout { display: flex; min-height: 100%; flex: 1 0 auto; }
+.arc-context-panel {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  gap: 12px;
+  height: 100dvh;
+  overflow-y: auto;
+  padding: 16px 14px;
+  border-left: 1px solid var(--rail-line);
+  color: var(--rail-muted);
+  background: var(--rail-surface);
+}
+.arc-context-layout__work { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 16px; padding: 20px 28px 32px; }
+.arc-context-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; background: var(--rail-hover); box-shadow: inset 0 0 0 1px var(--rail-line); }
+.arc-context-heading { padding: 6px 6px 0; color: var(--rail-muted); font-size: 12px; font-weight: 600; }
+.arc-context-list { display: flex; flex-direction: column; gap: 2px; }
+.arc-context-link { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; color: var(--rail-muted); text-decoration: none; transition: background-color .15s ease, color .15s ease; }
+.arc-context-link:hover { color: var(--rail-foreground); background: var(--rail-hover); }
+.arc-context-link[aria-current="true"] { color: var(--rail-foreground); background: var(--rail-active); box-shadow: inset 0 0 0 1px var(--rail-line); }
+.arc-context-link:focus-visible { outline: 2px solid var(--rail-accent); outline-offset: 2px; }
+.arc-context-link__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; line-height: 1.3; }
+.arc-context-link__title { color: var(--rail-foreground); font-size: 14px; font-weight: 500; }
+.arc-context-link__detail { margin-top: 2px; font-size: 12px; }
+.arc-context-link[data-attention] .arc-context-link__detail { color: var(--c-amber-pale); }
+.arc-context-link__dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--c-amber-pale); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-amber) 60%, transparent); }
+.arc-context-link__trailing { flex-shrink: 0; color: var(--rail-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
+.arc-context-progress { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
+.arc-context-progress span { height: 5px; border-radius: 3px; background: var(--rail-line); }
+.arc-context-progress span[data-done] { background: var(--rail-accent); }
+
 /* ── Page layouts that live with the shell ────────────── */
 .arc-workspace-page { display: flex; width: 100%; min-width: 0; flex: 1; flex-direction: column; gap: 15px; padding-bottom: 28px; }
 .arc-pro-lead-desk { min-width: 0; }.arc-pro-lead-desk [aria-label="Lead review workspace"] { box-shadow: 0 8px 28px rgba(10,22,40,.05); }
@@ -188,6 +227,16 @@
   .arc-shell__icon-button:focus-visible, .arc-shell__topbar-home:focus-visible { outline: 2px solid var(--rail-accent); outline-offset: 2px; }
 
   .arc-shell__billing-alert { padding: 10px 12px; }
+
+  /* The panel stacks above the work; its list scrolls sideways. */
+  .arc-context-layout { flex-direction: column; }
+  .arc-context-panel { position: static; height: auto; flex-basis: auto; gap: 10px; overflow: visible; padding: 12px; border-left: 0; }
+  /* On phones the panel is a compact header: status plus a row of links. */
+  .arc-context-heading, .arc-context-note { display: none; }
+  .arc-context-card { gap: 8px; padding: 12px; }
+  .arc-context-list { flex-direction: row; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+  .arc-context-link { flex: 0 0 auto; max-width: 240px; }
+  .arc-context-layout__work { padding: 14px 12px 20px; }
   .arc-shell__main { padding: 14px 12px 20px; }
   .arc-shell__mobile-tabs { display: block; flex-shrink: 0; border-top: 1px solid var(--arc-line); background: #fff; }
   .arc-shell__mobile-tabs nav { display: grid; width: 100%; }

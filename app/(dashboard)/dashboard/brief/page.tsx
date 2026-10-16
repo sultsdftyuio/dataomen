@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { ContextLayout } from "@/components/dashboard/ContextLayout";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
 import { TargetingBriefEditor } from "@/components/settings/workspace_page/targeting-brief-editor";
@@ -16,6 +17,7 @@ import {
   verifierScoreThreshold,
 } from "../data";
 import { fetchTargetingBrief } from "../targets/data";
+import { BriefPanel } from "./brief-panel";
 import { BriefSaveProvider } from "./brief-save";
 
 export const metadata: Metadata = {
@@ -85,29 +87,34 @@ export default async function MatchingBriefPage() {
   const saveBrief = saveTargetingBrief.bind(null, serviceProfile.id);
 
   return (
-    <div className="arc-workspace-page arc-workspace-page--targeting">
-      <PageHeader
-        title="Targeting"
-        description="Who Arcli looks for, and what counts as a signal. Changes apply to future scans only."
-        meta={lastUpdatedLabel(serviceProfile.updatedAt)}
-      />
-
-      {/* One save bar for both parts of the brief, so saving one never discards the other's edits. */}
-      <BriefSaveProvider>
-        <ServiceProfileSettings
-          serviceProfile={serviceProfile}
-          websiteUrl={websiteUrl}
-          isPro={entitlements.isPro}
-          latestScan={latestScan}
+    <ContextLayout
+      label="Brief overview"
+      panel={<BriefPanel websiteUrl={websiteUrl} serviceProfile={serviceProfile} targetingBrief={targetingBrief} />}
+    >
+      <div className="arc-workspace-page arc-workspace-page--targeting">
+        <PageHeader
+          title="Targeting"
+          description="Who Arcli looks for, and what counts as a signal. Changes apply to future scans only."
+          meta={lastUpdatedLabel(serviceProfile.updatedAt)}
         />
 
-        {serviceProfile.hasProfile ? (
-          <TargetingBriefEditor
-            initialBrief={targetingBrief}
-            onSave={saveBrief}
+        {/* One save bar for both parts of the brief, so saving one never discards the other's edits. */}
+        <BriefSaveProvider>
+          <ServiceProfileSettings
+            serviceProfile={serviceProfile}
+            websiteUrl={websiteUrl}
+            isPro={entitlements.isPro}
+            latestScan={latestScan}
           />
-        ) : null}
-      </BriefSaveProvider>
-    </div>
+
+          {serviceProfile.hasProfile ? (
+            <TargetingBriefEditor
+              initialBrief={targetingBrief}
+              onSave={saveBrief}
+            />
+          ) : null}
+        </BriefSaveProvider>
+      </div>
+    </ContextLayout>
   );
 }
