@@ -54,6 +54,9 @@ function ListRows({ count }: { count: number }) {
  * It is shaped like the page, so the layout does not jump when data arrives.
  */
 export function PageSkeleton({ variant, page, withActions = false, withPanel = false, className }: PageSkeletonProps) {
+  // With a panel, the header placeholder takes ContextLayout's header slot,
+  // as PageHeader does on the loaded page.
+  const header = <HeaderPlaceholder withActions={withActions} />;
   const content = (
     <div
       role="status"
@@ -62,7 +65,7 @@ export function PageSkeleton({ variant, page, withActions = false, withPanel = f
     >
       <span className="sr-only">Loading {page}</span>
       <div aria-hidden="true" className="contents">
-        <HeaderPlaceholder withActions={withActions} />
+        {withPanel ? null : header}
 
         {variant === "list-detail" ? (
           <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.6fr)]">
@@ -106,7 +109,7 @@ export function PageSkeleton({ variant, page, withActions = false, withPanel = f
   if (!withPanel) return content;
 
   return (
-    <ContextLayout label={`Loading ${page}`} panel={<PanelPlaceholder />}>
+    <ContextLayout label={`Loading ${page}`} panel={<PanelPlaceholder />} header={<div aria-hidden="true">{header}</div>}>
       {content}
     </ContextLayout>
   );

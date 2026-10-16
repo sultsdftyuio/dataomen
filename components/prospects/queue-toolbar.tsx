@@ -66,7 +66,9 @@ export function QueueToolbar({
   return (
     <div className="border-b border-border">
       <div className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between md:px-4">
-        <div role="group" aria-label="Show signals" className="flex rounded-md bg-off-white p-0.5 ring-1 ring-inset ring-border md:w-auto">
+        {/* From md up the Signals context panel lists these views, so the
+            tabs are for phones only. */}
+        <div role="group" aria-label="Show signals" className="flex rounded-md bg-off-white p-0.5 ring-1 ring-inset ring-border md:hidden">
           {VIEW_SEGMENTS.map((segment) => {
             const active = view === segment.value;
             return (
@@ -91,15 +93,15 @@ export function QueueToolbar({
           })}
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 md:w-[min(28rem,55%)]">
+        <div className="flex min-w-0 items-center gap-2 md:w-full md:max-w-xl">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">Search prospects</span>
+            <span className="sr-only">Search signals</span>
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" aria-hidden="true" />
             <Input
               type="search"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="Search prospects"
+              placeholder="Search signals"
               className="h-10 bg-card pl-9 md:h-9"
             />
           </label>

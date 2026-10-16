@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import "./settings-client.css";
 
 // Same static blocks as PageSkeleton (no shimmer), arranged like the Settings
-// page: the context panel with its section links, the header, then the
+// page: the header, the context panel with its section links, then the
 // Profile and Plan and billing panels.
 // PageSkeleton's "form" variant is a single card, which would jump here.
 function Block({ className }: { className?: string }) {
@@ -32,13 +32,18 @@ function SectionPlaceholder({ rows, titleWidth }: { rows: number; titleWidth: st
 
 export default function SettingsLoading() {
   return (
-    <ContextLayout label="Loading settings" panel={<SettingsPanelPlaceholder />}>
+    <ContextLayout
+      label="Loading settings"
+      panel={<SettingsPanelPlaceholder />}
+      header={
+        <div aria-hidden="true" className="flex min-h-9 items-center">
+          <Block className="h-4 w-24" />
+        </div>
+      }
+    >
       <div role="status" aria-live="polite" className="arc-workspace-page settings-page">
         <span className="sr-only">Loading settings</span>
         <div aria-hidden="true" className="contents">
-          <div className="flex min-h-9 items-center">
-            <Block className="h-4 w-24" />
-          </div>
           <div className="settings-page__sections">
             <SectionPlaceholder rows={4} titleWidth="w-20" />
             <SectionPlaceholder rows={1} titleWidth="w-32" />

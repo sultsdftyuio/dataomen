@@ -110,15 +110,7 @@ export default async function WatchlistsPage() {
   return (
     <ContextLayout
       label="Buyer groups overview"
-      panel={
-        <BuyerGroupsPanel
-          watchlists={watchlists}
-          suggestions={profileResult.status === "fulfilled" ? buyerGroupSuggestions : []}
-          suggestionsExpanded={watchlists.length === 0}
-        />
-      }
-    >
-      <div className="arc-workspace-page arc-workspace-page--buyers">
+      header={
         <PageHeader
           title="Buyer groups"
           description="Pair an audience with a problem, and Arcli finds people describing it."
@@ -129,7 +121,16 @@ export default async function WatchlistsPage() {
             />
           }
         />
-
+      }
+      panel={
+        <BuyerGroupsPanel
+          watchlists={watchlists}
+          suggestions={profileResult.status === "fulfilled" ? buyerGroupSuggestions : []}
+          suggestionsExpanded={watchlists.length === 0}
+        />
+      }
+    >
+      <div className="arc-workspace-page arc-workspace-page--buyers">
         <WatchlistsPanel
           watchlists={watchlists}
           results={resultsResult.status === "fulfilled" ? resultsResult.value : []}

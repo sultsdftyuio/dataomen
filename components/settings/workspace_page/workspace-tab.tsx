@@ -54,7 +54,7 @@ function briefStatus(profile: ServiceProfileView | null): BriefStatus {
   };
 }
 
-/** The Prospecting setup section: the website and the targeting brief behind every scan. */
+/** The Signal setup section: the website and the targeting brief behind every scan. */
 export default function WorkspaceTab({ initialData, initialProfile = null, serviceProfile = null }: WorkspaceTabProps) {
   const profile = initialProfile ?? serviceProfile;
   const websiteUrl = profile?.websiteUrl ?? initialData?.websiteUrl ?? "";
@@ -65,7 +65,7 @@ export default function WorkspaceTab({ initialData, initialProfile = null, servi
   return (
     <SettingsSection
       id="workspace"
-      title="Prospecting setup"
+      title="Signal setup"
       description="Your website and targeting brief decide which conversations Arcli finds for you."
     >
       <SettingsRow label="Website" hint="Your targeting brief is built from it">

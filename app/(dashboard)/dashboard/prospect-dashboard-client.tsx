@@ -268,7 +268,7 @@ export default function ProspectDashboardClient({
           ...current,
           [leadId]: {
             ok: false,
-            message: "Couldn't mark this prospect qualified. Check your connection and try again.",
+            message: "Couldn't mark this signal qualified. Check your connection and try again.",
           },
         }));
       } finally {
@@ -280,7 +280,7 @@ export default function ProspectDashboardClient({
   const handleSetHandled = (leadId: string, handled: boolean) => {
     const lead = queueItems.find((item) => item.id === leadId);
     const previous = lead?.handledAt ?? null;
-    const title = lead ? leadTitle(lead) : "This prospect";
+    const title = lead ? leadTitle(lead) : "This signal";
 
     // Keep the person's place: move to the prospect that followed this one,
     // not back to the top of the list.

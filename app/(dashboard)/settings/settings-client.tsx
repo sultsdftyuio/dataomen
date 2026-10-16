@@ -45,7 +45,7 @@ type SettingsClientProps = {
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: "profile", label: "Profile" },
   { id: "billing", label: "Plan and billing" },
-  { id: "workspace", label: "Prospecting setup" },
+  { id: "workspace", label: "Signal setup" },
   { id: "result-emails", label: "Result emails" },
   { id: "support", label: "Support" },
 ];
@@ -110,17 +110,21 @@ export default function SettingsClient({
   );
 
   return (
-    <ContextLayout label="Settings overview" panel={panel}>
-      <div className="arc-workspace-page settings-page">
+    <ContextLayout
+      label="Settings overview"
+      panel={panel}
+      header={
         <PageHeader
           title="Settings"
           description={
             hasWorkspaceName && !workspaceUnavailable
-              ? `Your account, plan, prospecting setup and emails for ${workspaceName}.`
-              : "Your account, plan, prospecting setup and emails."
+              ? `Your account, plan, signal setup and emails for ${workspaceName}.`
+              : "Your account, plan, signal setup and emails."
           }
         />
-
+      }
+    >
+      <div className="arc-workspace-page settings-page">
         {workspaceUnavailable ? null : (
           <BillingNotice planData={planData} checkoutReturn={checkoutReturn} canManageBilling={canManageBilling} />
         )}
@@ -144,7 +148,7 @@ export default function SettingsClient({
           {workspaceUnavailable ? (
             <LoadError
               thing="Your workspace details"
-              description="Your plan, prospecting setup and email choices are hidden until they load, so nothing here is out of date. Try again, and if it keeps happening, email support@arcli.tech."
+              description="Your plan, signal setup and email choices are hidden until they load, so nothing here is out of date. Try again, and if it keeps happening, email support@arcli.tech."
               onRetry={() => startRetry(() => router.refresh())}
               retrying={isRetrying}
             />
