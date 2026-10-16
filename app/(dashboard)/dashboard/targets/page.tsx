@@ -125,27 +125,23 @@ export default async function TargetsPage() {
   // Every target is assessed against the saved target universe (the
   // targeting_profiles row, shown as "Target universe" on the brief page), so
   // without one the page has a single job: send the person to set it up.
+  // No context panel yet: it would only repeat this message.
   if (!targetingBrief.hasBrief) {
     return (
-      <ContextLayout
-        label="Targets overview"
-        panel={<TargetsPanel targetingBrief={targetingBrief} targets={[]} briefHref={BRIEF_HREF} />}
-      >
-        <div className="arc-workspace-page arc-workspace-page--targets">
-          <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
-          <EmptyState
-            variant="never-used"
-            icon={FileCheck2}
-            title="Set up your target universe to start adding targets"
-            description="Arcli checks every target against the target universe in your targeting brief: the kinds of accounts worth researching. Save it once, then add accounts here."
-            action={
-              <Button asChild>
-                <Link href={`${BRIEF_HREF}#target-universe`}>Set up target universe</Link>
-              </Button>
-            }
-          />
-        </div>
-      </ContextLayout>
+      <div className="arc-workspace-page arc-workspace-page--targets">
+        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
+        <EmptyState
+          variant="never-used"
+          icon={FileCheck2}
+          title="Set up your target universe to start adding targets"
+          description="Arcli checks every target against the target universe in your targeting brief: the kinds of accounts worth researching. Save it once, then add accounts here."
+          action={
+            <Button asChild>
+              <Link href={`${BRIEF_HREF}#target-universe`}>Set up target universe</Link>
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
@@ -153,8 +149,7 @@ export default async function TargetsPage() {
     <ContextLayout
       label="Targets overview"
       panel={<TargetsPanel targetingBrief={targetingBrief} targets={targetsWithWorkflowState} briefHref={BRIEF_HREF} />}
-    >
-      <div className="arc-workspace-page arc-workspace-page--targets">
+      header={
         <PageHeader
           title={PAGE_TITLE}
           description={PAGE_DESCRIPTION}
@@ -164,7 +159,9 @@ export default async function TargetsPage() {
             </Button>
           }
         />
-
+      }
+    >
+      <div className="arc-workspace-page arc-workspace-page--targets">
         <ManualTargetForm
           allowedTargetTypes={targetingBrief.targetTypes}
           onCreate={createTarget}

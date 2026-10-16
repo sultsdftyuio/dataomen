@@ -47,7 +47,7 @@ type SourceState = BuyerDemandReportView["sourceProgress"][number]["state"];
 
 const SOURCE_OUTCOMES: Record<SourceState, { label: string; tone: StatusTone }> = {
   checking: { label: "Checking", tone: "progress" },
-  found: { label: "Found prospects", tone: "success" },
+  found: { label: "Found matches", tone: "success" },
   partial: { label: "Partly checked", tone: "warning" },
   unavailable: { label: "Unavailable", tone: "warning" },
   no_results: { label: "Nothing found", tone: "neutral" },

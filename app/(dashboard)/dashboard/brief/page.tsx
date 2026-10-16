@@ -89,15 +89,16 @@ export default async function MatchingBriefPage() {
   return (
     <ContextLayout
       label="Brief overview"
-      panel={<BriefPanel websiteUrl={websiteUrl} serviceProfile={serviceProfile} targetingBrief={targetingBrief} />}
-    >
-      <div className="arc-workspace-page arc-workspace-page--targeting">
+      header={
         <PageHeader
           title="Targeting"
           description="Who Arcli looks for, and what counts as a signal. Changes apply to future scans only."
           meta={lastUpdatedLabel(serviceProfile.updatedAt)}
         />
-
+      }
+      panel={<BriefPanel websiteUrl={websiteUrl} serviceProfile={serviceProfile} targetingBrief={targetingBrief} />}
+    >
+      <div className="arc-workspace-page arc-workspace-page--targeting">
         {/* One save bar for both parts of the brief, so saving one never discards the other's edits. */}
         <BriefSaveProvider>
           <ServiceProfileSettings

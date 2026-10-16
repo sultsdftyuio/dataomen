@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const metadata: Metadata = {
   title: "Settings | Arcli",
-  description: "Your Arcli account, plan, prospecting setup and email preferences.",
+  description: "Your Arcli account, plan, signal setup and email preferences.",
 };
 
 type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;

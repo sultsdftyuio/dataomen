@@ -19,6 +19,8 @@ type TargetsPanelProps = {
  * The Targets context panel: the target universe every target is checked
  * against, and how the current targets were assessed. Labels come from the
  * same presentation the target rows use, so the counts match what's listed.
+ * The page shows it only once the universe is saved; before that the page's
+ * own empty state says everything there is to say.
  */
 export function TargetsPanel({ targetingBrief, targets, briefHref }: TargetsPanelProps) {
   const types = targetingBrief.targetTypes.map((type) => TARGET_TYPE_LABELS[type]);
@@ -39,32 +41,22 @@ export function TargetsPanel({ targetingBrief, targets, briefHref }: TargetsPane
       <ContextCard>
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[15px] font-semibold text-[var(--rail-foreground)]">Target universe</span>
-          <span className="text-xs">{targetingBrief.hasBrief ? "Saved" : "Not set up"}</span>
+          <span className="text-xs">Saved</span>
         </div>
         <p className="text-xs leading-5">
-          {targetingBrief.hasBrief
-            ? types.length > 0
-              ? `Researching ${types.join(", ").toLowerCase()}.`
-              : "No target types chosen yet."
-            : "Every target is checked against it. Set it up once in the brief."}
+          {types.length > 0 ? `Researching ${types.join(", ").toLowerCase()}.` : "No target types chosen yet."}
         </p>
       </ContextCard>
 
-      {targetingBrief.hasBrief ? (
-        <dl className="arc-context-stats">
-          {criteria.map(([label, count]) => (
-            <ContextStat key={label} label={label} value={count} />
-          ))}
-        </dl>
-      ) : null}
+      <dl className="arc-context-stats">
+        {criteria.map(([label, count]) => (
+          <ContextStat key={label} label={label} value={count} />
+        ))}
+      </dl>
 
-      {/* Without a universe the page itself leads with the set-up action, so
-          the panel doesn't repeat it. */}
-      {targetingBrief.hasBrief ? (
-        <nav aria-label="Target universe" className="arc-context-list">
-          <ContextLink href={`${briefHref}#target-universe`} title="Edit target universe" detail="In your brief" />
-        </nav>
-      ) : null}
+      <nav aria-label="Target universe" className="arc-context-list">
+        <ContextLink href={`${briefHref}#target-universe`} title="Edit target universe" detail="In your brief" />
+      </nav>
 
       {targets.length > 0 ? (
         <>

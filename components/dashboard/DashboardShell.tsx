@@ -181,13 +181,17 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
   );
 }
 
-/** The logo's arcs, drawn large and faint at the foot of the rail. */
+/**
+ * The logo's three arcs, whole and centred in the rail above Settings. Drawn
+ * at their real size (64px, 1.5px strokes) rather than scaled, so each arc
+ * stays crisp and none is cut by the rail's edge.
+ */
 function RailArcs() {
   return (
-    <svg className="arc-rail__arcs" viewBox="0 0 16 9" fill="none" aria-hidden="true" focusable="false">
-      <path d="M1 8.5a7 7 0 0 1 14 0" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.14" />
-      <path d="M3 8.5a5 5 0 0 1 10 0" stroke="currentColor" strokeOpacity="0.07" strokeWidth="0.14" />
-      <path d="M5 8.5a3 3 0 0 1 6 0" stroke="var(--rail-accent)" strokeOpacity="0.28" strokeWidth="0.14" />
+    <svg className="arc-rail__arcs" width="64" height="34" viewBox="0 0 64 34" fill="none" aria-hidden="true" focusable="false">
+      <path d="M2 33a30 30 0 0 1 60 0" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M10 33a22 22 0 0 1 44 0" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M18 33a14 14 0 0 1 28 0" stroke="var(--rail-accent)" strokeOpacity="0.55" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

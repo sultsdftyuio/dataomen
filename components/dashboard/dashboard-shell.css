@@ -15,6 +15,16 @@
 }
 .arc-shell__main:focus { outline: none; }
 
+/* Main actions are navy in the workspace, so blue keeps meaning evidence.
+   Set through the token, not background, so a button's own bg-* class still
+   wins. Dialogs and popovers render outside the shell, hence their slots. */
+.arc-shell [data-slot="button"][data-variant="default"],
+[data-slot="dialog-content"] [data-slot="button"][data-variant="default"],
+[data-slot="alert-dialog-content"] [data-slot="button"][data-variant="default"],
+[data-slot="popover-content"] [data-slot="button"][data-variant="default"] {
+  --color-primary: var(--c-navy);
+}
+
 /* ── Desktop rail ─────────────────────────────────────── */
 .arc-rail {
   position: relative;
@@ -30,14 +40,18 @@
 }
 /* Everything sits above the decorative arcs. */
 .arc-rail > :not(.arc-rail__arcs) { position: relative; }
+/* Centred above Settings and the account button (14 + 44 + 6 + 44px from
+   the bottom, plus a gap). Short windows hide it rather than let it sit
+   under the nav. */
 .arc-rail__arcs {
   position: absolute;
-  bottom: -18px;
-  left: -64px;
-  width: 260px;
+  bottom: 128px;
+  left: 50%;
   color: var(--rail-foreground);
   pointer-events: none;
+  transform: translateX(-50%);
 }
+@media (max-height: 620px) { .arc-rail__arcs { display: none; } }
 .arc-rail__logo { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 4px; border-radius: 12px; color: var(--rail-foreground); }
 .arc-rail__divider { width: 28px; height: 1px; margin: 4px 0; background: var(--rail-line); }
 
@@ -148,15 +162,29 @@
 /* A page that opens with a context panel takes the full main area, so the
    panel can sit flush against the rail. */
 .arc-shell__main:has(> .arc-context-layout) { padding: 0; }
-/* flex-shrink 0: the layout must grow with the work, or the sticky panel
-   has no room to stick within once the work is taller than the window. */
-.arc-context-layout { display: flex; min-height: 100%; flex: 1 0 auto; }
+/* A grid so the header can sit beside the panel on desktop and above it on
+   phones. flex-shrink 0: the layout must grow with the work, or the sticky
+   panel has no room to stick within once the work is taller than the window. */
+.arc-context-layout {
+  display: grid;
+  min-height: 100%;
+  flex: 1 0 auto;
+  grid-template-areas: "panel header" "panel work";
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+}
+/* Fill: exactly the window's height, and the work scrolls inside itself. */
+.arc-context-layout--fill { height: 100%; min-height: 0; flex: 1 1 auto; grid-template-rows: auto minmax(0, 1fr); }
+.arc-context-layout--fill .arc-context-layout__work { min-height: 0; overflow-y: auto; }
+/* The window is already its height, so the panel just fills its column. */
+.arc-context-layout--fill .arc-context-panel { position: static; height: auto; align-self: stretch; }
+.arc-context-layout__header { min-width: 0; padding: 20px 28px 0; grid-area: header; }
 .arc-context-panel {
   position: sticky;
   top: 0;
   display: flex;
-  flex: 0 0 300px;
   flex-direction: column;
+  align-self: start;
   gap: 12px;
   height: 100dvh;
   overflow-y: auto;
@@ -164,14 +192,15 @@
   border-left: 1px solid var(--rail-line);
   color: var(--rail-muted);
   background: var(--rail-surface);
+  grid-area: panel;
 }
-.arc-context-layout__work { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 16px; padding: 20px 28px 32px; }
+.arc-context-layout__work { display: flex; min-width: 0; flex-direction: column; gap: 16px; padding: 15px 28px 32px; grid-area: work; }
 .arc-context-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; background: var(--rail-hover); box-shadow: inset 0 0 0 1px var(--rail-line); }
 .arc-context-heading { padding: 6px 6px 0; color: var(--rail-muted); font-size: 12px; font-weight: 600; }
 .arc-context-list { display: flex; flex-direction: column; gap: 2px; }
-.arc-context-link { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; color: var(--rail-muted); text-decoration: none; transition: background-color .15s ease, color .15s ease; }
+.arc-context-link { display: flex; width: 100%; min-height: 44px; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 12px; color: var(--rail-muted); background: transparent; font: inherit; text-align: left; text-decoration: none; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
 .arc-context-link:hover { color: var(--rail-foreground); background: var(--rail-hover); }
-.arc-context-link[aria-current="true"], .arc-context-link[aria-current="location"] { color: var(--rail-foreground); background: var(--rail-active); box-shadow: inset 0 0 0 1px var(--rail-line); }
+.arc-context-link[aria-current="true"], .arc-context-link[aria-current="location"], .arc-context-link[aria-pressed="true"] { color: var(--rail-foreground); background: var(--rail-active); box-shadow: inset 0 0 0 1px var(--rail-line); }
 .arc-context-link:focus-visible { outline: 2px solid var(--rail-accent); outline-offset: 2px; }
 .arc-context-link__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; line-height: 1.3; }
 .arc-context-link__title { color: var(--rail-foreground); font-size: 14px; font-weight: 500; }
@@ -183,6 +212,7 @@
 .arc-context-stat { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 12px; font-size: 13px; }
 .arc-context-stat dt { color: var(--rail-muted); }
 .arc-context-stat dd { margin: 0; color: var(--rail-foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
+.arc-context-stat[data-attention] dd { color: var(--c-amber-pale); }
 .arc-context-placeholder { border-radius: 8px; background: var(--rail-hover); }
 .arc-context-progress { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
 .arc-context-progress span { height: 5px; border-radius: 3px; background: var(--rail-line); }
@@ -190,7 +220,7 @@
 
 /* ── Page layouts that live with the shell ────────────── */
 .arc-workspace-page { display: flex; width: 100%; min-width: 0; flex: 1; flex-direction: column; gap: 15px; padding-bottom: 28px; }
-.arc-pro-lead-desk { min-width: 0; }.arc-pro-lead-desk [aria-label="Lead review workspace"] { box-shadow: 0 8px 28px rgba(10,22,40,.05); }
+.arc-pro-lead-desk { min-width: 0; }
 
 @media (max-width: 767px) {
   .arc-rail { display: none; }
@@ -232,15 +262,21 @@
 
   .arc-shell__billing-alert { padding: 10px 12px; }
 
-  /* The panel stacks above the work; its list scrolls sideways. */
-  .arc-context-layout { flex-direction: column; }
-  .arc-context-panel { position: static; height: auto; flex-basis: auto; gap: 10px; overflow: visible; padding: 12px; border-left: 0; }
+  /* One column: the page name, then the panel, then the work. The panel's
+     list scrolls sideways. */
+  .arc-context-layout,
+  .arc-context-layout--fill { height: auto; align-content: start; grid-template-areas: "header" "panel" "work"; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; }
+  .arc-context-layout--fill .arc-context-layout__work { overflow: visible; }
+  .arc-context-layout__header { padding: 14px 12px 12px; }
+  .arc-context-panel { position: static; height: auto; gap: 10px; overflow: visible; padding: 12px; border-left: 0; }
+  .arc-context-panel--phone-hidden { display: none; }
   /* On phones the panel is a compact header: status plus a row of links. */
   .arc-context-heading, .arc-context-note { display: none; }
   .arc-context-card { gap: 8px; padding: 12px; }
   .arc-context-list { flex-direction: row; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-  .arc-context-link { flex: 0 0 auto; max-width: 240px; }
+  .arc-context-link { width: auto; flex: 0 0 auto; max-width: 240px; }
   .arc-context-layout__work { padding: 14px 12px 20px; }
+  .arc-context-panel--phone-hidden + .arc-context-layout__work { padding-top: 0; }
   .arc-shell__main { padding: 14px 12px 20px; }
   .arc-shell__mobile-tabs { display: block; flex-shrink: 0; border-top: 1px solid var(--arc-line); background: #fff; }
   .arc-shell__mobile-tabs nav { display: grid; width: 100%; }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 
+import { ContextLayout } from "@/components/dashboard/ContextLayout";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { LeadDetail } from "@/components/prospects/lead-detail";
 import { QueueSortSelect, QueueToolbar, type QueueCounts } from "@/components/prospects/queue-toolbar";
 import { ScanActivityDialog, type ManualScanControl } from "@/components/prospects/scan-activity-dialog";
 import { ProfileHealthBanner } from "@/components/prospects/profile-health-banner";
+import { SignalsPanel } from "@/components/prospects/signals-panel";
 import { profileHealthIssue } from "@/app/(dashboard)/dashboard/profile-health";
 import { DETAIL_TABS, LeadRow, freshnessLabel, metricValue } from "@/components/prospects/lead-desk-presentation";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
@@ -170,7 +172,7 @@ export function ProspectLeadDesk({
     .filter((tab) => tab !== "reply" || !selectedIsScreened)
     .filter((tab) => tab !== "reply" || selectedHasReply);
   const resultSummary = `${metricValue(filteredQueueItems.length)} ${
-    filteredQueueItems.length === 1 ? "prospect" : "prospects"
+    filteredQueueItems.length === 1 ? "signal" : "signals"
   } shown`;
 
   const clearFilters = () => {
@@ -226,208 +228,219 @@ export function ProspectLeadDesk({
   };
 
   return (
-    <div className="arc-pro-lead-desk flex w-full flex-col gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
-      <PageHeader
-        title="Signals"
-        description="Public conversations where someone asks for a tool like yours or describes the problem you solve."
-        meta={
-          <span className="flex flex-wrap gap-x-3">
-            {profileDomain ? <span>Targeting {profileDomain}</span> : null}
-            <span aria-live="polite">{isRefreshing ? "Updating…" : freshnessLabel(lastUpdatedAt)}</span>
-          </span>
-        }
-        actions={
-          <>
-            <Button type="button" variant="outline" size="sm" onClick={() => setScanActivityOpen(true)}>
-              Scan activity
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/dashboard/brief">Edit targeting</Link>
-            </Button>
-          </>
-        }
-      />
-
-      {healthIssue ? (
-        <ProfileHealthBanner
-          issue={healthIssue}
-          serviceProfileId={serviceProfile.id}
-          isRebuildPending={isProfileRebuildPending}
-          onRebuildProfile={onRebuildProfile}
-          onRetried={onRefresh}
+    // fill: the list and the detail scroll separately, so the desk holds the
+    // window's height. Phones keep the toolbar's view tabs instead of the panel.
+    <ContextLayout
+      label="Signals overview"
+      fill
+      hidePanelOnPhone
+      panel={<SignalsPanel view={queueFilter} counts={counts} report={buyerDemandReport} onShowView={onFilterChange} />}
+      header={
+        <PageHeader
+          title="Signals"
+          description="Public conversations where someone asks for a tool like yours or describes the problem you solve."
+          meta={
+            <span className="flex flex-wrap gap-x-3">
+              {profileDomain ? <span>Targeting {profileDomain}</span> : null}
+              <span aria-live="polite">{isRefreshing ? "Updating…" : freshnessLabel(lastUpdatedAt)}</span>
+            </span>
+          }
+          actions={
+            <>
+              <Button type="button" variant="outline" size="sm" onClick={() => setScanActivityOpen(true)}>
+                Scan activity
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/dashboard/brief">Edit targeting</Link>
+              </Button>
+            </>
+          }
         />
-      ) : null}
+      }
+    >
+      <div className="arc-pro-lead-desk flex min-h-0 w-full flex-1 flex-col gap-4">
 
-      {profileRebuildResult && !scanActivityOpen ? (
-        <p
-          role={profileRebuildResult.ok ? "status" : "alert"}
-          className={cn(
-            "flex shrink-0 items-start gap-1.5 text-sm",
-            profileRebuildResult.ok ? "text-success" : "text-danger",
-          )}
-        >
-          {profileRebuildResult.ok
-            ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
-          {profileRebuildResult.message}
-        </p>
-      ) : null}
-
-      <section
-        aria-label="Signal review"
-        // Only a populated desk stretches to the viewport; an empty one stays
-        // its natural height so the buyer groups below remain in view.
-        className={cn(
-          "relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card",
-          hasItems && "xl:min-h-[520px] xl:flex-1 xl:shrink",
-        )}
-      >
-        <QueueToolbar
-          view={queueFilter}
-          counts={counts}
-          query={queueQuery}
-          confidence={queueConfidence}
-          source={queueSource}
-          sources={queueSources}
-          activeFilterCount={activeFilterCount + Number(isScreenedAudit)}
-          onViewChange={onFilterChange}
-          onQueryChange={onQueryChange}
-          onConfidenceChange={onConfidenceChange}
-          onSourceChange={onSourceChange}
-          onClearFilters={clearFilters}
-        />
-
-        {handledNotice ? (
-          <HandledNoticeBar notice={handledNotice} onSetHandled={onSetHandled} onDismiss={onDismissHandledNotice} />
+        {healthIssue ? (
+          <ProfileHealthBanner
+            issue={healthIssue}
+            serviceProfileId={serviceProfile.id}
+            isRebuildPending={isProfileRebuildPending}
+            onRebuildProfile={onRebuildProfile}
+            onRetried={onRefresh}
+          />
         ) : null}
 
-        <p className="sr-only" role="status" aria-live="polite">
-          {resultSummary}
-        </p>
+        {profileRebuildResult && !scanActivityOpen ? (
+          <p
+            role={profileRebuildResult.ok ? "status" : "alert"}
+            className={cn(
+              "flex shrink-0 items-start gap-1.5 text-sm",
+              profileRebuildResult.ok ? "text-success" : "text-danger",
+            )}
+          >
+            {profileRebuildResult.ok
+              ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
+            {profileRebuildResult.message}
+          </p>
+        ) : null}
 
-        {hasItems ? (
-          <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(320px,.85fr)_minmax(440px,1.15fr)]">
-            <div className="relative flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-1.5 md:px-5">
-                <div className="flex items-baseline gap-2">
-                  <h2 className="text-sm font-semibold text-foreground">{VIEW_TITLES[queueFilter]}</h2>
-                  <span className="text-xs tabular-nums text-subtle" aria-hidden="true">
-                    {metricValue(filteredQueueItems.length)} shown
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <QueueSortSelect value={queueSort} onChange={onSortChange} />
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    className="text-muted-foreground"
-                    aria-label="Reload signals"
-                    title="Reload prospects"
-                    onClick={onRefresh}
-                    disabled={isRefreshing}
-                  >
-                    <RefreshCw className={cn("size-4", isRefreshing && "motion-safe:animate-spin")} aria-hidden="true" />
-                  </Button>
-                </div>
-              </div>
-
-              <p id="prospect-list-help" className="sr-only">Use the arrow keys, Home or End to move through prospects.</p>
-              <div
-                id="prospect-signal-list"
-                aria-describedby="prospect-list-help"
-                className="min-h-0 flex-1 divide-y divide-border xl:overflow-y-auto"
-                onKeyDown={(event) => {
-                  if (!(event.target instanceof HTMLButtonElement) || !event.target.dataset.leadId) return;
-                  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-lead-id]"));
-                  const currentIndex = rows.indexOf(event.target);
-                  const nextIndex = event.key === "Home" ? 0
-                    : event.key === "End" ? rows.length - 1
-                    : Math.max(0, Math.min(rows.length - 1, currentIndex + (event.key === "ArrowDown" ? 1 : -1)));
-                  const nextRow = rows[nextIndex];
-                  if (!nextRow?.dataset.leadId) return;
-                  event.preventDefault();
-                  nextRow.focus();
-                  onSelectLead(nextRow.dataset.leadId);
-                }}
-              >
-                {filteredQueueItems.map((lead) => (
-                  <LeadRow
-                    key={lead.id}
-                    lead={lead}
-                    selected={lead.id === selectedLeadId}
-                    onSelect={() => selectLead(lead.id)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <aside
-              ref={signalDetailRef}
-              className="relative flex min-h-0 min-w-0 scroll-mt-4 flex-col xl:overflow-y-auto"
-              aria-label="Signal details"
-            >
-              {selectedLead ? (
-                <LeadDetail
-                  lead={selectedLead}
-                  tabs={detailTabs}
-                  reviewOnly={isPotentialBuyer(selectedLead)}
-                  feedbackNotice={feedbackNotice}
-                  feedbackPending={feedbackPending}
-                  qualificationNotice={qualificationNotice}
-                  qualificationPending={qualificationPending}
-                  onSetHandled={onSetHandled}
-                  onFeedback={onFeedback}
-                  onQualify={onQualify}
-                  onBackToList={backToList}
-                />
-              ) : (
-                <p className="p-5 text-sm text-muted-foreground">
-                  Select a prospect to see the evidence and a suggested reply.
-                </p>
-              )}
-            </aside>
-          </div>
-        ) : (
-          <EmptyQueue
-            hasProfile={serviceProfile.hasProfile}
-            hasActiveFilters={hasActiveFilters}
-            query={queueQuery}
+        <section
+          aria-label="Signal review"
+          // Only a populated desk stretches to the viewport; an empty one stays
+          // its natural height so the buyer groups below remain in view.
+          className={cn(
+            "relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card",
+            hasItems && "xl:min-h-[520px] xl:flex-1 xl:shrink",
+          )}
+        >
+          <QueueToolbar
             view={queueFilter}
-            inboxCount={counts.all}
-            screenedMatchCount={screenedMatches.length}
-            doneCount={doneCount}
-            report={buyerDemandReport}
-            onOpenDone={() => showQueueCategory("done")}
-            onShowInbox={() => showQueueCategory("all")}
+            counts={counts}
+            query={queueQuery}
+            confidence={queueConfidence}
+            source={queueSource}
+            sources={queueSources}
+            activeFilterCount={activeFilterCount + Number(isScreenedAudit)}
+            onViewChange={onFilterChange}
+            onQueryChange={onQueryChange}
+            onConfidenceChange={onConfidenceChange}
+            onSourceChange={onSourceChange}
             onClearFilters={clearFilters}
-            onOpenScanActivity={() => setScanActivityOpen(true)}
-            onOpenScreenedAudit={() => showQueueCategory("screened")}
           />
-        )}
-      </section>
 
-      <WebsiteDemandMap
-        suggestions={buyerGroupSuggestions}
-        activateBuyerGroup={activateBuyerGroup}
-        collapsible
-        defaultExpanded={queueItemCount === 0}
-      />
+          {handledNotice ? (
+            <HandledNoticeBar notice={handledNotice} onSetHandled={onSetHandled} onDismiss={onDismissHandledNotice} />
+          ) : null}
 
-      <ScanActivityDialog
-        open={scanActivityOpen}
-        onOpenChange={setScanActivityOpen}
-        report={buyerDemandReport}
-        onRefresh={onRefresh}
-        manualScan={manualScan}
-        profileRebuild={{
-          pending: isProfileRebuildPending,
-          available: Boolean(serviceProfile.websiteUrl),
-          result: profileRebuildResult,
-          onStart: onRebuildProfile,
-        }}
-      />
-    </div>
+          <p className="sr-only" role="status" aria-live="polite">
+            {resultSummary}
+          </p>
+
+          {hasItems ? (
+            <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(320px,.85fr)_minmax(440px,1.15fr)]">
+              <div className="relative flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-1.5 md:px-5">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-sm font-semibold text-foreground">{VIEW_TITLES[queueFilter]}</h2>
+                    <span className="text-xs tabular-nums text-subtle" aria-hidden="true">
+                      {metricValue(filteredQueueItems.length)} shown
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <QueueSortSelect value={queueSort} onChange={onSortChange} />
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      aria-label="Reload signals"
+                      title="Reload signals"
+                      onClick={onRefresh}
+                      disabled={isRefreshing}
+                    >
+                      <RefreshCw className={cn("size-4", isRefreshing && "motion-safe:animate-spin")} aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
+
+                <p id="prospect-list-help" className="sr-only">Use the arrow keys, Home or End to move through signals.</p>
+                <div
+                  id="prospect-signal-list"
+                  aria-describedby="prospect-list-help"
+                  className="min-h-0 flex-1 divide-y divide-border xl:overflow-y-auto"
+                  onKeyDown={(event) => {
+                    if (!(event.target instanceof HTMLButtonElement) || !event.target.dataset.leadId) return;
+                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                    const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-lead-id]"));
+                    const currentIndex = rows.indexOf(event.target);
+                    const nextIndex = event.key === "Home" ? 0
+                      : event.key === "End" ? rows.length - 1
+                      : Math.max(0, Math.min(rows.length - 1, currentIndex + (event.key === "ArrowDown" ? 1 : -1)));
+                    const nextRow = rows[nextIndex];
+                    if (!nextRow?.dataset.leadId) return;
+                    event.preventDefault();
+                    nextRow.focus();
+                    onSelectLead(nextRow.dataset.leadId);
+                  }}
+                >
+                  {filteredQueueItems.map((lead) => (
+                    <LeadRow
+                      key={lead.id}
+                      lead={lead}
+                      selected={lead.id === selectedLeadId}
+                      onSelect={() => selectLead(lead.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <aside
+                ref={signalDetailRef}
+                className="relative flex min-h-0 min-w-0 scroll-mt-4 flex-col xl:overflow-y-auto"
+                aria-label="Signal details"
+              >
+                {selectedLead ? (
+                  <LeadDetail
+                    lead={selectedLead}
+                    tabs={detailTabs}
+                    reviewOnly={isPotentialBuyer(selectedLead)}
+                    feedbackNotice={feedbackNotice}
+                    feedbackPending={feedbackPending}
+                    qualificationNotice={qualificationNotice}
+                    qualificationPending={qualificationPending}
+                    onSetHandled={onSetHandled}
+                    onFeedback={onFeedback}
+                    onQualify={onQualify}
+                    onBackToList={backToList}
+                  />
+                ) : (
+                  <p className="p-5 text-sm text-muted-foreground">
+                    Select a signal to see the evidence and a suggested reply.
+                  </p>
+                )}
+              </aside>
+            </div>
+          ) : (
+            <EmptyQueue
+              hasProfile={serviceProfile.hasProfile}
+              hasActiveFilters={hasActiveFilters}
+              query={queueQuery}
+              view={queueFilter}
+              inboxCount={counts.all}
+              screenedMatchCount={screenedMatches.length}
+              doneCount={doneCount}
+              report={buyerDemandReport}
+              onOpenDone={() => showQueueCategory("done")}
+              onShowInbox={() => showQueueCategory("all")}
+              onClearFilters={clearFilters}
+              onOpenScanActivity={() => setScanActivityOpen(true)}
+              onOpenScreenedAudit={() => showQueueCategory("screened")}
+            />
+          )}
+        </section>
+
+        <WebsiteDemandMap
+          suggestions={buyerGroupSuggestions}
+          activateBuyerGroup={activateBuyerGroup}
+          collapsible
+          defaultExpanded={queueItemCount === 0}
+        />
+
+        <ScanActivityDialog
+          open={scanActivityOpen}
+          onOpenChange={setScanActivityOpen}
+          report={buyerDemandReport}
+          onRefresh={onRefresh}
+          manualScan={manualScan}
+          profileRebuild={{
+            pending: isProfileRebuildPending,
+            available: Boolean(serviceProfile.websiteUrl),
+            result: profileRebuildResult,
+            onStart: onRebuildProfile,
+          }}
+        />
+      </div>
+    </ContextLayout>
   );
 }
