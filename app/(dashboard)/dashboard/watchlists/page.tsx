@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { ContextLayout } from "@/components/dashboard/ContextLayout";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { WebsiteDemandMap } from "@/components/prospects/website-demand-map";
 import {
@@ -24,6 +25,7 @@ import {
 } from "../data";
 import type { WatchlistView } from "../prospect-types";
 import WatchlistsPanel from "../watchlists-panel";
+import { BuyerGroupsPanel } from "./buyer-groups-panel";
 import { BuyerGroupsHeaderActions } from "./header-actions";
 import { RefreshLoadError } from "./refresh-error";
 
@@ -106,40 +108,51 @@ export default async function WatchlistsPage() {
       : [];
 
   return (
-    <div className="arc-workspace-page arc-workspace-page--buyers">
-      <PageHeader
-        title="Buyer groups"
-        description="Pair an audience with a problem, and Arcli finds people describing it."
-        actions={
-          <BuyerGroupsHeaderActions
-            createWatchlist={createWatchlist}
-            canCreate={watchlists.length > 0}
-          />
-        }
-      />
-
-      <WatchlistsPanel
-        watchlists={watchlists}
-        results={resultsResult.status === "fulfilled" ? resultsResult.value : []}
-        resultsUnavailable={resultsResult.status === "rejected"}
-        now={renderedAt}
-        createWatchlist={createWatchlist}
-        runWatchlistDiscovery={runWatchlistDiscovery}
-        setWatchlistActive={setWatchlistActive}
-        hasSuggestedBuyerGroups={buyerGroupSuggestions.length > 0}
-        suggestions={
-          profileResult.status === "rejected" ? (
-            <RefreshLoadError thing="Suggested buyer groups" />
-          ) : (
-            <WebsiteDemandMap
-              suggestions={buyerGroupSuggestions}
-              activateBuyerGroup={activateSuggestedBuyerGroup}
-              collapsible
-              defaultExpanded={watchlists.length === 0}
+    <ContextLayout
+      label="Buyer groups overview"
+      panel={
+        <BuyerGroupsPanel
+          watchlists={watchlists}
+          suggestions={profileResult.status === "fulfilled" ? buyerGroupSuggestions : []}
+          suggestionsExpanded={watchlists.length === 0}
+        />
+      }
+    >
+      <div className="arc-workspace-page arc-workspace-page--buyers">
+        <PageHeader
+          title="Buyer groups"
+          description="Pair an audience with a problem, and Arcli finds people describing it."
+          actions={
+            <BuyerGroupsHeaderActions
+              createWatchlist={createWatchlist}
+              canCreate={watchlists.length > 0}
             />
-          )
-        }
-      />
-    </div>
+          }
+        />
+
+        <WatchlistsPanel
+          watchlists={watchlists}
+          results={resultsResult.status === "fulfilled" ? resultsResult.value : []}
+          resultsUnavailable={resultsResult.status === "rejected"}
+          now={renderedAt}
+          createWatchlist={createWatchlist}
+          runWatchlistDiscovery={runWatchlistDiscovery}
+          setWatchlistActive={setWatchlistActive}
+          hasSuggestedBuyerGroups={buyerGroupSuggestions.length > 0}
+          suggestions={
+            profileResult.status === "rejected" ? (
+              <RefreshLoadError thing="Suggested buyer groups" />
+            ) : (
+              <WebsiteDemandMap
+                suggestions={buyerGroupSuggestions}
+                activateBuyerGroup={activateSuggestedBuyerGroup}
+                collapsible
+                defaultExpanded={watchlists.length === 0}
+              />
+            )
+          }
+        />
+      </div>
+    </ContextLayout>
   );
 }
