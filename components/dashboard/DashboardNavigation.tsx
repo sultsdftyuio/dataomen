@@ -168,7 +168,7 @@ export function DashboardNavigation({
             <div className="px-6 pb-5 pt-6">
               <DialogHeader className="text-left">
                 <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-blue-pale px-2.5 py-1 text-xs font-semibold" style={{ color: C.blue }}>
-                  <Sparkles className="size-3" aria-hidden="true" /> Pro prospect desk
+                  <Sparkles className="size-3" aria-hidden="true" /> Pro signal desk
                 </div>
                 <DialogTitle className="mt-3 text-xl leading-7 font-semibold" style={{ color: C.navy }}>
                   Review the evidence behind a match.

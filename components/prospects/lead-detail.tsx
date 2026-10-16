@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 type LeadDetailProps = {
   lead: QualifiedLeadView;
-  /** The tabs this prospect has, in order. Never empty. */
+  /** The tabs this signal has, in order. Never empty. */
   tabs: readonly DetailTab[];
   /** A Maybe: it can be read and replied to, but not qualified. */
   reviewOnly: boolean;
@@ -117,7 +117,7 @@ export function LeadDetail({
 
       {hasReply ? (
         <div>
-          <div className="flex gap-5 border-b border-border" role="tablist" aria-label="Prospect details">
+          <div className="flex gap-5 border-b border-border" role="tablist" aria-label="Signal details">
             <DetailTabButton active={activeTab === "reply"} tab="reply" onClick={() => setDetailTab("reply")} onKeyDown={handleTabKeyDown}>
               Reply draft
             </DetailTabButton>

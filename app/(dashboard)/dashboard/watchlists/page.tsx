@@ -31,7 +31,7 @@ import { RefreshLoadError } from "./refresh-error";
 
 export const metadata: Metadata = {
   title: "Buyer groups | Arcli",
-  description: "Focus prospect discovery on the buyer groups that matter most.",
+  description: "Focus buyer-signal monitoring on the buyer groups that matter most.",
 };
 
 export const dynamic = "force-dynamic";

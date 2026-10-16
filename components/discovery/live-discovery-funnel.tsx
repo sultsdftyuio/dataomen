@@ -177,7 +177,7 @@ function funnelDescription(report: BuyerDemandReportView | null, metrics: Funnel
   }
 
   if (candidates > 0) {
-    return `${countLabel(candidates, "candidate conversation")} so far. Each one is checked before it reaches Prospects.`;
+    return `${countLabel(candidates, "candidate conversation")} so far. Each one is checked before it reaches Signals.`;
   }
   if (posts > 0) {
     return `${countLabel(posts, "public post")} collected so far. Arcli is narrowing them to people describing the problem you solve.`;
@@ -228,7 +228,7 @@ export function LiveDiscoveryFunnel({ report, className }: LiveDiscoveryFunnelPr
         <FunnelMetric
           label="Candidate conversations"
           value={metrics.candidateCount === null ? emptyValue : metrics.candidateCount.toLocaleString("en-US")}
-          note="Checked before they become prospects"
+          note="Checked before they become signals"
         />
       </dl>
 

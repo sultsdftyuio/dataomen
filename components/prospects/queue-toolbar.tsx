@@ -66,7 +66,7 @@ export function QueueToolbar({
   return (
     <div className="border-b border-border">
       <div className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between md:px-4">
-        <div role="group" aria-label="Show prospects" className="flex rounded-md bg-off-white p-0.5 ring-1 ring-inset ring-border md:w-auto">
+        <div role="group" aria-label="Show signals" className="flex rounded-md bg-off-white p-0.5 ring-1 ring-inset ring-border md:w-auto">
           {VIEW_SEGMENTS.map((segment) => {
             const active = view === segment.value;
             return (

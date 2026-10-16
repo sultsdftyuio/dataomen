@@ -111,7 +111,7 @@ function targetingReadiness(
     return {
       tone: "success",
       label: "Saved",
-      detail: "Prospect scans are part of Pro. This brief is used once you upgrade.",
+      detail: "Scans are part of Pro. This brief is used once you upgrade.",
     };
   }
   if (serviceProfile.embeddingStatus !== "completed") {
@@ -137,16 +137,16 @@ function latestScanMessage(latestScan: LatestScan) {
   }
 
   if (!latestScan.isTerminal) {
-    return "A scan is running with this brief. New prospects appear in Prospects when it finishes.";
+    return "A scan is running with this brief. New buyer signals appear in Signals when it finishes.";
   }
 
   const conversations = latestScan.summary.totalHits;
   const plausible = latestScan.summary.plausibleHits;
   if (conversations !== null && plausible !== null) {
-    return `Checked ${conversations} public ${conversations === 1 ? "conversation" : "conversations"} and found ${plausible} plausible ${plausible === 1 ? "prospect" : "prospects"}.`;
+    return `Checked ${conversations} public ${conversations === 1 ? "conversation" : "conversations"} and found ${plausible} plausible ${plausible === 1 ? "signal" : "signals"}.`;
   }
 
-  return "The last scan finished. Its matches are in Prospects.";
+  return "The last scan finished. Its matches are in Signals.";
 }
 
 function ResultLine({
@@ -716,7 +716,7 @@ export function TargetingEditor({
                 <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
                   <SignalField
                     label="Exclude these audiences"
-                    description="People or companies whose conversations should never count as prospects."
+                    description="People or companies whose conversations should never count as signals."
                     value={fields.excluded_audiences}
                     placeholder="Agencies, job seekers"
                     disabled={isSaving}

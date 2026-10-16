@@ -811,7 +811,7 @@ export async function fetchQualifiedLeads(
       tenant_id: tenantId,
       error: result.error,
     });
-    throw new Error("Prospects couldn't be loaded.", { cause: result.error });
+    throw new Error("Signals couldn't be loaded.", { cause: result.error });
   }
 
   return ((result.data ?? []) as unknown[])
@@ -904,7 +904,7 @@ async function fetchReviewOnlyMatches(
       match_status: matchStatus,
       error: result.error,
     });
-    throw new Error("Prospects to review couldn't be loaded.", { cause: result.error });
+    throw new Error("Signals to review couldn't be loaded.", { cause: result.error });
   }
 
   return ((result.data ?? []) as unknown[]).map((row, index) =>

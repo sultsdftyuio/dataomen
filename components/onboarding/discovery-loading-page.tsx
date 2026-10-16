@@ -145,7 +145,7 @@ export function DiscoveryLoadingPage({
         {hasError ? (
           <>
             <Link href="/onboarding/workspace?edit=1">Check website and retry</Link>
-            <Link href="/dashboard">Open Prospects</Link>
+            <Link href="/dashboard">Open Signals</Link>
           </>
         ) : (
           <span>{updateLabel}. You can leave and come back while Arcli prepares your brief.</span>
@@ -209,7 +209,7 @@ export function DiscoveryLoadingPage({
           {isReady ? (
             <div className="mt-4">
               <Button asChild>
-                <Link href="/dashboard">Open Prospects</Link>
+                <Link href="/dashboard">Open Signals</Link>
               </Button>
             </div>
           ) : null}

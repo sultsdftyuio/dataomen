@@ -53,6 +53,6 @@ test("opens a Pro prompt instead of navigating free workspaces to Buyer groups",
 
   assert.match(navigation, /item\.href === "\/dashboard\/watchlists"/);
   assert.match(navigation, /onClick=\{\(\) => setIsUpgradeOpen\(true\)\}/);
-  assert.match(navigation, /Pro prospect desk/);
+  assert.match(navigation, /Pro signal desk/);
   assert.match(navigation, /Review the evidence behind a match\./);
 });

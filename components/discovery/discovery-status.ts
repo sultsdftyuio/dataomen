@@ -100,7 +100,7 @@ function crawlFailure(crawlJob: CrawlJobView | null, domain: string): DiscoveryS
     return {
       kind: "error",
       title: "Couldn't start reading your website",
-      detail: `Arcli is reading other websites and couldn't add ${domain} to the queue. Try again from Prospects in a few minutes.`,
+      detail: `Arcli is reading other websites and couldn't add ${domain} to the queue. Try again from Signals in a few minutes.`,
       stepIndex: 0,
       failedStep: 0,
       recovery: "open-prospects",
@@ -155,7 +155,7 @@ function finishedSearch(report: BuyerDemandReportView): DiscoveryStatus {
       kind: "error",
       title: "The search didn't finish",
       detail:
-        "Public sources didn't respond during this scan, so nothing was collected. Your existing prospects are unchanged.",
+        "Public sources didn't respond during this scan, so nothing was collected. Your existing signals are unchanged.",
       stepIndex: 2,
       failedStep: 2,
       recovery: "open-prospects",
@@ -167,7 +167,7 @@ function finishedSearch(report: BuyerDemandReportView): DiscoveryStatus {
     kind: "ready",
     title: partialCoverage ? "Scan finished with partial coverage" : "Scan finished",
     detail: report.summary.verifierPending
-      ? "Sources have finished. Arcli is still checking some candidates, and they'll appear in Prospects when ready."
+      ? "Sources have finished. Arcli is still checking some candidates, and they'll appear in Signals when ready."
       : partialCoverage
         ? "Some sources didn't respond, so this scan saw fewer conversations than usual. Opening Prospects."
         : "Opening Prospects. A finished scan doesn't always produce a new prospect.",

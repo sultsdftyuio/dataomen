@@ -67,7 +67,7 @@ export default function DashboardError({ error, reset }: DashboardErrorProps) {
             {isRetrying ? "Trying again…" : "Try again"}
           </Button>
           <Button asChild variant="outline">
-            <Link href="/dashboard">Go to Prospects</Link>
+            <Link href="/dashboard">Go to Signals</Link>
           </Button>
         </div>
       </section>

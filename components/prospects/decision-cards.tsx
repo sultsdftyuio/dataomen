@@ -54,7 +54,7 @@ export function DecisionCards({
   const fitCard = isScreened ? (
     <ChoiceCard
       icon={<ArcLogoIcon size={20} accent="var(--c-blue)" />}
-      title="Should be a lead"
+      title="Should be a signal"
       description="Tell Arcli it missed this one."
       disabled={feedbackPending}
       onSelect={() => onFeedback(lead.id, "good_fit")}
@@ -63,15 +63,15 @@ export function DecisionCards({
     <ChoiceCard
       icon={<ArcLogoIcon size={20} accent="var(--c-blue)" />}
       title="Qualified"
-      description="You marked this prospect qualified."
+      description="You marked this signal qualified."
       selected
       disabled
     />
   ) : canQualify ? (
     <ChoiceCard
       icon={<ArcLogoIcon size={20} accent="var(--c-blue)" />}
-      title={qualificationPending ? "Qualifying…" : "Lead"}
-      description="Worth contacting. Marks it qualified."
+      title={qualificationPending ? "Qualifying…" : "Worth contacting"}
+      description="Marks it qualified."
       disabled={qualificationPending}
       onSelect={() => onQualify(lead.id)}
     />

@@ -7,7 +7,7 @@ export type PageSkeletonVariant = "list-detail" | "form" | "list";
 export type PageSkeletonProps = {
   /** list-detail: Signals, Targets, Buyer groups. form: Brief, Settings. list: simple lists. */
   variant: PageSkeletonVariant;
-  /** Announced to screen readers as "Loading <page>", e.g. "prospects". */
+  /** Announced to screen readers as "Loading <page>", e.g. "signals". */
   page: string;
   /** Show an actions placeholder at the right of the header. */
   withActions?: boolean;

@@ -30,7 +30,7 @@ function briefStatus(profile: ServiceProfileView | null): BriefStatus {
     return {
       tone: "neutral",
       label: "Not set up",
-      detail: "Add your website to create the targeting brief behind your prospect scans.",
+      detail: "Add your website to create the targeting brief behind your scans.",
     };
   }
   if (profile.embeddingStatus === "completed") {

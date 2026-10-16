@@ -19,7 +19,7 @@ export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Live discovery | Arcli",
-  description: "Follow Arcli as it prepares fresh prospect discovery results.",
+  description: "Follow Arcli as it prepares fresh buyer-signal results.",
 };
 
 type DiscoveryPageProps = {

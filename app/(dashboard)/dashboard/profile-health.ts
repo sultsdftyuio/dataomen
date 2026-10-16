@@ -36,7 +36,7 @@ export function profileHealthIssue(
     return {
       kind: "crawl_failed",
       title: "We couldn't read your website",
-      detail: "Arcli can't find new prospects until it can read your website.",
+      detail: "Arcli can't find new buyer signals until it can read your website.",
       action: "rebuild_profile",
       technicalDetail: crawlJob?.errorMessage ?? crawlJob?.failureReason ?? undefined,
     };

@@ -129,7 +129,7 @@ export default function WorkspaceBillingCard({
               {plan.periodEnd
                 ? `It won't renew. Pro stays available until ${plan.periodEnd}, and you can resume it any time before then.`
                 : "It won't renew. Pro stays available until the end of this billing period, and you can resume it any time before then."}{" "}
-              Your prospects and workspace data are kept.
+              Your signals and workspace data are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {cancelError ? (

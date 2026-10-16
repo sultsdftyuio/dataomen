@@ -274,7 +274,7 @@ export function ProspectLeadDesk({
       ) : null}
 
       <section
-        aria-label="Prospect review"
+        aria-label="Signal review"
         // Only a populated desk stretches to the viewport; an empty one stays
         // its natural height so the buyer groups below remain in view.
         className={cn(
@@ -322,7 +322,7 @@ export function ProspectLeadDesk({
                     size="icon-sm"
                     variant="ghost"
                     className="text-muted-foreground"
-                    aria-label="Reload prospects"
+                    aria-label="Reload signals"
                     title="Reload prospects"
                     onClick={onRefresh}
                     disabled={isRefreshing}
@@ -366,7 +366,7 @@ export function ProspectLeadDesk({
             <aside
               ref={signalDetailRef}
               className="relative flex min-h-0 min-w-0 scroll-mt-4 flex-col xl:overflow-y-auto"
-              aria-label="Prospect details"
+              aria-label="Signal details"
             >
               {selectedLead ? (
                 <LeadDetail

@@ -39,7 +39,7 @@ export function ArcLogoIcon({ accent = "currentColor", ...props }: ArcIconProps)
   );
 }
 
-/** Prospects: a signal coming down into a tray. */
+/** Signals: a signal coming down into a tray. */
 export function ArcProspectsIcon({ accent = "currentColor", ...props }: ArcIconProps) {
   return (
     <ArcSvg {...props}>

@@ -19,7 +19,7 @@ type DiscoveryRecoveryActionsProps = {
 };
 
 const RETRY_FAILED =
-  "Couldn't restart your targeting brief. Try again in a minute, or open Prospects to retry from there.";
+  "Couldn't restart your targeting brief. Try again in a minute, or open Signals to retry from there.";
 
 /**
  * One primary action per failure, chosen for what can actually fix it, plus
@@ -73,7 +73,7 @@ export function DiscoveryRecoveryActions({
         ) : null}
         {recovery === "open-prospects" ? (
           <Button asChild>
-            <Link href="/dashboard">Open Prospects</Link>
+            <Link href="/dashboard">Open Signals</Link>
           </Button>
         ) : null}
 
@@ -87,7 +87,7 @@ export function DiscoveryRecoveryActions({
           </Button>
         ) : (
           <Button asChild variant="outline">
-            <Link href="/dashboard">Open Prospects</Link>
+            <Link href="/dashboard">Open Signals</Link>
           </Button>
         )}
       </div>
