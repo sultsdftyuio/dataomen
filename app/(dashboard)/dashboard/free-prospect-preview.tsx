@@ -56,6 +56,7 @@ export default function FreeProspectPreview({
       <PageHeader
         title="Signals"
         description={`Arcli read ${domain} and drafted the targeting brief below. Correct anything that doesn't describe your best customer.`}
+        showDescription
         meta={<StatusBadge tone="success" size="compact">Website read</StatusBadge>}
       />
 

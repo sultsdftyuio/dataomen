@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, CircleHelp, Copy, ExternalLink, RotateCcw } from "lucide-react";
+import { Check, CircleHelp, Copy, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,10 +9,8 @@ import { cn } from "@/lib/utils";
 import { trackProductEvent } from "@/lib/analytics/product-events";
 import {
   isPotentialBuyer,
-  isVerifiedLead,
   leadCategoryLabel,
 } from "@/app/(dashboard)/dashboard/lead-queue-filter";
-import { sourceDisplayName } from "@/components/prospects/lead-desk-presentation";
 import type { QualifiedLeadView } from "@/app/(dashboard)/dashboard/prospect-types";
 
 type CopyState = "idle" | "copied" | "empty" | "error";
@@ -23,56 +21,6 @@ const COPY_MESSAGES: Record<CopyState, string | null> = {
   empty: "Write a reply before copying it.",
   error: "Couldn't copy the reply. Select the text and copy it yourself.",
 };
-
-/**
- * Source link and qualification for one prospect. Only a verifier-confirmed
- * lead can be qualified (which can also export it to a CRM). The server and
- * RLS policy enforce the same boundary; keeping it explicit here prevents a
- * misleading action on a Maybe or a screened-out record.
- */
-export function LeadOutreachActions({
-  lead,
-  reviewOnly,
-  sourceIsPrimary,
-  qualificationPending,
-  onQualify,
-}: {
-  lead: QualifiedLeadView;
-  reviewOnly: boolean;
-  /** Filled when there is no reply to copy, so the view keeps one primary action. */
-  sourceIsPrimary: boolean;
-  qualificationPending: boolean;
-  onQualify: (leadId: string) => void;
-}) {
-  const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate" || !isVerifiedLead(lead);
-  const isQualified = lead.matchStatus === "qualified";
-
-  const sourceAction = lead.sourcePost.url ? (
-    <Button asChild variant={sourceIsPrimary ? "default" : "outline"}>
-      <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
-        <ExternalLink aria-hidden="true" />
-        Open {sourceDisplayName(lead.sourcePost.source)}
-        <span className="sr-only">(opens in a new tab)</span>
-      </a>
-    </Button>
-  ) : null;
-
-  const qualificationAction = !isReviewOnly ? (
-    isQualified ? null : (
-      <Button type="button" variant="outline" onClick={() => onQualify(lead.id)} disabled={qualificationPending}>
-        <Check aria-hidden="true" />
-        {qualificationPending ? "Qualifying…" : "Mark qualified"}
-      </Button>
-    )
-  ) : null;
-
-  return (
-    <>
-      {sourceAction}
-      {qualificationAction}
-    </>
-  );
-}
 
 /** Review-only guidance shown in place of qualification for a Maybe. */
 export function ReviewOnlyNotice({ lead }: { lead: QualifiedLeadView }) {

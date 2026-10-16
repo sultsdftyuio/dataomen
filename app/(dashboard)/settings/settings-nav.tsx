@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-import { cn } from "@/lib/utils";
-
 export type SettingsNavItem = { id: string; label: string };
 
 /**
- * In-page links to each settings section. Labels repeat the section headings
- * word for word. The link for the section being read gets aria-current.
+ * In-page links to each settings section, shown in the page's context panel.
+ * Labels repeat the section headings word for word. The link for the section
+ * being read gets aria-current, which the panel styles as the current row.
  */
 export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -37,26 +36,18 @@ export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
   }, [items]);
 
   return (
-    <nav aria-label="Settings sections" className="md:sticky md:top-4 md:self-start">
-      <ul className="flex flex-wrap gap-1 md:flex-col md:gap-0.5">
-        {items.map((item) => (
-          <li key={item.id}>
-            <a
-              href={`#${item.id}`}
-              aria-current={currentId === item.id ? "location" : undefined}
-              onClick={() => setCurrentId(item.id)}
-              className={cn(
-                "flex min-h-10 items-center rounded-md px-3 text-sm text-navy-soft md:min-h-9",
-                "hover:bg-accent hover:text-foreground",
-                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none",
-                "aria-[current=location]:bg-accent aria-[current=location]:text-foreground",
-              )}
-            >
-              {item.label}
-            </a>
-          </li>
-        ))}
-      </ul>
+    <nav aria-label="Settings sections" className="arc-context-list">
+      {items.map((item) => (
+        <a
+          key={item.id}
+          href={`#${item.id}`}
+          aria-current={currentId === item.id ? "location" : undefined}
+          onClick={() => setCurrentId(item.id)}
+          className="arc-context-link"
+        >
+          <span className="arc-context-link__title">{item.label}</span>
+        </a>
+      ))}
     </nav>
   );
 }

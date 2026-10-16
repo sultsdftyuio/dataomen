@@ -203,7 +203,7 @@ export function ProductBuyerMap({
         />
         <MapArea
           title="Outside the map"
-          description="Audiences and meanings that should not become leads."
+          description="Audiences and meanings that should not become buyer signals."
           emptyMessage="Add excluded audiences and negative keywords."
           items={map.exclusions}
           section="guardrails"

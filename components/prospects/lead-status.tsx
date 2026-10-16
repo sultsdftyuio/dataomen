@@ -28,7 +28,7 @@ export function leadStatus(lead: QualifiedLeadView): LeadStatusPresentation {
   if (lead.matchStatus === "qualified") {
     return {
       label: "Qualified",
-      description: "You marked this prospect qualified.",
+      description: "You marked this signal qualified.",
       tone: "success",
       icon: CheckCircle2,
     };

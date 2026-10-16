@@ -125,7 +125,7 @@ export function SignalList({
         href="/dashboard"
         className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
       >
-        Review all matches in Prospects
+        Review all matches in Signals
         <ArrowRight className="size-3.5" aria-hidden="true" />
       </Link>
     </div>

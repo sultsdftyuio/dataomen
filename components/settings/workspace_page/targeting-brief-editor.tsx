@@ -30,7 +30,7 @@ import {
   type TargetingBriefView,
 } from "@/lib/targeting-brief";
 import { cn } from "@/lib/utils";
-import { RemovableTag } from "./targeting-fields";
+import { RemovableTag, editableListClassName } from "./targeting-fields";
 
 type ListFieldKey = Exclude<
   keyof TargetingBriefInput,
@@ -154,7 +154,7 @@ function ListField({
       </p>
 
       {value.length > 0 ? (
-        <ul className="mt-2.5 flex min-w-0 flex-wrap gap-1.5" aria-label={label}>
+        <ul className={editableListClassName} aria-label={label}>
           {value.map((item) => (
             <RemovableTag
               key={item.toLocaleLowerCase()}
@@ -254,7 +254,7 @@ function SeedUrlField({
       </p>
 
       {value.length > 0 ? (
-        <ul className="mt-2.5 flex min-w-0 flex-wrap gap-1.5" aria-label="Starting points">
+        <ul className={editableListClassName} aria-label="Starting points">
           {value.map((url) => (
             <RemovableTag
               key={url}

@@ -11,6 +11,8 @@ import {
   type ActionOutcome,
 } from "@/app/(dashboard)/dashboard/watchlists/action-outcome";
 import { OutcomeNotice } from "@/app/(dashboard)/dashboard/watchlists/outcome-notice";
+import { ArcGroupsIcon } from "@/components/dashboard/arc-icons";
+import { suggestionAnchorId } from "@/components/prospects/suggestion-anchor";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import type { BuyerGroupSuggestion } from "@/lib/buyer-group-suggestions";
@@ -90,22 +92,30 @@ export function WebsiteDemandMap({
   const suggestionList = (
     <div className="px-4 pb-4 md:px-5">
       {sharedProblem ? (
-        <p className="pb-3 text-sm leading-6 text-muted-foreground">
-          <span className="font-medium text-foreground">Problem they share: </span>
+        <p className="mb-3 rounded-lg bg-blue-tint px-3.5 py-2.5 text-sm leading-6 text-navy-soft">
+          <span className="font-semibold text-foreground">Problem they share: </span>
           {sharedProblem}
         </p>
       ) : null}
-      <ul className="divide-y divide-border border-y border-border">
+      {/* One card per suggestion: each is a separate choice with one action. */}
+      <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {suggestions.map((suggestion) => {
           const isActivating = pendingId === suggestion.id;
           const showAudience = !sameText(suggestion.name, suggestion.targetBuyer);
           return (
-            <li key={suggestion.id} className="flex flex-col gap-3 py-3 md:flex-row md:items-start md:justify-between md:gap-6">
+            <li
+              key={suggestion.id}
+              id={suggestionAnchorId(suggestion.id)}
+              className="flex scroll-mt-5 flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-border"
+            >
+              <span className="flex size-9 items-center justify-center rounded-lg bg-blue-pale text-navy" aria-hidden="true">
+                <ArcGroupsIcon size={20} accent="var(--c-blue)" />
+              </span>
               <div className="min-w-0 space-y-1">
-                <h3 className="text-sm leading-6 font-semibold text-foreground">{suggestion.name}</h3>
+                <h3 className="text-[15px] leading-6 font-semibold text-foreground">{suggestion.name}</h3>
                 {showAudience ? (
                   <p className="text-sm leading-6 text-muted-foreground">
-                    <span className="font-medium text-foreground">Audience: </span>
+                    <span className="sr-only">Audience: </span>
                     {suggestion.targetBuyer}
                   </p>
                 ) : null}
@@ -115,15 +125,18 @@ export function WebsiteDemandMap({
                     {suggestion.problemToSolve}
                   </p>
                 )}
-                <p className="text-xs leading-5 text-subtle">
-                  Sources: {suggestion.communityPlan.sources.map((source) => source.label).join(", ")}
-                </p>
               </div>
+              <ul aria-label="Sources" className="flex flex-wrap gap-1.5">
+                {suggestion.communityPlan.sources.map((source) => (
+                  <li key={source.label} className="rounded-md px-2 py-0.5 text-xs leading-5 text-navy-soft ring-1 ring-border ring-inset">
+                    {source.label}
+                  </li>
+                ))}
+              </ul>
               <Button
                 type="button"
-                size="sm"
                 variant="outline"
-                className="self-start md:shrink-0"
+                className="mt-auto w-full"
                 disabled={isPending || pendingId !== null}
                 aria-busy={isActivating}
                 onClick={() => activate(suggestion.id)}

@@ -5,11 +5,17 @@ import { cn } from "@/lib/utils";
 export type PageHeaderProps = {
   /** The page's navigation name, e.g. "Signals". No trailing full stop. */
   title: string;
-  /** One line on what this page is for. Muted, capped at ~70 characters wide. */
+  /**
+   * One line on what this page is for. Read by screen readers; shown on
+   * screen only with `showDescription`, for pages where it is an
+   * instruction (a first run, a preview) rather than a reminder.
+   */
   description?: ReactNode;
+  /** Show the description on screen. Off by default: see `description`. */
+  showDescription?: boolean;
   /** Small supporting line, e.g. "Updated 4 minutes ago" or a count. */
   meta?: ReactNode;
-  /** Page-level actions. Right-aligned from md up, wrapping below the title on mobile. */
+  /** Page-level actions, right-aligned; they wrap under the title on mobile. */
   actions?: ReactNode;
   /** id for the h1, so sections can use aria-labelledby. */
   titleId?: string;
@@ -18,12 +24,15 @@ export type PageHeaderProps = {
 
 /**
  * The single page heading for dashboard pages. It owns the page's only h1.
- * Geist 600 at 24px (28px from md): calm and specific, never a marketing
- * headline. PageSkeleton's header placeholder matches these dimensions.
+ *
+ * A compact bar rather than a large title: the rail already shows where you
+ * are, so the page name stays small and the page's own content (a verdict,
+ * a status, the work) leads. PageSkeleton's header placeholder matches it.
  */
 export function PageHeader({
   title,
   description,
+  showDescription = false,
   meta,
   actions,
   titleId = "page-title",
@@ -32,28 +41,25 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "flex shrink-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6",
+        "flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-2",
         className,
       )}
     >
       <div className="min-w-0">
-        <h1
-          id={titleId}
-          className="font-sans text-2xl leading-8 font-semibold tracking-[-0.01em] text-foreground md:text-[28px] md:leading-9"
-        >
-          {title}
-        </h1>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h1 id={titleId} className="font-sans text-base leading-6 font-semibold text-foreground">
+            {title}
+          </h1>
+          {meta ? <div className="text-xs leading-5 text-subtle">{meta}</div> : null}
+        </div>
         {description ? (
-          <p className="mt-1 max-w-[70ch] text-sm leading-6 text-muted-foreground">
+          <p className={showDescription ? "mt-1 max-w-[70ch] text-sm leading-6 text-muted-foreground" : "sr-only"}>
             {description}
           </p>
         ) : null}
-        {meta ? (
-          <div className="mt-1 text-xs leading-5 text-subtle">{meta}</div>
-        ) : null}
       </div>
       {actions ? (
-        <div className="flex flex-wrap items-center gap-2 md:shrink-0 md:justify-end md:pt-0.5">
+        <div className="flex flex-wrap items-center gap-2">
           {actions}
         </div>
       ) : null}

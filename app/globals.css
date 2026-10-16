@@ -92,6 +92,21 @@
   --sidebar-border: var(--c-rule);
   --sidebar-ring: var(--c-blue);
 
+  /* Dashboard rail: navy deepening into the brand blue, with a light-blue
+     glow low on the left. Built only from brand colours so it moves with
+     them. Text on it uses --rail-foreground / --rail-muted (both >= 4.5:1
+     across the whole gradient). */
+  --rail-surface:
+    radial-gradient(140% 45% at 0% 100%, color-mix(in srgb, var(--c-blue-light) 28%, transparent), transparent 68%),
+    radial-gradient(120% 30% at 100% 0%, color-mix(in srgb, var(--c-blue) 28%, transparent), transparent 70%),
+    linear-gradient(172deg, var(--c-navy) 0%, var(--c-navy-mid) 42%, color-mix(in srgb, var(--c-navy-soft) 72%, var(--c-blue)) 100%);
+  --rail-foreground: var(--c-white);
+  --rail-muted: color-mix(in srgb, var(--c-blue-pale) 82%, var(--c-navy));
+  --rail-active: color-mix(in srgb, var(--c-white) 14%, transparent);
+  --rail-hover: color-mix(in srgb, var(--c-white) 8%, transparent);
+  --rail-line: color-mix(in srgb, var(--c-white) 16%, transparent);
+  --rail-accent: var(--c-blue-light);
+
   /* Stacking order for app chrome. Popovers and menus opened from inside the
      mobile drawer must sit above it, so they use --z-overlay. */
   --z-drawer-scrim: 60;

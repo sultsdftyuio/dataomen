@@ -1,14 +1,18 @@
 import { cn } from "@/lib/utils";
 
+import { ContextLayout } from "./ContextLayout";
+
 export type PageSkeletonVariant = "list-detail" | "form" | "list";
 
 export type PageSkeletonProps = {
   /** list-detail: Signals, Targets, Buyer groups. form: Brief, Settings. list: simple lists. */
   variant: PageSkeletonVariant;
-  /** Announced to screen readers as "Loading <page>", e.g. "prospects". */
+  /** Announced to screen readers as "Loading <page>", e.g. "signals". */
   page: string;
   /** Show an actions placeholder at the right of the header. */
   withActions?: boolean;
+  /** The page opens with a context panel (see ContextLayout): hold its place. */
+  withPanel?: boolean;
   className?: string;
 };
 
@@ -20,18 +24,11 @@ function Block({ className }: { className?: string }) {
 }
 
 function HeaderPlaceholder({ withActions }: { withActions: boolean }) {
-  // Matches PageHeader: 32px/36px title line, 24px description line.
+  // Matches PageHeader: one compact 36px bar with the page name.
   return (
-    <div className="flex shrink-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
-      <div className="min-w-0 flex-1">
-        <div className="flex h-8 items-center md:h-9">
-          <Block className="h-6 w-40 md:h-7" />
-        </div>
-        <div className="mt-1 flex h-6 items-center">
-          <Block className="h-3.5 w-full max-w-[28rem]" />
-        </div>
-      </div>
-      {withActions ? <Block className="h-9 w-32 md:shrink-0" /> : null}
+    <div className="flex min-h-9 shrink-0 items-center justify-between gap-6">
+      <Block className="h-4 w-32" />
+      {withActions ? <Block className="h-9 w-32 shrink-0" /> : null}
     </div>
   );
 }
@@ -56,8 +53,8 @@ function ListRows({ count }: { count: number }) {
  * Route-level loading state for dashboard pages (use it from loading.tsx).
  * It is shaped like the page, so the layout does not jump when data arrives.
  */
-export function PageSkeleton({ variant, page, withActions = false, className }: PageSkeletonProps) {
-  return (
+export function PageSkeleton({ variant, page, withActions = false, withPanel = false, className }: PageSkeletonProps) {
+  const content = (
     <div
       role="status"
       aria-live="polite"
@@ -103,6 +100,26 @@ export function PageSkeleton({ variant, page, withActions = false, className }: 
           </div>
         ) : null}
       </div>
+    </div>
+  );
+
+  if (!withPanel) return content;
+
+  return (
+    <ContextLayout label={`Loading ${page}`} panel={<PanelPlaceholder />}>
+      {content}
+    </ContextLayout>
+  );
+}
+
+/** Static blocks on the panel surface, in the shape of a status card and a short list. */
+function PanelPlaceholder() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-3">
+      <div className="arc-context-placeholder h-28" />
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="arc-context-placeholder h-11 opacity-70" />
+      ))}
     </div>
   );
 }

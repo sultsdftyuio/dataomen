@@ -5,7 +5,9 @@ import { Github, Globe2, MessageSquareText } from "lucide-react";
 
 import type { QualifiedLeadView } from "@/app/(dashboard)/dashboard/prospect-types";
 import { isScreenedMatch } from "@/app/(dashboard)/dashboard/lead-queue-filter";
+import { ArcSignalIcon } from "@/components/dashboard/arc-icons";
 import { LeadStatusBadge, leadIntent } from "@/components/prospects/lead-status";
+import { leadSignalLevel, signalLevelLabel } from "@/components/prospects/lead-verdict";
 import { cn } from "@/lib/utils";
 
 export type DetailTab = "reply" | "match" | "evidence";
@@ -72,10 +74,6 @@ export function SourcePlatformBadge({ source }: { source: string }) {
   );
 }
 
-export function formatScore(score: number) {
-  return `${Math.round(score * 100)}%`;
-}
-
 export function relativeTime(value: string | null) {
   if (!value) return "—";
 
@@ -105,7 +103,7 @@ export function exactDateTime(value: string | null) {
 }
 
 export function signalLabel(lead: QualifiedLeadView) {
-  return lead.painTheme ?? lead.painDetected ?? "Buyer problem";
+  return lead.painTheme || lead.painDetected || "Buyer problem";
 }
 
 export function evidencePreview(lead: QualifiedLeadView) {
@@ -163,28 +161,6 @@ export function DetailTabButton({
   );
 }
 
-/** Labelled match facts. Neutral markers: these explain a match, they are not successes. */
-export function MatchDetails({ lead }: { lead: QualifiedLeadView }) {
-  const rows: Array<[string, string]> = [["Topic", signalLabel(lead)]];
-  if (lead.urgencyReason) rows.push(["Timing", lead.urgencyReason]);
-  if (lead.purchaseStage) rows.push(["Buying stage", lead.purchaseStage.replace(/_/g, " ")]);
-  if (lead.competitorMention) rows.push(["Also mentioned", lead.competitorMention]);
-
-  return (
-    <div className="space-y-3">
-      <p className="text-sm leading-6 text-navy-soft">{lead.matchReason}</p>
-      <dl className="grid gap-x-4 gap-y-1.5 text-sm leading-6 sm:grid-cols-[max-content_minmax(0,1fr)]">
-        {rows.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-subtle">{label}</dt>
-            <dd className="mb-1 text-foreground first-letter:uppercase sm:mb-0">{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
 export function LeadRow({
   lead,
   selected,
@@ -225,7 +201,9 @@ export function LeadRow({
           </span>
           <span className="mt-1.5 flex min-w-0 items-center gap-3 text-xs text-subtle">
             {/* The title already carries the topic on narrow screens. */}
-            <span className="hidden min-w-0 truncate sm:block">{signalLabel(lead)}</span>
+            {lead.painTheme || lead.painDetected ? (
+              <span className="hidden min-w-0 truncate sm:block">{signalLabel(lead)}</span>
+            ) : null}
             {intent ? (
               <span
                 className={cn("shrink-0", intent.strong && "font-medium text-foreground")}
@@ -234,37 +212,13 @@ export function LeadRow({
                 {intent.label}
               </span>
             ) : null}
-            <span className="shrink-0 tabular-nums" title="Match measures relevance to your brief, not purchase likelihood.">
-              Match {formatScore(lead.verifierScore)}
-            </span>
+            {isScreenedMatch(lead) ? null : (
+              <ArcSignalIcon className="shrink-0" size={18} level={leadSignalLevel(lead)} label={signalLevelLabel(leadSignalLevel(lead))} />
+            )}
           </span>
         </span>
         <LeadStatusBadge lead={lead} size="compact" />
       </span>
     </button>
-  );
-}
-
-export function ScreenedMatchOutcome({ lead }: { lead: QualifiedLeadView }) {
-  if (!isScreenedMatch(lead)) return null;
-
-  return (
-    <section aria-label="Screening result" className="rounded-md bg-off-white px-3 py-2.5 ring-1 ring-inset ring-border">
-      <p className="text-sm leading-6 text-navy-soft">
-        Not a close enough fit. Kept here so you can check the decision and give feedback.
-      </p>
-      <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-        <div className="flex gap-1.5">
-          <dt className="text-subtle">Similarity</dt>
-          <dd className="font-medium tabular-nums text-foreground">
-            {lead.similarityScore === null ? "—" : formatScore(lead.similarityScore)}
-          </dd>
-        </div>
-        <div className="flex gap-1.5">
-          <dt className="text-subtle">Match</dt>
-          <dd className="font-medium tabular-nums text-foreground">{formatScore(lead.verifierScore)}</dd>
-        </div>
-      </dl>
-    </section>
   );
 }

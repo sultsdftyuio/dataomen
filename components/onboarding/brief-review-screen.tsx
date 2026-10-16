@@ -288,7 +288,7 @@ export function BriefReviewScreen({
             <p className="arc-read-screen__eyebrow">REVIEW YOUR BRIEF</p>
             <h1>Make sure we got you right.</h1>
             <p className="arc-read-screen__detail">
-              We drafted this from your website. Edit any line, then approve it to guide your prospect research.
+              We drafted this from your website. Edit any line, then approve it to guide your scans.
             </p>
           </div>
           <span className="arc-read-screen__domain">{domain}</span>

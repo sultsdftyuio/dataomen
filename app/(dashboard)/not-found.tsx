@@ -19,10 +19,10 @@ export default function DashboardNotFound() {
         variant="never-used"
         icon={FileQuestion}
         title="This page isn't available"
-        description="The address may be wrong, or this page isn't turned on for your workspace. Your prospects and targeting brief are unaffected."
+        description="The address may be wrong, or this page isn't turned on for your workspace. Your signals and targeting brief are unaffected."
         action={
           <Button asChild>
-            <Link href="/dashboard">Go to Prospects</Link>
+            <Link href="/dashboard">Go to Signals</Link>
           </Button>
         }
       />
