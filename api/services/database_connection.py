@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, NoSuchModuleError
 
+_DATABASE_URL_ENV_VARS = ("DATABASE_URL", "SUPABASE_DB_URL", "POSTGRES_URL")
 _PSYCOPG3_DRIVERS = frozenset({"psycopg", "psycopg_async"})
+# Hosted providers hand out driverless URLs. Naming the driver keeps the
+# connection on Psycopg 3 whatever SQLAlchemy's default for that scheme is.
+_DRIVERLESS_SCHEMES = ("postgres://", "postgresql://")
+_PSYCOPG3_SCHEME = "postgresql+psycopg://"
+
+
+def database_url() -> str:
+    """Return the configured database URL with an explicit Psycopg 3 driver."""
+    for name in _DATABASE_URL_ENV_VARS:
+        raw_url = os.getenv(name, "").strip()
+        if raw_url:
+            return _with_psycopg3_driver(raw_url)
+    raise RuntimeError(f"{', '.join(_DATABASE_URL_ENV_VARS)} is required.")
+
+
+def _with_psycopg3_driver(raw_url: str) -> str:
+    for scheme in _DRIVERLESS_SCHEMES:
+        if raw_url.startswith(scheme):
+            return _PSYCOPG3_SCHEME + raw_url[len(scheme) :]
+    return raw_url
 
 
 def _uses_psycopg3(database_url: str) -> bool:

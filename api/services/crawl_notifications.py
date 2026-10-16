@@ -12,7 +12,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import re
 import secrets
 from collections.abc import Mapping
@@ -24,7 +23,7 @@ from urllib.parse import urlparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
-from api.services.database_connection import postgres_connect_args
+from api.services.database_connection import database_url, postgres_connect_args
 from api.services.integrations.email_connector import (
     EmailConfig,
     EmailConnector,
@@ -86,26 +85,9 @@ class NotificationOutboxRecord:
     event_key: str
 
 
-def _normalize_database_url(raw_url: str) -> str:
-    if raw_url.startswith("postgres://"):
-        return raw_url.replace("postgres://", "postgresql://", 1)
-    return raw_url
-
-
 @lru_cache(maxsize=1)
 def _database_engine() -> Engine:
-    database_url = (
-        os.getenv("DATABASE_URL")
-        or os.getenv("SUPABASE_DB_URL")
-        or os.getenv("POSTGRES_URL")
-        or ""
-    ).strip()
-    if not database_url:
-        raise RuntimeError(
-            "DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required."
-        )
-
-    normalized_url = _normalize_database_url(database_url)
+    normalized_url = database_url()
     return create_engine(
         normalized_url,
         pool_pre_ping=True,
