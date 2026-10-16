@@ -46,7 +46,7 @@ export function matchesLeadQueueFilter(
 
 // The three user-facing buckets. Keep these words identical everywhere so
 // people learn one vocabulary instead of decoding synonyms.
-export function leadCategoryLabel(lead: QualifiedLeadView): "Lead" | "Maybe" | "Screened out" {
+export function leadCategoryLabel(lead: QualifiedLeadView): "Buyer signal" | "Maybe" | "Screened out" {
   if (isScreenedMatch(lead)) return "Screened out";
-  return isPotentialBuyer(lead) ? "Maybe" : "Lead";
+  return isPotentialBuyer(lead) ? "Maybe" : "Buyer signal";
 }

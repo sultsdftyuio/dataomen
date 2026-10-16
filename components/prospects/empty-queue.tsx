@@ -96,7 +96,7 @@ export function EmptyQueue({
     return (
       <EmptyState
         icon={Inbox}
-        title={view === "leads" ? "No open leads" : "No open maybes"}
+        title={view === "leads" ? "No open signals" : "No open maybes"}
         description={`${inboxCount} other ${inboxCount === 1 ? "prospect is" : "prospects are"} waiting in your inbox.`}
         action={
           <Button type="button" variant="outline" size="sm" onClick={onShowInbox}>

@@ -26,7 +26,7 @@ test("target feedback sends only a server-owned assessment and fixed outcome", (
   assert.match(actions, /rpc\("submit_prospect_feedback"/);
   assert.match(actions, /target_assessment_id: parsed\.data\.assessmentId/);
   assert.match(actions, /reason_code_input: null/);
-  assert.match(actions, /does not create a lead or CRM record/);
+  assert.match(actions, /does not create a buyer signal or CRM record/);
 });
 
 test("target desk gives feedback an explicit no-outreach boundary", () => {

@@ -25,8 +25,8 @@ import { viewerMayRunManualScan } from "@/lib/manual-scan-access";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const metadata: Metadata = {
-  title: "Prospects | Arcli",
-  description: "Review evidence-backed prospect conversations and next steps.",
+  title: "Signals | Arcli",
+  description: "Review buyer signals from public conversations, each linked to its source with a draft reply.",
 };
 
 export const dynamic = "force-dynamic";

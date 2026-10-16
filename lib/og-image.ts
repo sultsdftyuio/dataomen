@@ -1,6 +1,6 @@
 export const OG_IMAGE_PATH = '/api/og';
 
-const DEFAULT_OG_TITLE = 'Buyer Intent Discovery for B2B Founders';
+const DEFAULT_OG_TITLE = 'Know when someone asks for a tool like yours';
 const MAX_TITLE_LENGTH = 140;
 
 export type OgImageType = 'default' | 'security';

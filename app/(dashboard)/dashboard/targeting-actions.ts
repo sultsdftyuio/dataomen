@@ -312,7 +312,7 @@ export async function submitProspectTargetFeedback(
   revalidatePath("/dashboard/targets");
   switch (parsed.data.feedback) {
     case "target":
-      return actionOk("Target outcome recorded. This does not create a lead or CRM record.");
+      return actionOk("Target outcome recorded. This does not create a buyer signal or CRM record.");
     case "not_relevant":
       return actionOk("Not-relevant outcome recorded for future ranking review.");
     case "contacted":
@@ -365,7 +365,7 @@ export async function setProspectTargetMonitoring(
   revalidatePath("/dashboard/targets");
   return parsed.data.enabled
     ? actionOk(
-        "Target monitoring is on. Arcli will only recheck retained public records at its exact supported profile locator; it cannot create a lead, outreach, or CRM record.",
+        "Target monitoring is on. Arcli will only recheck retained public records at its exact supported profile locator; it cannot create a buyer signal, outreach, or CRM record.",
       )
     : actionOk("Target monitoring is off. No future retained-record checks will be scheduled.");
 }

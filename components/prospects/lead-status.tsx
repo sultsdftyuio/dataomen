@@ -42,7 +42,7 @@ export function leadStatus(lead: QualifiedLeadView): LeadStatusPresentation {
     };
   }
   return {
-    label: "Lead",
+    label: "Buyer signal",
     description: "A clear, verified buyer problem. Not a confirmed customer.",
     tone: "info",
     icon: BadgeCheck,

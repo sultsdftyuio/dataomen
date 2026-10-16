@@ -38,7 +38,7 @@ import type {
 
 const VIEW_TITLES: Record<LeadQueueFilter, string> = {
   all: "Inbox",
-  leads: "Leads",
+  leads: "Signals",
   potential: "Maybes",
   done: "Done",
   screened: "Screened out",
@@ -228,8 +228,8 @@ export function ProspectLeadDesk({
   return (
     <div className="arc-pro-lead-desk flex w-full flex-col gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
       <PageHeader
-        title="Prospects"
-        description="Public conversations where someone describes the problem you solve."
+        title="Signals"
+        description="Public conversations where someone asks for a tool like yours or describes the problem you solve."
         meta={
           <span className="flex flex-wrap gap-x-3">
             {profileDomain ? <span>Targeting {profileDomain}</span> : null}

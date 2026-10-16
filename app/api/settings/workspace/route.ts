@@ -341,7 +341,7 @@ function savedButScanNotStartedResponse(reasons: string[]) {
     {
       success: true,
       scanStarted: false,
-      message: `Configuration was saved, but lead discovery did not start: ${detail}. Check the worker configuration, then save the matching brief again.`,
+      message: `Configuration was saved, but buyer-signal monitoring did not start: ${detail}. Check the worker configuration, then save the matching brief again.`,
     },
     { status: 202, headers: { "Cache-Control": "no-store" } },
   );

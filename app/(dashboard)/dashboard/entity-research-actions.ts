@@ -273,7 +273,7 @@ function handoffMessage(kind: EntityResearchKind, acknowledgement: WorkerAcknowl
     }
     return actionOk(
       created
-        ? "Target generation is queued from your approved official-site seeds. It creates research targets, not leads or outreach."
+        ? "Target generation is queued from your approved official-site seeds. It creates research targets, not buyer signals or outreach."
         : "That target-generation request is already queued or running. Refresh for its current status.",
     );
   }
@@ -283,7 +283,7 @@ function handoffMessage(kind: EntityResearchKind, acknowledgement: WorkerAcknowl
   }
   return actionOk(
     created
-      ? "Retained-public evidence research is queued. It can add pending cited observations for review, never a lead or outreach."
+      ? "Retained-public evidence research is queued. It can add pending cited observations for review, never a buyer signal or outreach."
       : "That evidence-research request is already queued or running. Refresh for its current status.",
   );
 }

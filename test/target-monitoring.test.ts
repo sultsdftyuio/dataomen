@@ -64,7 +64,7 @@ test("target monitoring action supplies only a server-owned assessment and boole
   assert.match(monitoringAction, /rpc\("set_prospect_target_monitoring"/);
   assert.match(monitoringAction, /target_assessment_id: parsed\.data\.assessmentId/);
   assert.match(monitoringAction, /enabled_input: parsed\.data\.enabled/);
-  assert.match(monitoringAction, /cannot create a lead, outreach, or CRM record/);
+  assert.match(monitoringAction, /cannot create a buyer signal, outreach, or CRM record/);
   assert.doesNotMatch(monitoringAction, /canonicalUrl|source_url|author_handle|request_nonce/);
 });
 
