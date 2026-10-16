@@ -103,6 +103,26 @@ export function ArcSettingsIcon({ accent = "currentColor", ...props }: ArcIconPr
   );
 }
 
+/** Not a fit: a signal dismissed. */
+export function ArcDismissIcon({ accent = "currentColor", ...props }: ArcIconProps) {
+  return (
+    <ArcSvg {...props}>
+      <path d="M2.5 8.5a5.5 5.5 0 0 1 11 0" stroke={accent} />
+      <path d="m6 10.5 4 4M10 10.5l-4 4" />
+    </ArcSvg>
+  );
+}
+
+/** Done: the signal set down on its baseline. */
+export function ArcDoneIcon({ accent = "currentColor", ...props }: ArcIconProps) {
+  return (
+    <ArcSvg {...props}>
+      <path d="M2.5 9.5a5.5 5.5 0 0 1 11 0" stroke={accent} />
+      <path d="M5.5 13h5" />
+    </ArcSvg>
+  );
+}
+
 /** Search stays a standard magnifier so it is recognised instantly. */
 export function ArcSearchIcon(props: ArcSvgProps) {
   return (
@@ -120,5 +140,36 @@ export function ArcLockIcon(props: ArcSvgProps) {
       <path d="M5 7.5V6a3 3 0 0 1 6 0v1.5" />
       <path d="M3.5 7.5h9v6h-9z" />
     </ArcSvg>
+  );
+}
+
+/**
+ * Signal strength: three nested arcs, filled from the inside. Replaces
+ * percentages, which looked precise without saying where they came from.
+ * `level` 0 draws every arc in the empty colour.
+ */
+export function ArcSignalIcon({
+  level,
+  size = 20,
+  label,
+  ...props
+}: Omit<SVGProps<SVGSVGElement>, "children"> & { level: 0 | 1 | 2 | 3; size?: number; label: string }) {
+  const arcs = ["M6 9.5a2 2 0 0 1 4 0", "M3.5 9.5a4.5 4.5 0 0 1 9 0", "M1 9.5a7 7 0 0 1 14 0"];
+  return (
+    <svg
+      width={size}
+      height={(size * 10) / 16}
+      viewBox="0 0 16 10"
+      fill="none"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      role="img"
+      aria-label={label}
+      {...props}
+    >
+      {arcs.map((d, index) => (
+        <path key={d} d={d} stroke={index < level ? "var(--c-blue)" : "var(--c-rule-dark)"} />
+      ))}
+    </svg>
   );
 }

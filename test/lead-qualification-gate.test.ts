@@ -15,6 +15,10 @@ const outreachSource = readFileSync(
   fileURLToPath(new URL("../components/prospects/lead-outreach.tsx", import.meta.url)),
   "utf8",
 );
+const decisionSource = readFileSync(
+  fileURLToPath(new URL("../components/prospects/decision-cards.tsx", import.meta.url)),
+  "utf8",
+);
 
 test("a discovery candidate cannot reach the qualification or CRM path", () => {
   // This is the conditional database write that runs before tenant settings or
@@ -39,14 +43,14 @@ test("a discovery candidate cannot reach the qualification or CRM path", () => {
 });
 
 test("Maybes replace qualification with review-only guidance", () => {
+  // Qualification lives on the decision cards: a Maybe or a screened-out
+  // record gets a feedback card instead of the qualify action.
   assert.match(
-    outreachSource,
+    decisionSource,
     /const isReviewOnly = reviewOnly \|\| lead\.matchStatus === "discovery_candidate"/,
   );
-  assert.match(
-    outreachSource,
-    /const qualificationAction = !isReviewOnly \? \(/,
-  );
+  assert.match(decisionSource, /const canQualify = !isReviewOnly && !isQualified;/);
+  assert.match(decisionSource, /canQualify \? \(/);
   assert.match(outreachSource, /can't be qualified or exported yet/);
   // The lead desk passes Maybes as review-only and never offers a reply
   // (or its qualification path) for screened-out records.
