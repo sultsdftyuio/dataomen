@@ -522,20 +522,27 @@ def _generic_query_variants_are_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+# The two ways people publicly signal they are leaving a named product: asking
+# for a replacement, and announcing the move. The first is the stronger signal,
+# so it is searched for every competitor before any competitor gets the second.
+_COMPETITOR_QUERY_TEMPLATES = ("{competitor} alternative", "switching from {competitor}")
+
+
 def _competitor_switching_queries(profile: ServiceProfile) -> list[DiscoveryQuery]:
-    """Return a deliberately small set of explicit switching searches.
+    """Return a bounded set of explicit switching searches.
 
     Competitor names are workspace-entered context, not a product taxonomy.
-    We only search for a real switching conversation and leave qualification to
-    the normal embedding and verifier gates. The tight cap prevents a long
-    competitor list from multiplying provider work on every activation.
+    They are the most precise search terms a workspace can give us, so they
+    get their own budget on top of the generated phrases. Qualification is
+    still left to the normal embedding and verifier gates, and the cap keeps a
+    long competitor list from multiplying provider work on every activation.
     """
 
-    limit = max(0, min(4, env_int("ARCLI_COMPETITOR_SWITCH_QUERY_LIMIT", 2)))
+    limit = max(0, min(8, env_int("ARCLI_COMPETITOR_SWITCH_QUERY_LIMIT", 4)))
     if not limit:
         return []
 
-    queries: list[DiscoveryQuery] = []
+    competitors: list[str] = []
     seen: set[str] = set()
     for raw_term in profile.competitor_terms:
         competitor = _compact_public_search_term(raw_term)
@@ -543,11 +550,16 @@ def _competitor_switching_queries(profile: ServiceProfile) -> list[DiscoveryQuer
         if len(competitor) < 2 or key in seen:
             continue
         seen.add(key)
-        queries.append(
-            DiscoveryQuery("switching_trigger", f"switching from {competitor}")
-        )
-        if len(queries) >= limit:
-            break
+        competitors.append(competitor)
+
+    queries: list[DiscoveryQuery] = []
+    for template in _COMPETITOR_QUERY_TEMPLATES:
+        for competitor in competitors:
+            queries.append(
+                DiscoveryQuery("switching_trigger", template.format(competitor=competitor))
+            )
+            if len(queries) >= limit:
+                return queries
     return queries
 
 

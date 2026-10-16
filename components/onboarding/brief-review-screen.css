@@ -71,6 +71,14 @@
 .arc-review-screen__section:nth-last-child(-n+2) {
   border-bottom: 0;
 }
+.arc-review-screen__competitors {
+  margin-top: 14px;
+}
+/* A single section: the 2x2 grid's dividers would only draw stray edges. */
+.arc-review-screen__competitors .arc-review-screen__section {
+  min-height: 0;
+  border: 0;
+}
 .arc-review-screen__section-heading {
   display: flex;
   align-items: start;
