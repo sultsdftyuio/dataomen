@@ -191,13 +191,13 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       autoStartCheckout: shouldAutoStartProCheckout && !hasSubscriptionOnFile,
       features: [
         {
-          label: "Prospect queue",
-          description: "Review prospects that match your targeting brief.",
+          label: "Buyer signals",
+          description: "People asking for a tool like yours or an alternative to a competitor, each linked to the post.",
           unlocked: entitlements.canViewCustomerLists,
         },
         {
-          label: "Fit signals",
-          description: "See why each prospect matched your buyers and their problem.",
+          label: "Why it matched",
+          description: "An AI check explains each signal and drafts a reply you can edit.",
           unlocked: entitlements.canSendEmails,
         },
         {

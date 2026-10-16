@@ -202,7 +202,7 @@ test("demand-map UI keeps dashboard buyer-group ideas concise and preserves deta
   assert.match(demandMapSource, /Problem they share/);
   assert.doesNotMatch(demandMapSource, /Explore ideas/);
   assert.doesNotMatch(demandMapSource, /optional buyer direction/);
-  assert.match(demandMapSource, /These are hypotheses, not leads/);
+  assert.match(demandMapSource, /These are hypotheses, not buyer signals/);
   // The button creates a persistent group, so its label says so.
   assert.match(demandMapSource, /Create group and scan/);
   assert.doesNotMatch(watchlistsSource, /FIRST_GROUP_IDEAS/);

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export type PageHeaderProps = {
-  /** The page's navigation name, e.g. "Prospects". No trailing full stop. */
+  /** The page's navigation name, e.g. "Signals". No trailing full stop. */
   title: string;
   /**
    * One line on what this page is for. Read by screen readers; shown on

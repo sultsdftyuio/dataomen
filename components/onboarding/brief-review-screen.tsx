@@ -22,7 +22,8 @@ type FieldKey =
   | "excluded_audiences"
   | "negative_keywords"
   | "buying_triggers"
-  | "pain_points";
+  | "pain_points"
+  | "competitor_terms";
 type ArrayField = Exclude<FieldKey, "unique_value_prop" | "core_problem">;
 type UpdateField = <Key extends keyof ServiceProfileFields>(
   key: Key,
@@ -47,6 +48,7 @@ type BriefSection = {
   fields: FieldKey[];
   addTo: ArrayField;
   placeholder: string;
+  emptyText?: string;
 };
 
 const sections: BriefSection[] = [
@@ -83,6 +85,19 @@ const sections: BriefSection[] = [
     placeholder: "Add a buying signal",
   },
 ];
+
+// Competitors are the one input a website can't tell us, and they produce the
+// most precise searches Arcli runs ("X alternative", "switching from X"), so
+// they sit in their own card instead of inside the drafted brief.
+const competitorSection: BriefSection = {
+  title: "Competitors to watch",
+  description: "We look for people asking for an alternative to these tools or moving off them",
+  tone: "amber",
+  fields: ["competitor_terms"],
+  addTo: "competitor_terms",
+  placeholder: "Add a competitor",
+  emptyText: "Add two to four tools your buyers use today. A post that only names one never counts as a signal on its own.",
+};
 
 function fieldItems(fields: ServiceProfileFields, keys: FieldKey[]) {
   return keys.flatMap((key) => {
@@ -155,6 +170,97 @@ export function BriefReviewScreen({
     setAddDraft("");
   };
 
+  const renderSection = (section: BriefSection) => {
+    const items = fieldItems(fields, section.fields);
+    return (
+      <div className="arc-review-screen__section" key={section.title}>
+        <div className="arc-review-screen__section-heading">
+          <span className={`arc-read-brief__dot arc-read-brief__dot--${section.tone}`} />
+          <div>
+            <strong>{section.title} <small>{items.length}</small></strong>
+            <p>{section.description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAdding(section.title);
+              setAddDraft("");
+            }}
+          >
+            <Plus size={13} aria-hidden="true" /> Add
+          </button>
+        </div>
+        <div className="arc-review-screen__items">
+          {items.map((item) => {
+            const itemId = `${item.key}:${item.index}`;
+            return editing === itemId ? (
+              <div className="arc-review-screen__edit" key={itemId}>
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") saveItem(item.key, item.index);
+                    if (event.key === "Escape") setEditing(null);
+                  }}
+                  aria-label={`Edit ${section.title} line`}
+                />
+                <button type="button" onClick={() => saveItem(item.key, item.index)}>Save</button>
+                <button type="button" onClick={() => setEditing(null)}>Cancel</button>
+              </div>
+            ) : (
+              <div className="arc-review-screen__item" key={itemId}>
+                <Check size={14} aria-hidden="true" />
+                <span>{item.text}</span>
+                <button
+                  type="button"
+                  title="Edit line"
+                  aria-label={`Edit ${section.title} line`}
+                  onClick={() => {
+                    setEditing(itemId);
+                    setDraft(item.text);
+                  }}
+                >
+                  <Pencil size={13} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title="Remove line"
+                  aria-label={`Remove ${section.title} line`}
+                  onClick={() => removeItem(item.key, item.index)}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </div>
+            );
+          })}
+          {items.length === 0 ? (
+            <p className="arc-review-screen__empty">
+              {section.emptyText ?? "Nothing here yet. Add a line if this matters for your search."}
+            </p>
+          ) : null}
+          {adding === section.title ? (
+            <div className="arc-review-screen__edit">
+              <input
+                autoFocus
+                value={addDraft}
+                placeholder={section.placeholder}
+                onChange={(event) => setAddDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") addItem(section.addTo);
+                  if (event.key === "Escape") setAdding(null);
+                }}
+                aria-label={section.placeholder}
+              />
+              <button type="button" onClick={() => addItem(section.addTo)}>Add</button>
+              <button type="button" onClick={() => setAdding(null)}>Cancel</button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="arc-review-screen">
       <header className="arc-read-screen__topbar">
@@ -203,97 +309,15 @@ export function BriefReviewScreen({
             <span>{itemCount} {itemCount === 1 ? "line" : "lines"} in draft</span>
           </div>
           <div className="arc-review-screen__grid">
-            {sections.map((section) => {
-              const items = fieldItems(fields, section.fields);
-              return (
-                <div className="arc-review-screen__section" key={section.title}>
-                  <div className="arc-review-screen__section-heading">
-                    <span className={`arc-read-brief__dot arc-read-brief__dot--${section.tone}`} />
-                    <div>
-                      <strong>{section.title} <small>{items.length}</small></strong>
-                      <p>{section.description}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAdding(section.title);
-                        setAddDraft("");
-                      }}
-                    >
-                      <Plus size={13} aria-hidden="true" /> Add
-                    </button>
-                  </div>
-                  <div className="arc-review-screen__items">
-                    {items.map((item) => {
-                      const itemId = `${item.key}:${item.index}`;
-                      return editing === itemId ? (
-                        <div className="arc-review-screen__edit" key={itemId}>
-                          <input
-                            autoFocus
-                            value={draft}
-                            onChange={(event) => setDraft(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") saveItem(item.key, item.index);
-                              if (event.key === "Escape") setEditing(null);
-                            }}
-                            aria-label={`Edit ${section.title} line`}
-                          />
-                          <button type="button" onClick={() => saveItem(item.key, item.index)}>Save</button>
-                          <button type="button" onClick={() => setEditing(null)}>Cancel</button>
-                        </div>
-                      ) : (
-                        <div className="arc-review-screen__item" key={itemId}>
-                          <Check size={14} aria-hidden="true" />
-                          <span>{item.text}</span>
-                          <button
-                            type="button"
-                            title="Edit line"
-                            aria-label={`Edit ${section.title} line`}
-                            onClick={() => {
-                              setEditing(itemId);
-                              setDraft(item.text);
-                            }}
-                          >
-                            <Pencil size={13} aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            title="Remove line"
-                            aria-label={`Remove ${section.title} line`}
-                            onClick={() => removeItem(item.key, item.index)}
-                          >
-                            <X size={14} aria-hidden="true" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                    {items.length === 0 ? (
-                      <p className="arc-review-screen__empty">
-                        Nothing here yet. Add a line if this matters for your search.
-                      </p>
-                    ) : null}
-                    {adding === section.title ? (
-                      <div className="arc-review-screen__edit">
-                        <input
-                          autoFocus
-                          value={addDraft}
-                          placeholder={section.placeholder}
-                          onChange={(event) => setAddDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") addItem(section.addTo);
-                            if (event.key === "Escape") setAdding(null);
-                          }}
-                          aria-label={section.placeholder}
-                        />
-                        <button type="button" onClick={() => addItem(section.addTo)}>Add</button>
-                        <button type="button" onClick={() => setAdding(null)}>Cancel</button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
+            {sections.map(renderSection)}
           </div>
+        </section>
+
+        <section
+          className="arc-review-screen__brief arc-review-screen__competitors"
+          aria-label="Competitors to watch"
+        >
+          {renderSection(competitorSection)}
         </section>
 
         <div className="arc-review-screen__more">
@@ -304,7 +328,7 @@ export function BriefReviewScreen({
           >
             {showAllFields ? "Hide detailed matching settings" : "Review detailed matching settings"}
           </button>
-          <p>Use cases, search phrases, competitors and urgency signals are available here.</p>
+          <p>Use cases, search phrases and urgency signals are available here.</p>
         </div>
         {showAllFields ? (
           <div className="arc-review-screen__advanced">

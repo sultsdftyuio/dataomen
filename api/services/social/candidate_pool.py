@@ -37,7 +37,9 @@ from .candidate_privacy import (
     sanitize_candidate_evidence,
     sanitize_source_snapshot,
 )
-from .discovery_telemetry import _database_engine
+# Product data written from every matching thread: telemetry's one-connection
+# pool timed out under that concurrency and tripped the 30s failure cooldown.
+from api.services.embeddings import _database_engine
 
 
 logger = logging.getLogger(__name__)

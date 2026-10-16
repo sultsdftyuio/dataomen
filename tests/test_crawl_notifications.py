@@ -40,10 +40,10 @@ def test_paid_completion_copy_includes_only_aggregate_result_counts():
         },
     )
 
-    assert subject == "Arcli: 2 new leads to review"
-    assert "2 leads ready for review" in text_body
+    assert subject == "Arcli: 2 new buyer signals to review"
+    assert "2 buyer signals ready for review" in text_body
     assert "Candidate checks may continue" in text_body
-    assert "2 leads ready for review" in html_body
+    assert "2 buyer signals ready for review" in html_body
     assert "7 new public conversations" not in text_body
 
 

@@ -161,6 +161,22 @@ def test_job_and_ticket_roles_are_downranked_but_remain_explainable() -> None:
     assert "generic_implementation_ticket" in ticket.reasons
 
 
+def test_hacker_news_hiring_thread_comments_are_job_listings() -> None:
+    seeker = SimpleNamespace(
+        source="hackernews",
+        title="Ask HN: Who wants to be hired? (October 2026)",
+        body="Location: Netherlands. Technologies: Figma, design systems, React.",
+    )
+    freelance_buyer = SimpleNamespace(
+        source="hackernews",
+        title="Ask HN: Freelancer? Seeking freelancer? (October 2026)",
+        body="SEEKING FREELANCER: we need help with our design system handoff.",
+    )
+
+    assert "job_listing_context" in lead_signal_score(seeker).reasons
+    assert "job_listing_context" not in lead_signal_score(freelance_buyer).reasons
+
+
 def test_short_buyer_post_reaches_semantic_matching() -> None:
     candidates = find_candidate_matches(
         [1.0, 0.0],

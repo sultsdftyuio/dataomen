@@ -260,7 +260,7 @@ export function WorkspaceRefreshCenter({
           <p className="mt-2 text-sm leading-6" style={{ color: C.muted }}>
             {isPro
               ? "Update your source or brief. Arcli keeps monitoring the active website automatically."
-              : "Update your source or brief. Free includes one website crawl; ongoing monitoring and leads require Pro."}
+              : "Update your source or brief. Free includes one website crawl; ongoing monitoring and buyer signals require Pro."}
           </p>
         </div>
         <p className="text-xs" style={{ color: C.muted }}>
@@ -309,7 +309,7 @@ export function WorkspaceRefreshCenter({
           <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
             {isPro
               ? "Saving a changed website starts its first crawl. Arcli then refreshes it automatically every 24–48 hours."
-              : "Saving a changed website starts its one included crawl. Upgrade to Pro for automatic refreshes and lead discovery."}
+              : "Saving a changed website starts its one included crawl. Upgrade to Pro for automatic refreshes and buyer-signal monitoring."}
           </p>
         </ActionPane>
 
@@ -350,12 +350,12 @@ export function WorkspaceRefreshCenter({
           icon={RotateCcw}
         >
           <p className="mt-3 text-sm font-medium" style={{ color: C.navy }}>
-            {isPro ? "New signals are collected automatically" : "Lead discovery is available on Pro"}
+            {isPro ? "New signals are collected automatically" : "Buyer-signal monitoring is available on Pro"}
           </p>
           <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
             {isPro
-              ? "Each scheduled website refresh uses your active matching brief to keep lead discovery current."
-              : "Your first crawl builds the website profile. Free workspaces do not run recurring crawls or collect lead signals."}
+              ? "Each scheduled website refresh uses your active matching brief to keep buyer-signal monitoring current."
+              : "Your first crawl builds the website profile. Free workspaces do not run recurring crawls or collect buyer signals."}
           </p>
         </ActionPane>
       </div>

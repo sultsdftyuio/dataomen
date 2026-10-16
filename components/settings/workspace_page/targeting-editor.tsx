@@ -273,12 +273,13 @@ function WebsiteSourceControl({
   );
 }
 
-type TargetingStep = "buyer" | "problem" | "signals";
+type TargetingStep = "buyer" | "problem" | "signals" | "competitors";
 
 const targetingStepPanelId: Record<TargetingStep, string> = {
   buyer: "targeting-buyer-panel",
   problem: "targeting-problem-panel",
   signals: "targeting-signals-panel",
+  competitors: "targeting-competitors-panel",
 };
 
 /** One part of the brief: its saved answer, or its fields while editing. */
@@ -605,6 +606,34 @@ export function TargetingEditor({
             </div>
           </TargetingStepCard>
 
+          {/* Competitor names drive the most precise searches ("X alternative",
+              "switching from X"), so they sit with the main steps, not in advanced. */}
+          <TargetingStepCard
+            title="Which tools do they use today?"
+            description="We look for people asking for an alternative to these or moving off them."
+            isOpen={activeStep === "competitors"}
+            isEmpty={fields.competitor_terms.length === 0}
+            isChanged={!sameValue(fields.competitor_terms, saved?.competitor_terms)}
+            panelId={targetingStepPanelId.competitors}
+            onToggle={() => toggleStep("competitors")}
+            view={
+              fields.competitor_terms.length > 0 ? (
+                <TagList items={fields.competitor_terms} />
+              ) : (
+                <EmptyAnswer>No competitors yet. Adding two to four gives Arcli its most precise searches.</EmptyAnswer>
+              )
+            }
+          >
+            <SignalField
+              label="Competitors to monitor"
+              description="Products or workarounds your buyers use now. A post that only names one never counts as a signal on its own."
+              value={fields.competitor_terms}
+              placeholder="ExampleCRM, manual spreadsheets"
+              disabled={isSaving}
+              onChange={(value) => onFieldChange("competitor_terms", value)}
+            />
+          </TargetingStepCard>
+
           <div>
             <button
               type="button"
@@ -618,7 +647,7 @@ export function TargetingEditor({
                   Advanced targeting
                 </span>
                 <span className="mt-0.5 block text-sm leading-5 text-muted-foreground">
-                  Buyer language, competitors and what to ignore.
+                  Buyer language and what to ignore.
                 </span>
               </span>
               <ChevronDown
@@ -648,14 +677,6 @@ export function TargetingEditor({
                     placeholder="Customers are blocked, deadline this week"
                     disabled={isSaving}
                     onChange={(value) => onFieldChange("urgency_signals", value)}
-                  />
-                  <SignalField
-                    label="Competitors to monitor"
-                    description="Alternatives that reveal comparison or switching conversations. A name alone never makes a prospect."
-                    value={fields.competitor_terms}
-                    placeholder="ExampleCRM, manual spreadsheets"
-                    disabled={isSaving}
-                    onChange={(value) => onFieldChange("competitor_terms", value)}
                   />
                   {!hasCategorizedQueries ? (
                     <SignalField

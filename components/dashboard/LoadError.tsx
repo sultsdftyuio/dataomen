@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type LoadErrorProps = {
-  /** What failed to load, as people name it: "Prospects", "Buyer groups". */
+  /** What failed to load, as people name it: "Signals", "Buyer groups". */
   thing: string;
   /** What to do next. Defaults to a retry hint. */
   description?: ReactNode;

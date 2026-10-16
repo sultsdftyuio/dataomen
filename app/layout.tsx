@@ -28,14 +28,14 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'B2B Prospect Research With Source Evidence | Arcli',
-  description: 'Arcli turns your website into a B2B targeting brief and helps you review prospects with source-linked evidence before outreach.',
+  title: 'Buyer-Signal Alerts for B2B SaaS | Arcli',
+  description: 'Know when someone asks for a tool like yours. Arcli finds people asking for alternatives to your competitors, checks each post with AI and drafts a reply.',
   generator: 'Next.js',
   metadataBase: new URL(SITE_URL),
 
   openGraph: {
-    title: 'B2B Prospect Research With Source Evidence | Arcli',
-    description: 'Arcli turns your website into a B2B targeting brief and helps you review prospects with source-linked evidence before outreach.',
+    title: 'Buyer-Signal Alerts for B2B SaaS | Arcli',
+    description: 'Know when someone asks for a tool like yours. Arcli finds people asking for alternatives to your competitors, checks each post with AI and drafts a reply.',
     url: SITE_URL,
     siteName: 'Arcli',
     locale: 'en_US',
@@ -45,15 +45,15 @@ export const metadata: Metadata = {
         url: DEFAULT_OG_IMAGE_URL,
         width: 1200,
         height: 630,
-        alt: 'Arcli helps B2B founders review buyer-intent evidence from public conversations',
+        alt: 'Arcli alerts B2B founders when someone publicly asks for a tool like theirs',
       },
     ],
   },
 
   twitter: {
     card: 'summary_large_image', 
-    title: 'B2B Prospect Research With Source Evidence | Arcli',
-    description: 'Arcli turns your website into a B2B targeting brief and helps you review prospects with source-linked evidence before outreach.',
+    title: 'Buyer-Signal Alerts for B2B SaaS | Arcli',
+    description: 'Know when someone asks for a tool like yours. Arcli finds people asking for alternatives to your competitors, checks each post with AI and drafts a reply.',
     images: [DEFAULT_OG_IMAGE_URL],
   },
 }

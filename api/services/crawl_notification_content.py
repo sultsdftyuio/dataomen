@@ -104,11 +104,12 @@ def build_crawl_result_email(
         raise ValueError("Unsupported crawl result notification type.")
 
     if ready > 0:
-        # Same vocabulary as the dashboard ("leads"), so the email and the
-        # inbox it links to describe the same thing.
-        subject = f"Arcli: {ready} new lead{'s' if ready != 1 else ''} to review"
+        # Same vocabulary as the dashboard ("buyer signals"), so the email and
+        # the inbox it links to describe the same thing.
+        noun = "buyer signal" if ready == 1 else "buyer signals"
+        subject = f"Arcli: {ready} new {noun} to review"
         result_line = (
-            f"The run reported {ready} lead{'s' if ready != 1 else ''} "
+            f"The run reported {ready} {noun} "
             "ready for review. Open your inbox to reply while the conversations are fresh."
         )
     else:

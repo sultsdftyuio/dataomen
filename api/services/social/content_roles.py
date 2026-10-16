@@ -27,6 +27,14 @@ _JOB_LISTING_PATTERN = re.compile(
     r"(?:salary|compensation)\s+(?:range|package))\b",
     re.IGNORECASE,
 )
+# Hacker News runs monthly "Who is hiring?" and "Who wants to be hired?"
+# threads. Each comment inherits the thread title and reads like a skills list
+# full of product vocabulary, but its author is recruiting or job hunting. The
+# "Seeking freelancer?" thread is left alone: those posters are buying services.
+_HIRING_THREAD_TITLE_PATTERN = re.compile(
+    r"\bwho\s+(?:is\s+hiring|wants\s+to\s+be\s+hired)\b",
+    re.IGNORECASE,
+)
 _TICKET_TITLE_PATTERN = re.compile(
     r"^\s*(?:\[?(?:bug|feature|enhancement|chore|docs?|rfc|proposal|task|epic)\]?"
     r"\s*[:\-]|(?:fix|feat|chore|docs|refactor|implement|migrate|upgrade|"
@@ -87,7 +95,10 @@ def assess_public_post_content_role(post: Any) -> ContentRoleAssessment:
     source = _post_value(post, "source").casefold()
     title = _post_value(post, "title")
 
-    is_job_listing = bool(_JOB_LISTING_PATTERN.search(normalized))
+    is_job_listing = bool(
+        _JOB_LISTING_PATTERN.search(normalized)
+        or (source == "hackernews" and _HIRING_THREAD_TITLE_PATTERN.search(title))
+    )
     is_implementation_ticket = source == "github" and bool(
         _TICKET_TITLE_PATTERN.search(title)
         or _TICKET_STRUCTURE_PATTERN.search(normalized)

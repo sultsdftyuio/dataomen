@@ -1525,7 +1525,7 @@ export async function submitLeadFeedback(
       lead_match_id: leadMatchId,
       error: leadError,
     });
-    return actionError("This lead is no longer available.");
+    return actionError("This signal is no longer available.");
   }
 
   const result = await context.supabase

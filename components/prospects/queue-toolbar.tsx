@@ -17,7 +17,7 @@ export type QueueCounts = Record<LeadQueueFilter, number>;
 
 const VIEW_SEGMENTS: Array<{ value: LeadQueueFilter; label: string }> = [
   { value: "all", label: "Inbox" },
-  { value: "leads", label: "Leads" },
+  { value: "leads", label: "Signals" },
   { value: "potential", label: "Maybes" },
   { value: "done", label: "Done" },
 ];

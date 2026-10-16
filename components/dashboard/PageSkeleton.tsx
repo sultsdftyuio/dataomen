@@ -5,7 +5,7 @@ import { ContextLayout } from "./ContextLayout";
 export type PageSkeletonVariant = "list-detail" | "form" | "list";
 
 export type PageSkeletonProps = {
-  /** list-detail: Prospects, Targets, Buyer groups. form: Brief, Settings. list: simple lists. */
+  /** list-detail: Signals, Targets, Buyer groups. form: Brief, Settings. list: simple lists. */
   variant: PageSkeletonVariant;
   /** Announced to screen readers as "Loading <page>", e.g. "prospects". */
   page: string;

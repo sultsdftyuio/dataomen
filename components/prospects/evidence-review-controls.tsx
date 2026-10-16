@@ -56,7 +56,7 @@ export function EvidenceReviewControls({
           ? "Review the cited public source before accepting."
           : "A direct source link is unavailable. Accept only if you can independently verify this observation."}{" "}
         Acceptance lets this observation inform the target assessment; it does
-        not create a lead.
+        not create a buyer signal.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button

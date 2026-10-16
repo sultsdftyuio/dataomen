@@ -201,7 +201,7 @@ export function WebsiteDemandMap({
             Start with a focused buyer group
           </h2>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-            These are hypotheses, not leads. Test one against public conversations.
+            These are hypotheses, not buyer signals. Test one against public conversations.
           </p>
         </div>
         <Link

@@ -54,7 +54,7 @@ export default function FreeProspectPreview({
     // otherwise shrink and clip their own content.
     <div className="flex h-full w-full min-w-0 flex-col gap-5 overflow-y-auto [&>*]:shrink-0">
       <PageHeader
-        title="Prospects"
+        title="Signals"
         description={`Arcli read ${domain} and drafted the targeting brief below. Correct anything that doesn't describe your best customer.`}
         showDescription
         meta={<StatusBadge tone="success" size="compact">Website read</StatusBadge>}

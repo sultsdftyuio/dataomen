@@ -34,8 +34,8 @@ export interface WorkspaceBillingCardProps {
 const FREE_PLAN: BillingPlanData = { planName: "Free", planStatus: "free", isProTier: false };
 
 const DEFAULT_PRO_FEATURES = [
-  { label: "Prospect queue", description: "Review prospects that match your targeting brief.", unlocked: false },
-  { label: "Fit signals", description: "See why each prospect matched your buyers and their problem.", unlocked: false },
+  { label: "Buyer signals", description: "People asking for a tool like yours or an alternative to a competitor, each linked to the post.", unlocked: false },
+  { label: "Why it matched", description: "An AI check explains each signal and drafts a reply you can edit.", unlocked: false },
   { label: "Reusable targeting", description: "Save targeting rules and reuse them across scans.", unlocked: false },
 ];
 

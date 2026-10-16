@@ -939,7 +939,7 @@ export function ProfileReviewState({
                   ) : null}
                   <ListEditor
                     label="Competitors to monitor"
-                    description="Named alternatives to watch for complaints, comparisons, and switching conversations. A name alone never qualifies a lead."
+                    description="Named alternatives to watch for complaints, comparisons, and switching conversations. A post that only names one never counts as a signal on its own."
                     value={profileFields.competitor_terms}
                     placeholder="Add a competitor or current approach"
                     tone={LIST_TONES.blue}

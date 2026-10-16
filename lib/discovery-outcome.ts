@@ -23,7 +23,7 @@ export function describeEmptyDiscovery(scan: LatestScan | null): EmptyDiscoveryO
   if (!scan.isTerminal) {
     return {
       title: "Potential matches are still being checked",
-      detail: "Source collection and lead verification finish separately. An empty review queue is not a final zero while checks remain pending.",
+      detail: "Source collection and signal verification finish separately. An empty review queue is not a final zero while checks remain pending.",
     };
   }
 
@@ -53,7 +53,7 @@ export function describeEmptyDiscovery(scan: LatestScan | null): EmptyDiscoveryO
   if (scan.summary.verifierPending) {
     return {
       title: "Potential matches are still being checked",
-      detail: "Source collection and lead verification finish separately. An empty review queue is not a final zero while checks remain pending.",
+      detail: "Source collection and signal verification finish separately. An empty review queue is not a final zero while checks remain pending.",
     };
   }
 
@@ -80,6 +80,6 @@ export function describeEmptyDiscovery(scan: LatestScan | null): EmptyDiscoveryO
 
   return {
     title: "Candidates were found, but none are review-ready",
-    detail: "A candidate is not a verified lead. Check the scan report and screened-out audit for what happened before assuming there is no demand.",
+    detail: "A candidate is not a verified buyer signal. Check the scan report and screened-out audit for what happened before assuming there is no demand.",
   };
 }
