@@ -30,7 +30,7 @@ export function LeadVerdict({ lead }: { lead: QualifiedLeadView }) {
 
   return (
     <p
-      className="inline-flex w-fit max-w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-full bg-off-white py-1.5 pr-3.5 pl-2.5 text-sm ring-1 ring-border ring-inset"
+      className="inline-flex w-fit max-w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-2xl bg-off-white py-1.5 pr-3.5 pl-2.5 text-sm ring-1 ring-border ring-inset"
       title={status.description}
     >
       <ArcSignalIcon level={level} label={signalLevelLabel(level)} />

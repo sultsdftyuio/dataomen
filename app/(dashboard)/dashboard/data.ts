@@ -601,9 +601,9 @@ export function leadView(row: DbRecord, index: number): QualifiedLeadView {
       numberValue(row.similarity_score) ??
       numberValue(row.embedding_score) ??
       numberValue(row.match_score),
-    painDetected:
-      readString(sources, ["pain_detected"]) ??
-      "No pain summary was stored for this verified match.",
+    // Empty when the verifier stored no summary: the UI leaves the line out
+    // rather than showing a system message to the reviewer.
+    painDetected: readString(sources, ["pain_detected"]) ?? "",
     painTheme: readString(sources, ["pain_theme"]),
     signalType: readString(sources, ["signal_type"]),
     // An urgency level without a visible source-grounded reason is not shown

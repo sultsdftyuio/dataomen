@@ -103,7 +103,7 @@ export function exactDateTime(value: string | null) {
 }
 
 export function signalLabel(lead: QualifiedLeadView) {
-  return lead.painTheme ?? lead.painDetected ?? "Buyer problem";
+  return lead.painTheme || lead.painDetected || "Buyer problem";
 }
 
 export function evidencePreview(lead: QualifiedLeadView) {
@@ -201,7 +201,9 @@ export function LeadRow({
           </span>
           <span className="mt-1.5 flex min-w-0 items-center gap-3 text-xs text-subtle">
             {/* The title already carries the topic on narrow screens. */}
-            <span className="hidden min-w-0 truncate sm:block">{signalLabel(lead)}</span>
+            {lead.painTheme || lead.painDetected ? (
+              <span className="hidden min-w-0 truncate sm:block">{signalLabel(lead)}</span>
+            ) : null}
             {intent ? (
               <span
                 className={cn("shrink-0", intent.strong && "font-medium text-foreground")}

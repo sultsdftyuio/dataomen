@@ -90,8 +90,12 @@ function chainSteps(lead: QualifiedLeadView): ChainStep[] {
           </p>
           <figure>
             <figcaption className="sr-only">{quote ? "Verified quote" : "From the post"}</figcaption>
-            <blockquote className="line-clamp-4 rounded-md bg-blue-tint px-3.5 py-2.5 text-sm leading-6 text-navy-soft">
-              {quote ?? sourceText ?? "No text was kept for this post. Open the source to read it."}
+            {/* The clamp sits on the inner text: on the padded block it let a
+                fifth line show through the bottom padding. */}
+            <blockquote className="rounded-md bg-blue-tint px-3.5 py-2.5 text-sm leading-6 text-navy-soft">
+              <span className="line-clamp-4">
+                {quote ?? sourceText ?? "No text was kept for this post. Open the source to read it."}
+              </span>
             </blockquote>
           </figure>
         </div>
