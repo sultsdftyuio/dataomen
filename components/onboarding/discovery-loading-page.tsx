@@ -164,6 +164,7 @@ export function DiscoveryLoadingPage({
             ? `Progress of the latest scan for ${domain}.`
             : `Progress of your first scan for ${domain}.`
         }
+        showDescription={mode !== "scan"}
         meta={isWorking || status.recoverable ? updateLabel : undefined}
         actions={
           isWorking ? (

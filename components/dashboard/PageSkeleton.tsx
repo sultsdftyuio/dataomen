@@ -20,18 +20,11 @@ function Block({ className }: { className?: string }) {
 }
 
 function HeaderPlaceholder({ withActions }: { withActions: boolean }) {
-  // Matches PageHeader: 32px/36px title line, 24px description line.
+  // Matches PageHeader: one compact 36px bar with the page name.
   return (
-    <div className="flex shrink-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
-      <div className="min-w-0 flex-1">
-        <div className="flex h-8 items-center md:h-9">
-          <Block className="h-6 w-40 md:h-7" />
-        </div>
-        <div className="mt-1 flex h-6 items-center">
-          <Block className="h-3.5 w-full max-w-[28rem]" />
-        </div>
-      </div>
-      {withActions ? <Block className="h-9 w-32 md:shrink-0" /> : null}
+    <div className="flex min-h-9 shrink-0 items-center justify-between gap-6">
+      <Block className="h-4 w-32" />
+      {withActions ? <Block className="h-9 w-32 shrink-0" /> : null}
     </div>
   );
 }
