@@ -184,7 +184,14 @@ def enqueue_initial_public_source_ingestion(
         monitor_initial_public_discovery_run,
     )
 
-    lookback_hours = _initial_source_lookback_hours()
+    from api.services.social.search_window import incremental_lookback_hours
+
+    lookback_hours = incremental_lookback_hours(
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        query_phrases=[query.phrase for query in discovery_queries],
+        full_window_hours=_initial_source_lookback_hours(),
+    )
     posts_per_query = _initial_source_posts_per_query()
     hn_jobs = 0
     x_jobs = 0
