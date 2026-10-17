@@ -273,6 +273,7 @@ async def fetch_json_with_retry(
     max_attempts: int,
     log_event: str,
     page: int | str,
+    headers: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Fetch one JSON page, retrying only timeouts and transient HTTP failures.
 
@@ -287,7 +288,9 @@ async def fetch_json_with_retry(
                 provider=provider,
                 limit=max(1, requests_per_minute),
             )
-            response = await client.get(url, params=dict(params))
+            response = await client.get(
+                url, params=dict(params), headers=dict(headers) if headers else None
+            )
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, dict):

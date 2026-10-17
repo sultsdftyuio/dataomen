@@ -12,6 +12,11 @@ from urllib.parse import quote
 import httpx
 from pydantic import ValidationError
 
+from api.services.integrations.bluesky_session import (
+    BlueskySession,
+    bluesky_session,
+    is_rejected_session,
+)
 from api.services.integrations.public_source import (
     PublicSourcePost,
     clip_text,
@@ -44,7 +49,7 @@ SourcePost = BlueskySourcePost
 
 
 class BlueskyConnector:
-    """Fetch recent public Bluesky posts without requiring customer credentials."""
+    """Fetch recent public Bluesky posts, signed in when Arcli's own app password is set."""
 
     def __init__(
         self,
@@ -131,16 +136,26 @@ class BlueskyConnector:
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
         ) as client:
+            session = await bluesky_session(client)
             pages_fetched = 0
             while len(posts) < target_limit and pages_fetched < page_cap:
-                payload = await self._fetch_page(
-                    client,
-                    query=normalized_query,
-                    since_timestamp=since_timestamp,
-                    cursor=cursor,
-                    page_size=min(page_size, target_limit - len(posts)),
-                    page=pages_fetched,
-                )
+                page_request = {
+                    "query": normalized_query,
+                    "since_timestamp": since_timestamp,
+                    "cursor": cursor,
+                    "page_size": min(page_size, target_limit - len(posts)),
+                    "page": pages_fetched,
+                }
+                try:
+                    payload = await self._fetch_page(client, **page_request, session=session)
+                except httpx.HTTPStatusError as exc:
+                    if session is None or not is_rejected_session(exc):
+                        raise
+                    # The access token expired mid-run: sign in again once.
+                    session = await bluesky_session(client, replace=session)
+                    if session is None:
+                        raise
+                    payload = await self._fetch_page(client, **page_request, session=session)
                 pages_fetched += 1
                 hits = payload.get("posts")
                 if not isinstance(hits, list) or not hits:
@@ -172,6 +187,7 @@ class BlueskyConnector:
         cursor: str | None,
         page_size: int,
         page: int,
+        session: BlueskySession | None = None,
     ) -> dict[str, Any]:
         params = {
             "q": query,
@@ -186,13 +202,14 @@ class BlueskyConnector:
             params["cursor"] = cursor
         return await fetch_json_with_retry(
             client=client,
-            url=self.base_url,
+            url=session.search_url if session else self.base_url,
             params=params,
             provider="bluesky-search-posts",
             requests_per_minute=max(1, self.requests_per_minute),
             max_attempts=max(1, self.max_attempts),
             log_event="bluesky_search",
             page=page,
+            headers=session.headers if session else None,
         )
 
     @staticmethod

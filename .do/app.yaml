@@ -388,6 +388,18 @@ workers:
         scope: RUN_TIME
         type: general
         value: "true"
+      # Bluesky post search rejects anonymous callers with 403. Use a
+      # dedicated Arcli account and an app password (Settings > Privacy and
+      # security > App passwords), never the account password. Leave both
+      # empty to keep searching anonymously.
+      - key: ARCLI_BLUESKY_HANDLE
+        scope: RUN_TIME
+        type: general
+        value: ""
+      - key: ARCLI_BLUESKY_APP_PASSWORD
+        scope: RUN_TIME
+        type: secret
+        value: ""
       - key: ARCLI_LEMMY_INGESTION_ENABLED
         scope: RUN_TIME
         type: general
