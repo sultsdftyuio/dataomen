@@ -38,20 +38,22 @@
   color: var(--rail-muted);
   background: var(--rail-surface);
 }
-/* Everything sits above the decorative arcs. */
-.arc-rail > :not(.arc-rail__arcs) { position: relative; }
-/* Centred above Settings and the account button (14 + 44 + 6 + 44px from
-   the bottom, plus a gap). Short windows hide it rather than let it sit
-   under the nav. */
-.arc-rail__arcs {
+/* Everything sits above the ripples (rail-ripples.tsx). */
+.arc-rail > :not(.arc-ripples),
+.arc-context-panel > :not(.arc-ripples) { position: relative; }
+/* Rings from the rail's bottom-left corner, behind Settings and the account
+   button, carried on into the context panel. They fade out as they rise.
+   Short windows hide them rather than let them sit under the nav. */
+.arc-ripples {
   position: absolute;
-  bottom: 128px;
-  left: 50%;
+  bottom: 0;
+  left: 0;
   color: var(--rail-foreground);
   pointer-events: none;
-  transform: translateX(-50%);
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent);
+  mask-image: linear-gradient(to top, #000 45%, transparent);
 }
-@media (max-height: 620px) { .arc-rail__arcs { display: none; } }
+@media (max-height: 620px) { .arc-ripples { display: none; } }
 .arc-rail__logo { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 4px; border-radius: 12px; color: var(--rail-foreground); }
 .arc-rail__divider { width: 28px; height: 1px; margin: 4px 0; background: var(--rail-line); }
 
@@ -177,7 +179,7 @@
 .arc-context-layout--fill { height: 100%; min-height: 0; flex: 1 1 auto; grid-template-rows: auto minmax(0, 1fr); }
 .arc-context-layout--fill .arc-context-layout__work { min-height: 0; overflow-y: auto; }
 /* The window is already its height, so the panel just fills its column. */
-.arc-context-layout--fill .arc-context-panel { position: static; height: auto; align-self: stretch; }
+.arc-context-layout--fill .arc-context-panel { position: relative; height: auto; align-self: stretch; }
 .arc-context-layout__header { min-width: 0; padding: 20px 28px 0; grid-area: header; }
 .arc-context-panel {
   position: sticky;
@@ -255,7 +257,6 @@
     background: var(--rail-surface);
   }
   .arc-shell__topbar-home { display: grid; height: 40px; place-items: center; padding: 0 6px; border-radius: 10px; color: var(--rail-foreground); }
-  .arc-shell__topbar-search { margin-left: auto; }
   .arc-shell__icon-button { display: grid; width: 44px; height: 44px; place-items: center; border: 0; border-radius: 12px; color: var(--rail-muted); background: transparent; cursor: pointer; }
   .arc-shell__icon-button:hover { color: var(--rail-foreground); background: var(--rail-hover); }
   .arc-shell__icon-button:focus-visible, .arc-shell__topbar-home:focus-visible { outline: 2px solid var(--rail-accent); outline-offset: 2px; }
@@ -270,6 +271,7 @@
   .arc-context-layout__header { padding: 14px 12px 12px; }
   .arc-context-panel { position: static; height: auto; gap: 10px; overflow: visible; padding: 12px; border-left: 0; }
   .arc-context-panel--phone-hidden { display: none; }
+  .arc-ripples--panel { display: none; }
   /* On phones the panel is a compact header: status plus a row of links. */
   .arc-context-heading, .arc-context-note { display: none; }
   .arc-context-card { gap: 8px; padding: 12px; }

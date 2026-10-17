@@ -7,12 +7,11 @@ import { usePathname } from "next/navigation";
 import { AlertCircle, Menu, X } from "lucide-react";
 
 import { AccountMenu } from "./AccountMenu";
-import { ArcLogoIcon, ArcSearchIcon } from "./arc-icons";
+import { ArcLogoIcon } from "./arc-icons";
 import { DashboardNavigation } from "./DashboardNavigation";
-import { DashboardSearch } from "./DashboardSearch";
+import { RailRipples } from "./rail-ripples";
 import { WorkspacePlanBadge } from "./WorkspacePlanBadge";
 import LogoutButton from "./logout-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import type { WorkspaceEntitlements } from "@/lib/entitlements";
 import "./dashboard-shell.css";
@@ -33,7 +32,6 @@ const DESKTOP_QUERY = "(min-width: 768px)";
 export function DashboardShell({ children, userName, userEmail, entitlements, assistedPilot }: DashboardShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const returnFocusToMenuRef = useRef(false);
@@ -44,17 +42,6 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
   const closeDrawer = useCallback((returnFocus: boolean) => {
     returnFocusToMenuRef.current = returnFocus;
     setMobileOpen(false);
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setSearchOpen((open) => !open);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   // Close the drawer when the route changes (adjusting state during render
@@ -100,18 +87,10 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
         {/* Desktop: an icon rail on the navy-blue surface. Page names live in
             tooltips and stay as accessible names. Hidden below 768px. */}
         <aside aria-label="Workspace" className="arc-rail">
-          <RailArcs />
+          <RailRipples surface="rail" />
           <Link href="/dashboard" className="arc-rail__logo" aria-label="Arcli home">
             <ArcLogoIcon size={28} accent="var(--rail-accent)" />
           </Link>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="arc-rail__button" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page (Ctrl K)">
-                <ArcSearchIcon size={18} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={10}>Go to a page (Ctrl K)</TooltipContent>
-          </Tooltip>
           <span className="arc-rail__divider" aria-hidden="true" />
           <DashboardNavigation variant="rail" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
           <AccountMenu userName={userName} userEmail={userEmail} entitlements={entitlements} />
@@ -164,9 +143,6 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
             <Link href="/dashboard" className="arc-shell__topbar-home" aria-label="Arcli home">
               <ArcLogoIcon size={24} accent="var(--rail-accent)" />
             </Link>
-            <button className="arc-shell__icon-button arc-shell__topbar-search" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page">
-              <ArcSearchIcon size={18} />
-            </button>
           </header>
           {isPastDue ? (
             <Link className="arc-shell__billing-alert" href="/settings#billing">
@@ -177,26 +153,9 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
           <main id={MAIN_ID} tabIndex={-1} className="arc-shell__main">{children}</main>
           <div className="arc-shell__mobile-tabs"><DashboardNavigation compact isPro={entitlements.isPro} assistedPilot={assistedPilot} /></div>
         </div>
-
-        <DashboardSearch open={searchOpen} onOpenChange={setSearchOpen} isPro={entitlements.isPro} assistedPilot={assistedPilot} />
       </div>
       {/* Mounted here, not in the layout: see app/(dashboard)/layout.tsx. */}
       <Toaster />
     </>
-  );
-}
-
-/**
- * The logo's three arcs, whole and centred in the rail above Settings. Drawn
- * at their real size (64px, 1.5px strokes) rather than scaled, so each arc
- * stays crisp and none is cut by the rail's edge.
- */
-function RailArcs() {
-  return (
-    <svg className="arc-rail__arcs" width="64" height="34" viewBox="0 0 64 34" fill="none" aria-hidden="true" focusable="false">
-      <path d="M2 33a30 30 0 0 1 60 0" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M10 33a22 22 0 0 1 44 0" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M18 33a14 14 0 0 1 28 0" stroke="var(--rail-accent)" strokeOpacity="0.55" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
   );
 }

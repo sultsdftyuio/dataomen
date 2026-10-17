@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { RailRipples } from "./rail-ripples";
 
 type ContextLayoutProps = {
   /** Accessible name for the panel, e.g. "Brief sections". */
@@ -34,6 +35,7 @@ export function ContextLayout({ label, header, panel, fill = false, hidePanelOnP
     <div className={cn("arc-context-layout", fill && "arc-context-layout--fill")}>
       <div className="arc-context-layout__header">{header}</div>
       <aside aria-label={label} className={cn("arc-context-panel", hidePanelOnPhone && "arc-context-panel--phone-hidden")}>
+        <RailRipples surface="panel" />
         {panel}
       </aside>
       <div className="arc-context-layout__work">{children}</div>
