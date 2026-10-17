@@ -832,6 +832,13 @@ def _claim_due_website_recrawls(
             {"lock_name": "arcli:website-recrawl-scheduler-v2"},
         )
         _reconcile_recrawl_entitlements(conn, limits)
+        from api.services.website_recrawl_backfill import (
+            backfill_missing_recrawl_schedules,
+            warn_stale_paid_billing,
+        )
+
+        backfill_missing_recrawl_schedules(conn, crawl_kind=RECURRING_CRAWL_KIND)
+        warn_stale_paid_billing(conn)
         total_count, pro_count = _daily_dispatch_counts(conn)
         remaining = max(0, limits.max_dispatches_per_day - total_count)
         if remaining == 0:
