@@ -168,12 +168,12 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
 function RailArcs() {
   return (
     <svg className="arc-rail__arcs" width="72" height="260" viewBox="0 0 72 260" fill="none" aria-hidden="true" focusable="false">
-      <g strokeWidth="1.25">
-        <circle cx="0" cy="260" r="40" stroke="var(--rail-accent)" strokeOpacity="0.6" />
-        <circle cx="0" cy="260" r="72" stroke="currentColor" strokeOpacity="0.2" />
-        <circle cx="0" cy="260" r="104" stroke="currentColor" strokeOpacity="0.14" />
-        <circle cx="0" cy="260" r="136" stroke="currentColor" strokeOpacity="0.1" />
-        <circle cx="0" cy="260" r="168" stroke="currentColor" strokeOpacity="0.07" />
+      <g strokeWidth="1.5">
+        <circle cx="0" cy="260" r="40" stroke="var(--rail-accent)" strokeOpacity="0.85" />
+        <circle cx="0" cy="260" r="72" stroke="currentColor" strokeOpacity="0.3" />
+        <circle cx="0" cy="260" r="104" stroke="currentColor" strokeOpacity="0.22" />
+        <circle cx="0" cy="260" r="136" stroke="currentColor" strokeOpacity="0.15" />
+        <circle cx="0" cy="260" r="168" stroke="currentColor" strokeOpacity="0.1" />
       </g>
     </svg>
   );
