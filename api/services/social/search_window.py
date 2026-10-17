@@ -3,7 +3,7 @@
 A workspace's first run searches the full window. A scheduled refresh used to
 search that same window again every 24-48 hours, paying the providers, the
 embedding model and the verifier for posts the previous run already saw. When
-the previous completed run searched every phrase in the current plan, only
+the previous fully searched run covered every phrase in the current plan, only
 the stretch since that run (plus an overlap) can hold anything new.
 """
 
@@ -44,19 +44,54 @@ def _plan_phrases(query_plan: object) -> set[str]:
     }
 
 
-def _last_completed_run(tenant_id: str, service_profile_id: str):
+def _last_fully_searched_run(tenant_id: str, service_profile_id: str):
+    """Return the newest run whose every source search finished without failing.
+
+    A run's status cannot answer this. The run monitor marks a run
+    ``completed`` as soon as one signal is ready, possibly before every search
+    has finished, and ``partial`` at its five-minute reporting deadline even
+    when all searches succeeded and simply found nothing, which is most runs.
+    The run's events record what actually happened: the search job writes one
+    ``fast_check`` / ``completed`` event after every source has reported, and a
+    ``search`` / ``failed`` event for each failed search. A run that completed
+    itself without the monitor records its failure count in the summary.
+    """
+
     from api.services.embeddings import _database_engine
 
     with _database_engine().begin() as conn:
         return conn.execute(
             text(
                 """
-                SELECT started_at, query_plan
-                  FROM public.discovery_runs
-                 WHERE tenant_id = :tenant_id
-                   AND service_profile_id = CAST(:service_profile_id AS uuid)
-                   AND status = 'completed'
-                 ORDER BY started_at DESC
+                SELECT run.started_at, run.query_plan
+                  FROM public.discovery_runs AS run
+                 WHERE run.tenant_id = :tenant_id
+                   AND run.service_profile_id = CAST(:service_profile_id AS uuid)
+                   AND (
+                       (
+                           run.status = 'completed'
+                           AND run.summary->>'source_failures' = '0'
+                       )
+                       OR (
+                           EXISTS (
+                               SELECT 1
+                                 FROM public.discovery_run_events AS event
+                                WHERE event.run_id = run.id
+                                  AND event.tenant_id = run.tenant_id
+                                  AND event.phase = 'fast_check'
+                                  AND event.outcome = 'completed'
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                                 FROM public.discovery_run_events AS event
+                                WHERE event.run_id = run.id
+                                  AND event.tenant_id = run.tenant_id
+                                  AND event.phase = 'search'
+                                  AND event.outcome = 'failed'
+                           )
+                       )
+                   )
+                 ORDER BY run.started_at DESC
                  LIMIT 1
                 """
             ),
@@ -75,7 +110,7 @@ def incremental_lookback_hours(
     """Return the hours to search: the full window, or just what is new.
 
     Falls back to the full window whenever it cannot prove the previous run
-    covered this plan: no completed run, a phrase it did not search (a new
+    covered this plan: no fully searched run, a phrase it did not search (a new
     competitor, an edited brief), unreadable telemetry, or a database error.
     Searching too much costs money; searching too little would silently miss
     posts, so every doubt resolves to the full window.
@@ -86,7 +121,7 @@ def incremental_lookback_hours(
         return full_window_hours
 
     try:
-        previous = _last_completed_run(tenant_id, service_profile_id)
+        previous = _last_fully_searched_run(tenant_id, service_profile_id)
     except Exception as exc:
         logger.info(
             "incremental_search_window_skipped tenant_id=%s reason=%s error_type=%s",

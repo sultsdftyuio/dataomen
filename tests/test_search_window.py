@@ -16,7 +16,7 @@ def _plan(*phrases: str) -> dict:
 
 
 def _window(monkeypatch, previous, phrases=PHRASES) -> int:
-    monkeypatch.setattr(search_window, "_last_completed_run", lambda *_: previous)
+    monkeypatch.setattr(search_window, "_last_fully_searched_run", lambda *_: previous)
     return search_window.incremental_lookback_hours(
         tenant_id="tenant-a",
         service_profile_id="profile-a",
@@ -72,7 +72,7 @@ def test_unreadable_plan_or_database_error_falls_back_to_the_full_window(monkeyp
     def _fail(*_):
         raise RuntimeError("database down")
 
-    monkeypatch.setattr(search_window, "_last_completed_run", _fail)
+    monkeypatch.setattr(search_window, "_last_fully_searched_run", _fail)
     assert search_window.incremental_lookback_hours(
         tenant_id="tenant-a",
         service_profile_id="profile-a",
@@ -83,7 +83,7 @@ def test_unreadable_plan_or_database_error_falls_back_to_the_full_window(monkeyp
 
 
 def test_no_profile_or_phrases_keeps_the_full_window(monkeypatch) -> None:
-    monkeypatch.setattr(search_window, "_last_completed_run", lambda *_: pytest.fail("must not query"))
+    monkeypatch.setattr(search_window, "_last_fully_searched_run", lambda *_: pytest.fail("must not query"))
     assert search_window.incremental_lookback_hours(
         tenant_id="t", service_profile_id=None, query_phrases=PHRASES, full_window_hours=FULL
     ) == FULL
