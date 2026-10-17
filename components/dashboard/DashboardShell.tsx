@@ -160,16 +160,21 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
 }
 
 /**
- * The logo's three arcs, whole and centred in the rail above Settings. Drawn
- * at their real size (64px, 1.5px strokes) rather than scaled, so each arc
- * stays crisp and none is cut by the rail's edge.
+ * The logo's arc as a ripple: rings spreading from the glow in the rail's
+ * bottom-left corner (see --rail-surface), so the arcs read as part of the
+ * surface rather than a symbol floating in it. The inner ring carries the
+ * accent; outer rings fade out as they rise (mask in dashboard-shell.css).
  */
 function RailArcs() {
   return (
-    <svg className="arc-rail__arcs" width="64" height="34" viewBox="0 0 64 34" fill="none" aria-hidden="true" focusable="false">
-      <path d="M2 33a30 30 0 0 1 60 0" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M10 33a22 22 0 0 1 44 0" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M18 33a14 14 0 0 1 28 0" stroke="var(--rail-accent)" strokeOpacity="0.55" strokeWidth="1.5" strokeLinecap="round" />
+    <svg className="arc-rail__arcs" width="72" height="260" viewBox="0 0 72 260" fill="none" aria-hidden="true" focusable="false">
+      <g strokeWidth="1.25">
+        <circle cx="0" cy="260" r="40" stroke="var(--rail-accent)" strokeOpacity="0.6" />
+        <circle cx="0" cy="260" r="72" stroke="currentColor" strokeOpacity="0.2" />
+        <circle cx="0" cy="260" r="104" stroke="currentColor" strokeOpacity="0.14" />
+        <circle cx="0" cy="260" r="136" stroke="currentColor" strokeOpacity="0.1" />
+        <circle cx="0" cy="260" r="168" stroke="currentColor" strokeOpacity="0.07" />
+      </g>
     </svg>
   );
 }
