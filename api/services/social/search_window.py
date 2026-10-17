@@ -3,15 +3,19 @@
 A workspace's first run searches the full window. A scheduled refresh used to
 search that same window again every 24-48 hours, paying the providers, the
 embedding model and the verifier for posts the previous run already saw. When
-the previous fully searched run covered every phrase in the current plan, only
-the stretch since that run (plus an overlap) can hold anything new.
+the previous run searched exactly the same phrases in the same sources and every
+one of those searches finished, only the stretch since that run (plus an
+overlap) can hold anything new.
+
+Only the workspace's own scheduled plan qualifies. A buyer group searches its
+own phrases, sources and places, so it always searches the full window.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -44,7 +48,9 @@ def _plan_phrases(query_plan: object) -> set[str]:
     }
 
 
-def _last_fully_searched_run(tenant_id: str, service_profile_id: str):
+def _last_fully_searched_run(
+    tenant_id: str, service_profile_id: str, sources: Sequence[str]
+):
     """Return the newest run whose every source search finished without failing.
 
     A run's status cannot answer this. The run monitor marks a run
@@ -55,6 +61,8 @@ def _last_fully_searched_run(tenant_id: str, service_profile_id: str):
     ``fast_check`` / ``completed`` event after every source has reported, and a
     ``search`` / ``failed`` event for each failed search. A run that completed
     itself without the monitor records its failure count in the summary.
+    Each source also records a ``source`` event; every source this run will
+    search must have completed in the previous one.
     """
 
     from api.services.embeddings import _database_engine
@@ -91,11 +99,28 @@ def _last_fully_searched_run(tenant_id: str, service_profile_id: str):
                            )
                        )
                    )
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM unnest(CAST(:sources AS text[])) AS required(source)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                              FROM public.discovery_run_events AS event
+                             WHERE event.run_id = run.id
+                               AND event.tenant_id = run.tenant_id
+                               AND event.phase = 'source'
+                               AND event.outcome = 'completed'
+                               AND event.source = required.source
+                        )
+                   )
                  ORDER BY run.started_at DESC
                  LIMIT 1
                 """
             ),
-            {"tenant_id": tenant_id, "service_profile_id": service_profile_id},
+            {
+                "tenant_id": tenant_id,
+                "service_profile_id": service_profile_id,
+                "sources": list(sources),
+            },
         ).mappings().first()
 
 
@@ -105,23 +130,27 @@ def incremental_lookback_hours(
     service_profile_id: str | None,
     query_phrases: Iterable[str],
     full_window_hours: int,
+    sources: Sequence[str] = (),
+    is_workspace_plan: bool = True,
     now: datetime | None = None,
 ) -> int:
     """Return the hours to search: the full window, or just what is new.
 
     Falls back to the full window whenever it cannot prove the previous run
-    covered this plan: no fully searched run, a phrase it did not search (a new
-    competitor, an edited brief), unreadable telemetry, or a database error.
+    covered this plan: a buyer-group or override scan, no fully searched run, a
+    changed phrase (a new competitor, an edited brief), a source the previous
+    run did not finish, unreadable telemetry, or a database error.
     Searching too much costs money; searching too little would silently miss
     posts, so every doubt resolves to the full window.
     """
 
     phrases = {_phrase_key(phrase) for phrase in query_phrases if phrase.strip()}
-    if not service_profile_id or not phrases:
+    sources = tuple(dict.fromkeys(source.casefold() for source in sources if source))
+    if not is_workspace_plan or not service_profile_id or not phrases or not sources:
         return full_window_hours
 
     try:
-        previous = _last_fully_searched_run(tenant_id, service_profile_id)
+        previous = _last_fully_searched_run(tenant_id, service_profile_id, sources)
     except Exception as exc:
         logger.info(
             "incremental_search_window_skipped tenant_id=%s reason=%s error_type=%s",
@@ -133,7 +162,7 @@ def incremental_lookback_hours(
 
     if previous is None or previous["started_at"] is None:
         return full_window_hours
-    if not phrases <= _plan_phrases(previous["query_plan"]):
+    if phrases != _plan_phrases(previous["query_plan"]):
         logger.info(
             "incremental_search_window_skipped tenant_id=%s reason=%s",
             tenant_id,

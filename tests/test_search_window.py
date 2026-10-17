@@ -21,6 +21,7 @@ def _window(monkeypatch, previous, phrases=PHRASES) -> int:
         tenant_id="tenant-a",
         service_profile_id="profile-a",
         query_phrases=phrases,
+        sources=("hackernews", "bluesky"),
         full_window_hours=FULL,
         now=NOW,
     )
@@ -77,6 +78,7 @@ def test_unreadable_plan_or_database_error_falls_back_to_the_full_window(monkeyp
         tenant_id="tenant-a",
         service_profile_id="profile-a",
         query_phrases=PHRASES,
+        sources=("hackernews",),
         full_window_hours=FULL,
         now=NOW,
     ) == FULL
@@ -85,8 +87,46 @@ def test_unreadable_plan_or_database_error_falls_back_to_the_full_window(monkeyp
 def test_no_profile_or_phrases_keeps_the_full_window(monkeypatch) -> None:
     monkeypatch.setattr(search_window, "_last_fully_searched_run", lambda *_: pytest.fail("must not query"))
     assert search_window.incremental_lookback_hours(
-        tenant_id="t", service_profile_id=None, query_phrases=PHRASES, full_window_hours=FULL
+        tenant_id="t", service_profile_id=None, query_phrases=PHRASES, sources=("hackernews",), full_window_hours=FULL
     ) == FULL
     assert search_window.incremental_lookback_hours(
-        tenant_id="t", service_profile_id="p", query_phrases=["  "], full_window_hours=FULL
+        tenant_id="t", service_profile_id="p", query_phrases=["  "], sources=("hackernews",), full_window_hours=FULL
     ) == FULL
+    assert search_window.incremental_lookback_hours(
+        tenant_id="t", service_profile_id="p", query_phrases=PHRASES, sources=(), full_window_hours=FULL
+    ) == FULL
+
+
+def test_buyer_group_and_override_scans_always_search_the_full_window(monkeypatch) -> None:
+    monkeypatch.setattr(search_window, "_last_fully_searched_run", lambda *_: pytest.fail("must not query"))
+
+    assert search_window.incremental_lookback_hours(
+        tenant_id="t",
+        service_profile_id="p",
+        query_phrases=PHRASES,
+        sources=("hackernews",),
+        full_window_hours=FULL,
+        is_workspace_plan=False,
+    ) == FULL
+
+
+def test_a_removed_phrase_also_counts_as_a_changed_plan(monkeypatch) -> None:
+    previous = {"started_at": NOW - timedelta(hours=24), "query_plan": _plan(*PHRASES, "find customers")}
+
+    assert _window(monkeypatch, previous) == FULL
+
+
+def test_sources_are_passed_to_the_previous_run_check(monkeypatch) -> None:
+    seen = {}
+
+    def _capture(tenant_id, service_profile_id, sources):
+        seen["sources"] = sources
+        return None
+
+    monkeypatch.setattr(search_window, "_last_fully_searched_run", _capture)
+    search_window.incremental_lookback_hours(
+        tenant_id="t", service_profile_id="p", query_phrases=PHRASES,
+        sources=("HackerNews", "bluesky", "hackernews"), full_window_hours=FULL,
+    )
+
+    assert seen["sources"] == ("hackernews", "bluesky")
