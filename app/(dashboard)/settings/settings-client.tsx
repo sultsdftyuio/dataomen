@@ -9,6 +9,7 @@ import { ContextCard, ContextLayout } from "@/components/dashboard/ContextLayout
 import { LoadError } from "@/components/dashboard/LoadError";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import LogoutButton from "@/components/dashboard/logout-button";
+import { DisplaySection } from "@/components/settings/display-section";
 import { SettingsRow, SettingsSection } from "@/components/settings/settings-section";
 import { BillingNotice, type CheckoutReturn } from "@/components/settings/workspace_page/billing-notice";
 import CrawlNotificationPreferences from "@/components/settings/workspace_page/crawl-notification-preferences";
@@ -47,11 +48,13 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: "billing", label: "Plan and billing" },
   { id: "workspace", label: "Signal setup" },
   { id: "result-emails", label: "Result emails" },
+  { id: "display", label: "Display" },
   { id: "support", label: "Support" },
 ];
 
 const UNAVAILABLE_NAV_ITEMS: SettingsNavItem[] = [
   { id: "profile", label: "Profile" },
+  { id: "display", label: "Display" },
   { id: "support", label: "Support" },
 ];
 
@@ -169,6 +172,8 @@ export default function SettingsClient({
               />
             </>
           )}
+
+          <DisplaySection />
 
           <SettingsSection id="support" title="Support">
             <p className="px-4 py-3.5 text-sm leading-6 text-muted-foreground md:px-5">

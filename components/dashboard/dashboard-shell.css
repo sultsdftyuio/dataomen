@@ -54,20 +54,27 @@
   mask-image: linear-gradient(to top, #000 45%, transparent);
 }
 @media (max-height: 620px) { .arc-ripples { display: none; } }
-/* The pulse: grows from the accent ring (72px) to past the outer ring
-   (264px) while fading, then rests. Scaled about the rings' centre, which
-   is user-space (0, 280) in both the rail's and the panel's SVG. */
-.arc-ripples__pulse {
-  opacity: 0;
+/* Drift: each ring grows by one ring-spacing (--ripple-scale) every 24s
+   while its opacity follows the falloff, then the loop starts over where
+   the next ring began, so the movement is seamless. Scaled about the rings'
+   centre, user-space (0, 280) in both the rail's and the panel's SVG. At
+   rest the rings keep their starting place and opacity. */
+.arc-ripples__drift,
+.arc-ripples__wave {
   transform-box: view-box;
   transform-origin: 0 280px;
-  animation: arc-ripple-pulse 7s cubic-bezier(.25, .6, .3, 1) infinite;
 }
-@keyframes arc-ripple-pulse {
-  0% { opacity: .7; transform: scale(1); }
-  60% { opacity: 0; transform: scale(3.8); }
-  100% { opacity: 0; transform: scale(3.8); }
+.arc-ripples__drift {
+  opacity: var(--ripple-from);
+  animation: arc-ripple-drift 24s linear infinite;
 }
+.arc-ripples[data-motion="off"] .arc-ripples__drift { animation: none; }
+@keyframes arc-ripple-drift {
+  from { opacity: var(--ripple-from); transform: scale(1); }
+  to { opacity: var(--ripple-to); transform: scale(var(--ripple-scale)); }
+}
+/* The arrival wave is played from rail-ripples.tsx; hidden at rest. */
+.arc-ripples__wave { opacity: 0; }
 .arc-rail__logo { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 4px; border-radius: 12px; color: var(--rail-foreground); }
 .arc-rail__divider { width: 28px; height: 1px; margin: 4px 0; background: var(--rail-line); }
 
@@ -300,5 +307,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .arc-drawer, .arc-drawer--open { transition: none; }
-  .arc-ripples__pulse { display: none; animation: none; }
+  .arc-ripples__drift { animation: none; }
 }
