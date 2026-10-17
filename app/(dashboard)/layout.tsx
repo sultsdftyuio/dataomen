@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { Toaster } from "@/components/ui/toaster";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { assistedProspectPilotEnrolled } from "@/lib/assisted-prospect-pilot";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
@@ -63,15 +62,21 @@ export default async function DashboardLayout({
     ? profileName.trim()
     : user?.email?.split("@")[0] || "You";
 
+  // Hydration guard: if React has to wait for a client component's chunk
+  // mid-hydration, it can lose that component's position in a list of
+  // siblings, which shifts every useId below it (Radix aria-controls then
+  // stops matching the server HTML). Next renders this layout inside such a
+  // list, so the keyed Fragment (kept as-is in the RSC payload) holds that
+  // position and DashboardShell stays an only child. Keep siblings such as
+  // the Toaster inside DashboardShell.
   return (
-    <>
+    <Fragment key="dashboard-shell">
       <DashboardShell
         userName={userName}
         userEmail={user?.email ?? ""}
         entitlements={entitlements}
         assistedPilot={assistedPilot}
       >{children}</DashboardShell>
-      <Toaster />
-    </>
+    </Fragment>
   );
 }

@@ -66,6 +66,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${geist.variable} ${geistMono.variable} ${playfair.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
+        {/* ThemeProvider stays the body's only child: as a sibling it can lose
+            its position in the list during hydration and shift every useId
+            in the app (see app/(dashboard)/layout.tsx). Analytics renders no
+            markup, so it sits inside instead. */}
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -74,8 +78,8 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <Analytics />
         </ThemeProvider>
-        <Analytics />
       </body>
     </html>
   )

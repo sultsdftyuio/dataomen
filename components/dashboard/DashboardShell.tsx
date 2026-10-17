@@ -13,6 +13,7 @@ import { DashboardSearch } from "./DashboardSearch";
 import { WorkspacePlanBadge } from "./WorkspacePlanBadge";
 import LogoutButton from "./logout-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/toaster";
 import type { WorkspaceEntitlements } from "@/lib/entitlements";
 import "./dashboard-shell.css";
 
@@ -91,93 +92,97 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
   }, [mobileOpen, closeDrawer]);
 
   return (
-    <div className={`arc-shell${mobileOpen ? " arc-shell--drawer-open" : ""}`}>
-      <a className="skip-link" href={`#${MAIN_ID}`}>Skip to content</a>
-      {mobileOpen ? <div className="arc-shell__scrim" aria-hidden="true" onClick={() => closeDrawer(true)} /> : null}
+    <>
+      <div className={`arc-shell${mobileOpen ? " arc-shell--drawer-open" : ""}`}>
+        <a className="skip-link" href={`#${MAIN_ID}`}>Skip to content</a>
+        {mobileOpen ? <div className="arc-shell__scrim" aria-hidden="true" onClick={() => closeDrawer(true)} /> : null}
 
-      {/* Desktop: an icon rail on the navy-blue surface. Page names live in
-          tooltips and stay as accessible names. Hidden below 768px. */}
-      <aside aria-label="Workspace" className="arc-rail">
-        <RailArcs />
-        <Link href="/dashboard" className="arc-rail__logo" aria-label="Arcli home">
-          <ArcLogoIcon size={28} accent="var(--rail-accent)" />
-        </Link>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button className="arc-rail__button" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page (Ctrl K)">
+        {/* Desktop: an icon rail on the navy-blue surface. Page names live in
+            tooltips and stay as accessible names. Hidden below 768px. */}
+        <aside aria-label="Workspace" className="arc-rail">
+          <RailArcs />
+          <Link href="/dashboard" className="arc-rail__logo" aria-label="Arcli home">
+            <ArcLogoIcon size={28} accent="var(--rail-accent)" />
+          </Link>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="arc-rail__button" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page (Ctrl K)">
+                <ArcSearchIcon size={18} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={10}>Go to a page (Ctrl K)</TooltipContent>
+          </Tooltip>
+          <span className="arc-rail__divider" aria-hidden="true" />
+          <DashboardNavigation variant="rail" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
+          <AccountMenu userName={userName} userEmail={userEmail} entitlements={entitlements} />
+        </aside>
+
+        {/* Below 768px the menu is a drawer on the same surface, with labels.
+            CSS hides it (visibility) while closed, which also takes it out of
+            the tab order and the accessibility tree. */}
+        <aside
+          id={SIDEBAR_ID}
+          aria-label="Workspace menu"
+          className={`arc-drawer${mobileOpen ? " arc-drawer--open" : ""}`}
+        >
+          <div className="arc-drawer__brand">
+            <Link href="/dashboard" className="arc-drawer__home" aria-label="Arcli home">
+              <ArcLogoIcon size={26} accent="var(--rail-accent)" />
+              <span aria-hidden="true">Arcli</span>
+            </Link>
+            <button ref={drawerCloseRef} className="arc-drawer__close" type="button" onClick={() => closeDrawer(true)} aria-label="Close menu">
+              <X size={18} aria-hidden="true" />
+            </button>
+          </div>
+
+          <DashboardNavigation variant="drawer" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
+
+          <div className="arc-drawer__bottom">
+            <WorkspacePlanBadge entitlements={entitlements} />
+            <div className="arc-drawer__user">
+              <span className="arc-rail__avatar" aria-hidden="true">{userName.slice(0, 1).toUpperCase()}</span>
+              <span className="arc-drawer__user-copy"><strong>{userName}</strong><small>{userEmail}</small></span>
+              <LogoutButton iconOnly />
+            </div>
+          </div>
+        </aside>
+
+        <div className="arc-shell__body" inert={mobileOpen}>
+          {/* Phones only: the rail is hidden, so this bar opens the drawer. */}
+          <header className="arc-shell__topbar">
+            <button
+              ref={menuButtonRef}
+              className="arc-shell__icon-button"
+              type="button"
+              aria-label="Open menu"
+              aria-expanded={mobileOpen}
+              aria-controls={SIDEBAR_ID}
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu size={19} aria-hidden="true" />
+            </button>
+            <Link href="/dashboard" className="arc-shell__topbar-home" aria-label="Arcli home">
+              <ArcLogoIcon size={24} accent="var(--rail-accent)" />
+            </Link>
+            <button className="arc-shell__icon-button arc-shell__topbar-search" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page">
               <ArcSearchIcon size={18} />
             </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={10}>Go to a page (Ctrl K)</TooltipContent>
-        </Tooltip>
-        <span className="arc-rail__divider" aria-hidden="true" />
-        <DashboardNavigation variant="rail" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
-        <AccountMenu userName={userName} userEmail={userEmail} entitlements={entitlements} />
-      </aside>
-
-      {/* Below 768px the menu is a drawer on the same surface, with labels.
-          CSS hides it (visibility) while closed, which also takes it out of
-          the tab order and the accessibility tree. */}
-      <aside
-        id={SIDEBAR_ID}
-        aria-label="Workspace menu"
-        className={`arc-drawer${mobileOpen ? " arc-drawer--open" : ""}`}
-      >
-        <div className="arc-drawer__brand">
-          <Link href="/dashboard" className="arc-drawer__home" aria-label="Arcli home">
-            <ArcLogoIcon size={26} accent="var(--rail-accent)" />
-            <span aria-hidden="true">Arcli</span>
-          </Link>
-          <button ref={drawerCloseRef} className="arc-drawer__close" type="button" onClick={() => closeDrawer(true)} aria-label="Close menu">
-            <X size={18} aria-hidden="true" />
-          </button>
+          </header>
+          {isPastDue ? (
+            <Link className="arc-shell__billing-alert" href="/settings#billing">
+              <AlertCircle size={15} aria-hidden="true" />
+              <span>Your last payment failed. Update payment method</span>
+            </Link>
+          ) : null}
+          <main id={MAIN_ID} tabIndex={-1} className="arc-shell__main">{children}</main>
+          <div className="arc-shell__mobile-tabs"><DashboardNavigation compact isPro={entitlements.isPro} assistedPilot={assistedPilot} /></div>
         </div>
 
-        <DashboardNavigation variant="drawer" isPro={entitlements.isPro} assistedPilot={assistedPilot} />
-
-        <div className="arc-drawer__bottom">
-          <WorkspacePlanBadge entitlements={entitlements} />
-          <div className="arc-drawer__user">
-            <span className="arc-rail__avatar" aria-hidden="true">{userName.slice(0, 1).toUpperCase()}</span>
-            <span className="arc-drawer__user-copy"><strong>{userName}</strong><small>{userEmail}</small></span>
-            <LogoutButton iconOnly />
-          </div>
-        </div>
-      </aside>
-
-      <div className="arc-shell__body" inert={mobileOpen}>
-        {/* Phones only: the rail is hidden, so this bar opens the drawer. */}
-        <header className="arc-shell__topbar">
-          <button
-            ref={menuButtonRef}
-            className="arc-shell__icon-button"
-            type="button"
-            aria-label="Open menu"
-            aria-expanded={mobileOpen}
-            aria-controls={SIDEBAR_ID}
-            onClick={() => setMobileOpen(true)}
-          >
-            <Menu size={19} aria-hidden="true" />
-          </button>
-          <Link href="/dashboard" className="arc-shell__topbar-home" aria-label="Arcli home">
-            <ArcLogoIcon size={24} accent="var(--rail-accent)" />
-          </Link>
-          <button className="arc-shell__icon-button arc-shell__topbar-search" type="button" onClick={() => setSearchOpen(true)} aria-label="Go to a page">
-            <ArcSearchIcon size={18} />
-          </button>
-        </header>
-        {isPastDue ? (
-          <Link className="arc-shell__billing-alert" href="/settings#billing">
-            <AlertCircle size={15} aria-hidden="true" />
-            <span>Your last payment failed. Update payment method</span>
-          </Link>
-        ) : null}
-        <main id={MAIN_ID} tabIndex={-1} className="arc-shell__main">{children}</main>
-        <div className="arc-shell__mobile-tabs"><DashboardNavigation compact isPro={entitlements.isPro} assistedPilot={assistedPilot} /></div>
+        <DashboardSearch open={searchOpen} onOpenChange={setSearchOpen} isPro={entitlements.isPro} assistedPilot={assistedPilot} />
       </div>
-
-      <DashboardSearch open={searchOpen} onOpenChange={setSearchOpen} isPro={entitlements.isPro} assistedPilot={assistedPilot} />
-    </div>
+      {/* Mounted here, not in the layout: see app/(dashboard)/layout.tsx. */}
+      <Toaster />
+    </>
   );
 }
 
