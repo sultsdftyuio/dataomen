@@ -9,6 +9,7 @@ import { AlertCircle, Menu, X } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
 import { ArcLogoIcon } from "./arc-icons";
 import { DashboardNavigation } from "./DashboardNavigation";
+import { RailRipples } from "./rail-ripples";
 import { WorkspacePlanBadge } from "./WorkspacePlanBadge";
 import LogoutButton from "./logout-button";
 import { Toaster } from "@/components/ui/toaster";
@@ -86,7 +87,7 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
         {/* Desktop: an icon rail on the navy-blue surface. Page names live in
             tooltips and stay as accessible names. Hidden below 768px. */}
         <aside aria-label="Workspace" className="arc-rail">
-          <RailArcs />
+          <RailRipples surface="rail" />
           <Link href="/dashboard" className="arc-rail__logo" aria-label="Arcli home">
             <ArcLogoIcon size={28} accent="var(--rail-accent)" />
           </Link>
@@ -156,25 +157,5 @@ export function DashboardShell({ children, userName, userEmail, entitlements, as
       {/* Mounted here, not in the layout: see app/(dashboard)/layout.tsx. */}
       <Toaster />
     </>
-  );
-}
-
-/**
- * The logo's arc as a ripple: rings spreading from the glow in the rail's
- * bottom-left corner (see --rail-surface), so the arcs read as part of the
- * surface rather than a symbol floating in it. The inner ring carries the
- * accent; outer rings fade out as they rise (mask in dashboard-shell.css).
- */
-function RailArcs() {
-  return (
-    <svg className="arc-rail__arcs" width="72" height="260" viewBox="0 0 72 260" fill="none" aria-hidden="true" focusable="false">
-      <g strokeWidth="1.5">
-        <circle cx="0" cy="260" r="40" stroke="var(--rail-accent)" strokeOpacity="0.85" />
-        <circle cx="0" cy="260" r="72" stroke="currentColor" strokeOpacity="0.3" />
-        <circle cx="0" cy="260" r="104" stroke="currentColor" strokeOpacity="0.22" />
-        <circle cx="0" cy="260" r="136" stroke="currentColor" strokeOpacity="0.15" />
-        <circle cx="0" cy="260" r="168" stroke="currentColor" strokeOpacity="0.1" />
-      </g>
-    </svg>
   );
 }
