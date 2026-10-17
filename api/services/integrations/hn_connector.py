@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 ALGOLIA_HN_SEARCH_BY_DATE_URL = "https://hn.algolia.com/api/v1/search_by_date"
+ALGOLIA_HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 _BLOCK_TAGS = frozenset({"br", "div", "p", "li", "blockquote", "pre"})
 _SPAM_PATTERN = re.compile(
     r"\b(?:buy\s+now|casino|crypto\s+giveaway|viagra)\b",
@@ -96,6 +97,20 @@ def _env_positive_int(name: str, default: int) -> int:
         return default
 
 
+def _keyword_search_url() -> str:
+    """Rank keyword discovery by relevance inside the date window.
+
+    Algolia matches every query word anywhere in a long comment. Sorted by date,
+    a broad phrase returns its newest loose matches: on 2026-10-18 only 2 of the
+    top 50 for "find customers" had the words near each other, against 33 of 50
+    sorted by relevance. The date filter still bounds the window either way.
+    ``ARCLI_HN_KEYWORD_ORDER=date`` restores the previous ordering.
+    """
+
+    order = os.getenv("ARCLI_HN_KEYWORD_ORDER", "relevance").strip().casefold()
+    return ALGOLIA_HN_SEARCH_BY_DATE_URL if order == "date" else ALGOLIA_HN_SEARCH_URL
+
+
 class HackerNewsConnector:
     """Fetch recent Hacker News stories and comments with bounded API retries."""
 
@@ -103,11 +118,13 @@ class HackerNewsConnector:
         self,
         *,
         base_url: str = ALGOLIA_HN_SEARCH_BY_DATE_URL,
+        search_url: str | None = None,
         timeout_seconds: float | None = None,
         request_interval_seconds: float | None = None,
         max_attempts: int | None = None,
     ) -> None:
         self.base_url = base_url
+        self.search_url = search_url or _keyword_search_url()
         self.timeout_seconds = timeout_seconds or _env_positive_float(
             "ARCLI_HN_HTTP_TIMEOUT_SECONDS", 15.0
         )
@@ -126,7 +143,7 @@ class HackerNewsConnector:
         since_timestamp: int,
         limit: int = 100,
     ) -> list[SourcePost]:
-        """Fetch and normalize the newest matching HN stories and comments.
+        """Fetch and normalize the best-matching HN stories and comments in the window.
 
         Algolia applies the timestamp filter server-side; the local timestamp
         check protects the ingestion boundary if an upstream response is stale.
@@ -160,6 +177,7 @@ class HackerNewsConnector:
             while len(posts) < target_limit:
                 payload = await self._fetch_page(
                     client,
+                    url=self.search_url,
                     query=normalized_query,
                     since_timestamp=since_timestamp,
                     page=page,
@@ -258,6 +276,7 @@ class HackerNewsConnector:
         page: int,
         page_size: int,
         tags: str = "(story,comment)",
+        url: str | None = None,
     ) -> dict[str, Any]:
         params = {
             "tags": tags,
@@ -275,7 +294,7 @@ class HackerNewsConnector:
                     provider="hn-algolia",
                     limit=env_int("ARCLI_HN_REQUESTS_PER_MINUTE", 60),
                 )
-                response = await client.get(self.base_url, params=params)
+                response = await client.get(url or self.base_url, params=params)
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, dict):
