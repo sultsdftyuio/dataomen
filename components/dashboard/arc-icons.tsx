@@ -123,16 +123,6 @@ export function ArcDoneIcon({ accent = "currentColor", ...props }: ArcIconProps)
   );
 }
 
-/** Search stays a standard magnifier so it is recognised instantly. */
-export function ArcSearchIcon(props: ArcSvgProps) {
-  return (
-    <ArcSvg {...props}>
-      <circle cx="7" cy="7" r="4.2" />
-      <path d="m10.2 10.2 3.3 3.3" />
-    </ArcSvg>
-  );
-}
-
 /** Locked (Pro-only) destination: an arc closed over a small body. */
 export function ArcLockIcon(props: ArcSvgProps) {
   return (
