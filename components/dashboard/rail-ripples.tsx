@@ -1,8 +1,13 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+
 /**
  * The logo's arc as a ripple: rings spreading from the glow in the rail's
  * bottom-left corner (see --rail-surface). The inner ring carries the
  * accent; outer rings get fainter and fade out as they rise (mask in
- * dashboard-shell.css). Static on purpose.
+ * dashboard-shell.css). One accent ring pulses outwards through them
+ * every few seconds, like a sonar ping; it is off for reduced motion.
  *
  * The rings are centred on the rail's bottom-left corner. The context panel
  * sits flush against the rail and reaches the same bottom edge, so it draws
@@ -27,12 +32,25 @@ type RailRipplesProps = {
 };
 
 export function RailRipples({ surface }: RailRipplesProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // The rail and the panel each run their own copy of the pulse, and the
+  // panel mounts later when a page opens it. Pinning every copy's start to
+  // the document timeline's zero keeps them in phase, so the pulse crosses
+  // the border as one ring.
+  useEffect(() => {
+    svgRef.current?.getAnimations({ subtree: true }).forEach((animation) => {
+      animation.startTime = 0;
+    });
+  }, []);
+
   // The panel's window onto the rings starts where the rail ends.
   const x = surface === "rail" ? 0 : RAIL_WIDTH;
   const width = surface === "rail" ? RAIL_WIDTH : RINGS[RINGS.length - 1].r - RAIL_WIDTH + 4;
 
   return (
     <svg
+      ref={svgRef}
       className={`arc-ripples arc-ripples--${surface}`}
       width={width}
       height={HEIGHT}
@@ -52,6 +70,14 @@ export function RailRipples({ surface }: RailRipplesProps) {
             strokeOpacity={opacity}
           />
         ))}
+        <circle
+          className="arc-ripples__pulse"
+          cx="0"
+          cy={HEIGHT}
+          r={RINGS[0].r}
+          stroke="var(--rail-accent)"
+          vectorEffect="non-scaling-stroke"
+        />
       </g>
     </svg>
   );

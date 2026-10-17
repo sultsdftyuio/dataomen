@@ -54,6 +54,20 @@
   mask-image: linear-gradient(to top, #000 45%, transparent);
 }
 @media (max-height: 620px) { .arc-ripples { display: none; } }
+/* The pulse: grows from the accent ring (72px) to past the outer ring
+   (264px) while fading, then rests. Scaled about the rings' centre, which
+   is user-space (0, 280) in both the rail's and the panel's SVG. */
+.arc-ripples__pulse {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 0 280px;
+  animation: arc-ripple-pulse 7s cubic-bezier(.25, .6, .3, 1) infinite;
+}
+@keyframes arc-ripple-pulse {
+  0% { opacity: .7; transform: scale(1); }
+  60% { opacity: 0; transform: scale(3.8); }
+  100% { opacity: 0; transform: scale(3.8); }
+}
 .arc-rail__logo { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 4px; border-radius: 12px; color: var(--rail-foreground); }
 .arc-rail__divider { width: 28px; height: 1px; margin: 4px 0; background: var(--rail-line); }
 
@@ -286,4 +300,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .arc-drawer, .arc-drawer--open { transition: none; }
+  .arc-ripples__pulse { display: none; animation: none; }
 }
