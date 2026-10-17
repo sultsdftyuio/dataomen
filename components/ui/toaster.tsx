@@ -17,7 +17,7 @@ import {
  * Renders toasts raised with `toast()` from either `@/components/ui/use-toast`
  * or `@/hooks/use-toast`. Those are two copies of the same module, so each has
  * its own in-memory store; subscribing to both means no caller is silent.
- * Mount once per layout (the dashboard mounts it in app/(dashboard)/layout.tsx).
+ * Mount once per layout (the dashboard mounts it in DashboardShell).
  *
  * Toasts are announced politely (Radix `type="background"`): they confirm the
  * outcome of something the person just did and must not interrupt a screen
