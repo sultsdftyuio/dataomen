@@ -337,6 +337,10 @@ def _additional_public_source_connector(
         from api.services.integrations.lemmy_connector import LemmyConnector
 
         return LemmyConnector()
+    if source == "discourse":
+        from api.services.integrations.discourse_connector import DiscourseConnector
+
+        return DiscourseConnector(forum_host=community_selector or "")
     raise ValueError(f"unsupported additional public source: {source}")
 
 
@@ -386,6 +390,19 @@ def ingest_additional_public_source_posts(
     since_timestamp = int(
         (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
     )
+    if normalized_source == "discourse" and not normalise_text(community_selector):
+        # Discourse has no global index: without a named forum there is
+        # nothing to search, and this is not a provider failure.
+        return AdditionalPublicSourceIngestionResult(
+            source=normalized_source,
+            query=normalized_query,
+            since_timestamp=since_timestamp,
+            hits_found=0,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+            matchable_source_post_refs=[],
+            plausible_hits=0,
+        )
     connector = _additional_public_source_connector(
         normalized_source,
         query=normalized_query,

@@ -133,7 +133,7 @@ function BuyerGroupForm({ onCreate }: { onCreate: CreateGroup }) {
             <FormField
               id={fieldId("suggestedPlaces")}
               label="Communities to prioritise"
-              hint="One per line. Prefix a source, such as github:owner/repo or lemmy:saas, to search only there. Plain notes guide the scan without hiding other posts."
+              hint="One per line. Prefix a source, such as github:owner/repo or lemmy:saas, to search only there. Paste a competitor's forum link (https://community.example.com) to search that forum. Plain notes guide the scan without hiding other posts."
               error={errors.suggestedPlaces}
               optional
             >

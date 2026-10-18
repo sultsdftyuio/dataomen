@@ -27,7 +27,7 @@ DEFAULT_PRIVACY_REQUEST_RETENTION_DAYS = 90
 _MIN_PRIVACY_REQUEST_RETENTION_DAYS = 30
 _MAX_PRIVACY_REQUEST_RETENTION_DAYS = 365
 _SUPPORTED_PUBLIC_SOURCES = frozenset(
-    {"hackernews", "bluesky", "stackexchange", "github", "lemmy", "twitter"}
+    {"hackernews", "bluesky", "stackexchange", "github", "lemmy", "twitter", "discourse"}
 )
 
 # We do not attempt to infer protected traits from ordinary product language.

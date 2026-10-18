@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS public.public_data_removal_requests (
     CONSTRAINT public_data_removal_request_fingerprint_check
         CHECK (requester_fingerprint ~ '^[0-9a-f]{64}$'),
     CONSTRAINT public_data_removal_request_source_check
-        CHECK (source IN ('hackernews', 'bluesky', 'stackexchange', 'github', 'lemmy', 'twitter')),
+        CHECK (source IN ('hackernews', 'bluesky', 'stackexchange', 'github', 'lemmy', 'twitter', 'discourse')),
     CONSTRAINT public_data_removal_request_identity_check
         CHECK (
             source_post_id IS NOT NULL

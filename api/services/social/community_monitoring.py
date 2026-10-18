@@ -13,7 +13,11 @@ from typing import Any, Iterable
 from urllib.parse import urlsplit
 
 
-_SUPPORTED_SOURCES = frozenset({"github", "stackexchange", "lemmy", "bluesky"})
+_SUPPORTED_SOURCES = frozenset({"github", "stackexchange", "lemmy", "bluesky", "discourse"})
+# Hostname prefixes that almost always mean a Discourse community. Other forum
+# URLs need an explicit ``discourse:host`` so an arbitrary site is never
+# treated as a searchable forum.
+_DISCOURSE_HOST_PREFIXES = ("community.", "forum.", "forums.", "discuss.", "discourse.")
 _SOURCE_ALIASES = {
     "stack": "stackexchange",
     "stack-overflow": "stackexchange",
@@ -63,6 +67,8 @@ def _target_from_url(raw: str) -> CommunityTarget | None:
             return CommunityTarget("lemmy", selector.casefold(), raw)
     if host.endswith("bsky.app") and len(parts) >= 2 and parts[0] == "profile":
         return CommunityTarget("bluesky", parts[1].lstrip("@").casefold(), raw)
+    if host.startswith(_DISCOURSE_HOST_PREFIXES) and parsed.scheme == "https":
+        return CommunityTarget("discourse", host, raw)
     return None
 
 
@@ -70,7 +76,8 @@ def parse_community_targets(values: Iterable[object]) -> tuple[CommunityTarget, 
     """Parse bounded, explicit selectors from stored watchlist places.
 
     Supported examples: ``github:owner/repo``, ``stackexchange:stackoverflow``,
-    ``lemmy:saas``, and ``bluesky:founder.example``. Other free-text values
+    ``lemmy:saas``, ``bluesky:founder.example``, ``discourse:forum.example.com``
+    and ``https://community.example.com``. Other free-text values
     remain useful human context but deliberately do not hide posts merely
     because a provider did not return community metadata for them.
     """

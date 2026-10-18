@@ -11,7 +11,7 @@ const REQUEST_WINDOW_HOURS = 24;
 const RemovalRequestSchema = z.object({
   email: z.string().trim().email().max(320),
   sourceUrl: z.string().trim().url().max(4096),
-  source: z.enum(["hackernews", "bluesky", "stackexchange", "github", "lemmy"]).optional(),
+  source: z.enum(["hackernews", "bluesky", "stackexchange", "github", "lemmy", "discourse"]).optional(),
   sourceHandle: z.string().trim().min(1).max(512).optional(),
   details: z.string().trim().max(2000).optional(),
 });

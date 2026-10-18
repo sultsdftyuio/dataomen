@@ -682,12 +682,20 @@ def _is_source_enabled(name: str, default: bool = True) -> bool:
 
 
 
+# Sources that read other companies' sites need an operator to check each
+# site's terms first, so they stay off until explicitly switched on.
+_OPT_IN_ADDITIONAL_SOURCES = frozenset({"discourse"})
+
+
 def enabled_additional_public_sources() -> tuple[str, ...]:
     """Return the explicitly enabled free/low-cost sources in stable order."""
     return tuple(
         source
         for source in ADDITIONAL_PUBLIC_SOURCE_NAMES
-        if _is_source_enabled(f"ARCLI_{source.upper()}_INGESTION_ENABLED")
+        if _is_source_enabled(
+            f"ARCLI_{source.upper()}_INGESTION_ENABLED",
+            default=source not in _OPT_IN_ADDITIONAL_SOURCES,
+        )
     )
 
 

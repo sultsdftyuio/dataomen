@@ -45,6 +45,7 @@ const SOURCE_NAMES: Record<string, string> = {
   stack_overflow: "Stack Overflow",
   bluesky: "Bluesky",
   lemmy: "Lemmy",
+  discourse: "Community forum",
   reddit: "Reddit",
   x: "X (Twitter)",
 };

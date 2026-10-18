@@ -69,7 +69,7 @@ from api.services.verifier import (
 logger = logging.getLogger(__name__)
 
 WATCHLIST_SOURCES = frozenset(
-    {"hackernews", "bluesky", "lemmy", "stackexchange", "github", "x"}
+    {"hackernews", "bluesky", "lemmy", "stackexchange", "github", "x", "discourse"}
 )
 DEFAULT_WATCHLIST_SOURCES = (
     "hackernews",
@@ -134,6 +134,19 @@ def normalize_watchlist_sources(value: Any) -> frozenset[str]:
     }
     selected = normalized.intersection(WATCHLIST_SOURCES)
     return frozenset(selected or DEFAULT_WATCHLIST_SOURCES)
+
+
+def sources_with_named_forums(
+    preferences: frozenset[str],
+    targets: Iterable[CommunityTarget],
+) -> frozenset[str]:
+    """Search a forum whenever a buyer group names one.
+
+    A forum place can only be searched as a forum, so naming it selects that
+    source; the buyer-group form has no separate checkbox for it.
+    """
+
+    return preferences | {target.source for target in targets if target.source == "discourse"}
 
 
 def _query_phrase(value: str) -> str:
@@ -411,7 +424,10 @@ def _build_context(
                 _json_list(row.get("include_terms")),
             )
         ),
-        source_preferences=normalize_watchlist_sources(row.get("source_preferences")),
+        source_preferences=sources_with_named_forums(
+            normalize_watchlist_sources(row.get("source_preferences")),
+            community_targets,
+        ),
         community_targets=community_targets,
         embedding=stored_embedding,
         embedding_sha256=_embedding_sha256(stored_embedding),

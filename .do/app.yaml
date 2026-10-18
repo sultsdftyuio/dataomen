@@ -400,6 +400,13 @@ workers:
         scope: RUN_TIME
         type: secret
         value: ""
+      # Competitor community forums (Discourse) named in a buyer group's
+      # places. Off until scripts/discourse_source_contract.sql is applied and
+      # each forum's terms have been checked for commercial reuse.
+      - key: ARCLI_DISCOURSE_INGESTION_ENABLED
+        scope: RUN_TIME
+        type: general
+        value: "false"
       - key: ARCLI_LEMMY_INGESTION_ENABLED
         scope: RUN_TIME
         type: general

@@ -131,6 +131,8 @@ ADDITIONAL_PUBLIC_SOURCE_NAMES = (
     "stackexchange",
     "github",
     "lemmy",
+    # Searches only forums a buyer group names; off unless switched on.
+    "discourse",
 )
 
 

@@ -59,6 +59,9 @@ their `CREATE TABLE` statements would break later views, policies, and jobs.
      Imported rows are research work, not delivered prospects.
 19. `scripts/stripe.sql` — only when Stripe Connect is enabled.
 20. `scripts/public_data_compliance_contract.sql`
+20b. `scripts/discourse_source_contract.sql` — accepts privacy removal
+     requests for community-forum (Discourse) posts. Apply after step 20 and
+     before setting `ARCLI_DISCOURSE_INGESTION_ENABLED=true`.
 20a. `scripts/pilot_application_contract.sql` — private, public-form intake for
      founding-pilot coverage reviews. It is independent of the assisted
      delivery contracts. Apply before linking advertising to `/pilot`; only the

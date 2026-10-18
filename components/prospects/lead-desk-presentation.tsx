@@ -19,6 +19,7 @@ const SOURCE_NAMES: Record<string, string> = {
   hacker_news: "Hacker News",
   reddit: "Reddit",
   lemmy: "Lemmy",
+  discourse: "Community forum",
   github: "GitHub",
   stackexchange: "Stack Exchange",
   stack_exchange: "Stack Exchange",

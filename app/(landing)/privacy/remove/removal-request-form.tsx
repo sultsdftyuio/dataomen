@@ -74,6 +74,7 @@ export function RemovalRequestForm() {
           <option value="stackexchange">Stack Exchange</option>
           <option value="github">GitHub</option>
           <option value="lemmy">Lemmy</option>
+          <option value="discourse">A community forum (Discourse)</option>
         </select>
       </div>
       <div className="space-y-2">
